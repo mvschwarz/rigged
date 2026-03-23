@@ -126,8 +126,25 @@ describe("NodeLauncher", () => {
     expect(createSpy.mock.calls[0]![0]).toBe("r99-custom1-worker");
   });
 
-  it("invalid derived session name -> error", async () => {
-    // Rig name that produces an invalid session name
+  it("valid logical IDs 'orchestrator' and 'worker' produce launchable names", async () => {
+    const rig = rigRepo.createRig("r01");
+    rigRepo.addNode(rig.id, "orchestrator", { role: "orchestrator" });
+    rigRepo.addNode(rig.id, "worker", { role: "worker" });
+    const createSpy = vi.fn<(name: string, cwd?: string) => Promise<TmuxResult>>()
+      .mockResolvedValue({ ok: true });
+    const launcher = createLauncher(mockTmuxAdapter({ createSession: createSpy }));
+
+    const r1 = await launcher.launchNode(rig.id, "orchestrator");
+    const r2 = await launcher.launchNode(rig.id, "worker");
+
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    expect(createSpy.mock.calls[0]![0]).toBe("r01-orchestrator");
+    expect(createSpy.mock.calls[1]![0]).toBe("r01-worker");
+  });
+
+  it("invalid derived session name (no rNN prefix) -> error", async () => {
+    // Rig name without rNN- prefix produces an invalid session name
     const rig = rigRepo.createRig("badname");
     rigRepo.addNode(rig.id, "worker");
     const launcher = createLauncher();

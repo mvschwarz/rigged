@@ -34,6 +34,7 @@ nodesRoutes.post("/:logicalId/launch", async (c) => {
   if (!result.ok) {
     const status = result.code === "node_not_found" ? 404
       : result.code === "already_bound" ? 409
+      : result.code === "invalid_session_name" ? 400
       : 500;
     return c.json(result, status);
   }

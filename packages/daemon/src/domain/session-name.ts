@@ -1,7 +1,7 @@
 // Phase 1: Rigged-managed sessions only.
-// Names must match: r{NN}-{cluster}{N}-{role}
-// Examples: r01-dev1-impl, r01-orch1-lead, r01-rev1-r1
-const SESSION_NAME_PATTERN = /^r\d{2}-.+\d+-.+$/;
+// Names must start with r{NN}- prefix then any non-empty suffix.
+// Examples: r01-dev1-impl, r01-orchestrator, r01-worker, r01-orch1-lead
+const SESSION_NAME_PATTERN = /^r\d{2}-.+$/;
 
 export function validateSessionName(name: string): boolean {
   return SESSION_NAME_PATTERN.test(name);

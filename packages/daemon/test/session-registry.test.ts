@@ -55,8 +55,13 @@ describe("SessionRegistry", () => {
     ).toThrow();
   });
 
-  it("registerSession rejects invalid session name", () => {
-    // Phase 1 = Rigged-managed only. Names must match r{NN}-{cluster}{N}-{role}
+  it("registerSession accepts r01-orchestrator (valid under relaxed pattern)", () => {
+    expect(() =>
+      registry.registerSession("node-1", "r01-orchestrator")
+    ).not.toThrow();
+  });
+
+  it("registerSession rejects invalid session name (no rNN- prefix)", () => {
     expect(() =>
       registry.registerSession("node-1", "random-session-name")
     ).toThrow(/session name/i);
@@ -65,9 +70,14 @@ describe("SessionRegistry", () => {
       registry.registerSession("node-1", "my-tmux-session")
     ).toThrow(/session name/i);
 
+    // Missing rNN- prefix
+    expect(() =>
+      registry.registerSession("node-1", "orchestrator")
+    ).toThrow(/session name/i);
+
     // Valid names should not throw
     expect(() =>
-      registry.registerSession("node-1", "r01-dev1-impl")
+      registry.registerSession("node-2", "r01-dev1-impl")
     ).not.toThrow();
   });
 

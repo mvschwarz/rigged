@@ -86,6 +86,18 @@ describe("Session routes", () => {
     expect(res.status).toBe(404);
   });
 
+  it("POST .../launch with invalid derived session name -> 400", async () => {
+    const { app, rigRepo } = createTestApp(db);
+    // Rig name without rNN- prefix -> derived name fails validation
+    const rig = rigRepo.createRig("badname");
+    rigRepo.addNode(rig.id, "worker");
+
+    const res = await app.request(`/api/rigs/${rig.id}/nodes/worker/launch`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("POST .../focus with valid cmux binding -> calls focusSurface", async () => {
     const cmux = connectedCmux();
     await cmux.connect();

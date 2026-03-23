@@ -174,4 +174,14 @@ export class TmuxAdapter {
       return classifyWriteError(err);
     }
   }
+
+  async killSession(name: string): Promise<TmuxResult> {
+    const cmd = `tmux kill-session -t ${shellQuote(name)}`;
+    try {
+      await this.exec(cmd);
+      return { ok: true };
+    } catch (err) {
+      return classifyWriteError(err);
+    }
+  }
 }

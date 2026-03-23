@@ -17,7 +17,10 @@ interface NodeOptions {
 }
 
 export class RigRepository {
-  constructor(private db: Database.Database) {}
+  readonly db: Database.Database;
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
 
   createRig(name: string): Rig {
     const id = ulid();

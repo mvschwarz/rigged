@@ -1,11 +1,7 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 import type { Session, Binding } from "./types.js";
-
-// Phase 1: Rigged-managed sessions only.
-// Names must match: r{NN}-{cluster}{N}-{role}
-// Examples: r01-dev1-impl, r01-orch1-lead, r01-rev1-r1
-const SESSION_NAME_PATTERN = /^r\d{2}-.+\d+-.+$/;
+import { validateSessionName } from "./session-name.js";
 
 interface BindingFields {
   tmuxSession?: string;
@@ -16,10 +12,13 @@ interface BindingFields {
 }
 
 export class SessionRegistry {
-  constructor(private db: Database.Database) {}
+  readonly db: Database.Database;
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
 
   registerSession(nodeId: string, sessionName: string): Session {
-    if (!SESSION_NAME_PATTERN.test(sessionName)) {
+    if (!validateSessionName(sessionName)) {
       throw new Error(
         `Invalid session name "${sessionName}": must match Rigged naming pattern r{NN}-{cluster}{N}-{role}`
       );

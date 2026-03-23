@@ -5,14 +5,31 @@ type Subscriber = (event: PersistedEvent) => void;
 
 export class EventBus {
   private subscribers = new Set<Subscriber>();
+  readonly db: Database.Database;
 
-  constructor(private db: Database.Database) {}
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
 
+  /**
+   * Persist an event and notify subscribers. Use this for standalone emit
+   * outside of a caller-managed transaction.
+   */
   emit(event: RigEvent): PersistedEvent {
-    // Extract nodeId if present on the event (varies by type)
+    const persisted = this.persistWithinTransaction(event);
+    this.notifySubscribers(persisted);
+    return persisted;
+  }
+
+  /**
+   * Insert an event row into the events table and return a PersistedEvent.
+   * Call this inside a caller-managed db.transaction() so the event insert
+   * is atomic with other writes (e.g., session + binding + event in one txn).
+   * Does NOT notify subscribers — call notifySubscribers() after commit.
+   */
+  persistWithinTransaction(event: RigEvent): PersistedEvent {
     const nodeId = "nodeId" in event ? event.nodeId : null;
 
-    // Persist first — subscribers must see a DB-committed event
     const result = this.db
       .prepare(
         "INSERT INTO events (rig_id, node_id, type, payload) VALUES (?, ?, ?, ?)"
@@ -25,22 +42,25 @@ export class EventBus {
       .prepare("SELECT created_at FROM events WHERE seq = ?")
       .get(seq) as { created_at: string };
 
-    const persisted: PersistedEvent = {
+    return {
       ...event,
       seq,
       createdAt: row.created_at,
     };
+  }
 
-    // Notify subscribers — errors are isolated
+  /**
+   * Fan out a persisted event to in-memory subscribers.
+   * Does NOT insert into DB. Subscriber errors are isolated.
+   */
+  notifySubscribers(event: PersistedEvent): void {
     for (const subscriber of this.subscribers) {
       try {
-        subscriber(persisted);
+        subscriber(event);
       } catch (err) {
         console.error("EventBus subscriber error:", err);
       }
     }
-
-    return persisted;
   }
 
   subscribe(cb: Subscriber): () => void {

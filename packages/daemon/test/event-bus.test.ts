@@ -168,4 +168,52 @@ describe("EventBus", () => {
     expect(replay).toHaveLength(2); // rig.created + node.added for rig-1 only
     expect(replay.every((e) => e.rigId === "rig-1")).toBe(true);
   });
+
+  it("persistWithinTransaction inserts row, returns PersistedEvent with seq", () => {
+    const persisted = bus.persistWithinTransaction({
+      type: "rig.created",
+      rigId: "rig-1",
+    });
+
+    expect(persisted.seq).toBeDefined();
+    expect(typeof persisted.seq).toBe("number");
+    expect(persisted.type).toBe("rig.created");
+    expect(persisted.createdAt).toBeDefined();
+
+    // Verify it's in the DB
+    const row = db
+      .prepare("SELECT seq FROM events WHERE seq = ?")
+      .get(persisted.seq) as { seq: number } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.seq).toBe(persisted.seq);
+  });
+
+  it("notifySubscribers fans out to subscribers without DB insert", () => {
+    const received: PersistedEvent[] = [];
+    bus.subscribe((event) => received.push(event));
+
+    const eventCountBefore = (
+      db.prepare("SELECT COUNT(*) as cnt FROM events").get() as { cnt: number }
+    ).cnt;
+
+    // Create a fake persisted event (not from DB)
+    const fakeEvent: PersistedEvent = {
+      type: "rig.created",
+      rigId: "rig-1",
+      seq: 9999,
+      createdAt: "2026-03-23T00:00:00",
+    };
+
+    bus.notifySubscribers(fakeEvent);
+
+    // Subscriber received it
+    expect(received).toHaveLength(1);
+    expect(received[0]!.seq).toBe(9999);
+
+    // No new DB row
+    const eventCountAfter = (
+      db.prepare("SELECT COUNT(*) as cnt FROM events").get() as { cnt: number }
+    ).cnt;
+    expect(eventCountAfter).toBe(eventCountBefore);
+  });
 });

@@ -290,6 +290,48 @@ describe("TmuxAdapter", () => {
     });
   });
 
+  describe("killSession", () => {
+    it("calls exec with exact quoted command", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.killSession("r01-dev1-impl");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux kill-session -t 'r01-dev1-impl'"
+      );
+    });
+
+    it("returns { ok: true } on success", async () => {
+      const adapter = new TmuxAdapter(mockExec({ "kill-session": { stdout: "" } }));
+      const result: TmuxResult = await adapter.killSession("r01-dev1-impl");
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("returns { ok: false, code: 'session_not_found' } on missing session", async () => {
+      const err = new Error("can't find session: r01-dev1-impl");
+      const adapter = new TmuxAdapter(mockExec({ "kill-session": { error: err } }));
+      const result = await adapter.killSession("r01-dev1-impl");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("session_not_found");
+      }
+    });
+
+    it("with shell-sensitive name: exact quoted command", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.killSession("r01-dev's session");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux kill-session -t 'r01-dev'\"'\"'s session'"
+      );
+    });
+  });
+
   describe("malformed output", () => {
     it("bad lines skipped, valid lines returned", async () => {
       const output = [

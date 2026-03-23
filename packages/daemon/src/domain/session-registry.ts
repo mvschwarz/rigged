@@ -129,6 +129,9 @@ export class SessionRegistry {
       nodeId: row.node_id,
       sessionName: row.session_name,
       status: row.status,
+      resumeType: row.resume_type ?? null,
+      resumeToken: row.resume_token ?? null,
+      restorePolicy: row.restore_policy ?? "resume_if_possible",
       lastSeenAt: row.last_seen_at,
       createdAt: row.created_at,
     };
@@ -155,6 +158,9 @@ interface SessionRow {
   node_id: string;
   session_name: string;
   status: string;
+  resume_type: string | null;
+  resume_token: string | null;
+  restore_policy: string | null;
   last_seen_at: string | null;
   created_at: string;
 }

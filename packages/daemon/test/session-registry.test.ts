@@ -4,11 +4,12 @@ import { createDb } from "../src/db/connection.js";
 import { migrate } from "../src/db/migrate.js";
 import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
+import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, resumeMetadataSchema]);
   return db;
 }
 
@@ -158,5 +159,27 @@ describe("SessionRegistry", () => {
       .prepare("SELECT * FROM bindings WHERE node_id = ?")
       .all("node-1");
     expect(rows).toHaveLength(1);
+  });
+
+  // -- P2-T02b: Resume metadata mapping --
+
+  it("registerSession returns session with default resume metadata", () => {
+    const session = registry.registerSession("node-1", "r01-dev1-impl");
+    expect(session.resumeType).toBeNull();
+    expect(session.resumeToken).toBeNull();
+    expect(session.restorePolicy).toBe("resume_if_possible");
+  });
+
+  it("getSessionsForRig returns populated resume metadata after update", () => {
+    const session = registry.registerSession("node-1", "r01-dev1-impl");
+    db.prepare(
+      "UPDATE sessions SET resume_type = ?, resume_token = ?, restore_policy = ? WHERE id = ?"
+    ).run("claude_name", "my-session", "checkpoint_only", session.id);
+
+    const sessions = registry.getSessionsForRig("rig-1");
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.resumeType).toBe("claude_name");
+    expect(sessions[0]!.resumeToken).toBe("my-session");
+    expect(sessions[0]!.restorePolicy).toBe("checkpoint_only");
   });
 });

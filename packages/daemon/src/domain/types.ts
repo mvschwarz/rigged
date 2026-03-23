@@ -41,6 +41,9 @@ export interface Session {
   nodeId: string;
   sessionName: string;
   status: string;
+  resumeType: string | null;
+  resumeToken: string | null;
+  restorePolicy: string;
   lastSeenAt: string | null;
   createdAt: string;
 }

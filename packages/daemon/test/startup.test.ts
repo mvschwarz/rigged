@@ -56,4 +56,39 @@ describe("createDaemon startup composition", () => {
 
     db.close();
   });
+
+  it("createDaemon accepts cmuxExec, connect() issues 'cmux capabilities --json' through it", async () => {
+    const cmuxExec = vi.fn<ExecFn>().mockRejectedValue(
+      Object.assign(new Error("command not found"), { code: "ENOENT" })
+    );
+    const tmuxExec: ExecFn = async () => "";
+
+    const { db } = await createDaemon({ cmuxExec, tmuxExec });
+
+    // The injected cmuxExec was called during startup connect()
+    // It should have been called with 'cmux capabilities --json' (via the transport factory)
+    expect(cmuxExec).toHaveBeenCalled();
+    const capCall = cmuxExec.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("cmux capabilities --json")
+    );
+    expect(capCall).toBeDefined();
+
+    db.close();
+  });
+
+  it("createDaemon with cmuxExec that throws -> still degrades cleanly", async () => {
+    const cmuxExec = vi.fn<ExecFn>().mockRejectedValue(
+      Object.assign(new Error("command not found"), { code: "ENOENT" })
+    );
+    const tmuxExec: ExecFn = async () => "";
+
+    const { app, db } = await createDaemon({ cmuxExec, tmuxExec });
+
+    const res = await app.request("/api/adapters/cmux/status");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.available).toBe(false);
+
+    db.close();
+  });
 });

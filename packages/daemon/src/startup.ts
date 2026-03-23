@@ -14,12 +14,13 @@ import { NodeLauncher } from "./domain/node-launcher.js";
 import { TmuxAdapter } from "./adapters/tmux.js";
 import { CmuxAdapter } from "./adapters/cmux.js";
 import { execCommand } from "./adapters/tmux-exec.js";
-import { createCmuxTransportFactory } from "./adapters/cmux-transport.js";
+import { createCmuxCliTransport } from "./adapters/cmux-transport.js";
 import { createApp, type AppDeps } from "./server.js";
 
 interface DaemonOptions {
   dbPath?: string;
   tmuxExec?: ExecFn;
+  cmuxExec?: ExecFn;
   cmuxFactory?: CmuxTransportFactory;
   cmuxTimeoutMs?: number;
 }
@@ -40,8 +41,11 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
   const eventBus = new EventBus(db);
 
   const tmuxAdapter = new TmuxAdapter(opts?.tmuxExec ?? execCommand);
+  // cmuxFactory takes precedence (for tests), then cmuxExec-based CLI transport, then default
+  const cmuxFactory = opts?.cmuxFactory
+    ?? createCmuxCliTransport(opts?.cmuxExec ?? execCommand);
   const cmuxAdapter = new CmuxAdapter(
-    opts?.cmuxFactory ?? createCmuxTransportFactory(),
+    cmuxFactory,
     { timeoutMs: opts?.cmuxTimeoutMs ?? 5000 }
   );
 

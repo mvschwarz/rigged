@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# All docs are internal except as-built
+docs/*
+!docs/as-built/
+
+# Local environment
+.env
+.env.local
+*.sqlite
+*.sqlite-journal

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface GraphData {
   nodes: unknown[];
@@ -7,18 +7,23 @@ interface GraphData {
 
 type FetchStatus = "idle" | "loading" | "success" | "error";
 
-interface UseRigGraphResult {
+export interface UseRigGraphResult {
   nodes: unknown[];
   edges: unknown[];
   loading: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
 export function useRigGraph(rigId: string | null): UseRigGraphResult {
   const [data, setData] = useState<GraphData | null>(null);
-  // Start as loading when rigId is present (avoids empty-state flash)
   const [status, setStatus] = useState<FetchStatus>(rigId ? "loading" : "idle");
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+
+  const refetch = useCallback(() => {
+    setRevision((r) => r + 1);
+  }, []);
 
   useEffect(() => {
     if (!rigId) {
@@ -53,12 +58,13 @@ export function useRigGraph(rigId: string | null): UseRigGraphResult {
     return () => {
       cancelled = true;
     };
-  }, [rigId]);
+  }, [rigId, revision]);
 
   return {
     nodes: data?.nodes ?? [],
     edges: data?.edges ?? [],
     loading: status === "loading",
     error,
+    refetch,
   };
 }

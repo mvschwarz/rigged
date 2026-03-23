@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { ReactFlow, MiniMap, Controls, type NodeTypes, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
+import { useRigEvents } from "../hooks/useRigEvents.js";
 import { RigNode } from "./RigNode.js";
 
 const nodeTypes: NodeTypes = {
@@ -9,7 +10,8 @@ const nodeTypes: NodeTypes = {
 };
 
 export function RigGraph({ rigId }: { rigId: string | null }) {
-  const { nodes, edges, loading, error } = useRigGraph(rigId);
+  const { nodes, edges, loading, error, refetch } = useRigGraph(rigId);
+  const { reconnecting } = useRigEvents(rigId, refetch);
 
   const rfNodes = useMemo(() => nodes as Node[], [nodes]);
   const rfEdges = useMemo(() => edges as Edge[], [edges]);
@@ -31,7 +33,12 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
   }
 
   return (
-    <div style={{ width: "100%", height: "100vh" }}>
+    <div style={{ width: "100%", height: "100vh", position: "relative" }}>
+      {reconnecting && (
+        <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, background: "#ffa500", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+          Reconnecting...
+        </div>
+      )}
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}

@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, act } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RigGraph } from "../src/components/RigGraph.js";
 import { RigNode } from "../src/components/RigNode.js";
+import { createMockEventSourceClass, instances } from "./helpers/mock-event-source.js";
+import type { MockEventSourceInstance } from "./helpers/mock-event-source.js";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
+
+let OriginalEventSource: typeof EventSource | undefined;
 
 function mockGraphResponse(nodes: object[] = [], edges: object[] = []) {
   return {
@@ -54,9 +58,14 @@ function sampleEdges() {
 
 beforeEach(() => {
   mockFetch.mockReset();
+  OriginalEventSource = globalThis.EventSource;
+  globalThis.EventSource = createMockEventSourceClass() as unknown as typeof EventSource;
 });
 
 afterEach(() => {
+  if (OriginalEventSource) {
+    globalThis.EventSource = OriginalEventSource;
+  }
   cleanup();
 });
 
@@ -193,5 +202,109 @@ describe("RigNode", () => {
     );
 
     expect(screen.getByText(/unbound/i)).toBeDefined();
+  });
+});
+
+describe("RigGraph SSE integration", () => {
+  it("SSE message triggers second fetch to /api/rigs/:id/graph", async () => {
+    mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
+
+    render(<RigGraph rigId="rig-1" />);
+
+    // Wait for initial fetch
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    // Fire SSE message
+    act(() => {
+      const es = instances[instances.length - 1]!;
+      es.simulateMessage('{"type":"node.added"}');
+    });
+
+    // Wait for debounced refetch
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[1]![0]).toBe("/api/rigs/rig-1/graph");
+    });
+  });
+
+  it("useRigGraph refetch triggered by SSE produces fresh data", async () => {
+    // First fetch: 1 node. Second fetch: 2 nodes.
+    mockFetch
+      .mockResolvedValueOnce(mockGraphResponse(
+        [sampleNodes()[0]!],
+        []
+      ))
+      .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
+
+    const { container } = render(<RigGraph rigId="rig-1" />);
+
+    // Wait for initial render with 1 node
+    await waitFor(() => {
+      const nodes = container.querySelectorAll("[data-testid^='rf__node-']");
+      expect(nodes.length).toBe(1);
+    });
+
+    // Fire SSE message to trigger refetch
+    act(() => {
+      const es = instances[instances.length - 1]!;
+      es.simulateMessage('{"type":"node.added"}');
+    });
+
+    // Wait for re-render with 2 nodes
+    await waitFor(() => {
+      const nodes = container.querySelectorAll("[data-testid^='rf__node-']");
+      expect(nodes.length).toBe(2);
+    });
+  });
+
+  it("reconnecting indicator visible on EventSource error", async () => {
+    mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
+
+    render(<RigGraph rigId="rig-1" />);
+
+    await waitFor(() => expect(instances.length).toBeGreaterThan(0));
+
+    act(() => {
+      instances[instances.length - 1]!.simulateError();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/reconnecting/i)).toBeDefined();
+    });
+  });
+
+  it("reconnect open event clears indicator and triggers refetch", async () => {
+    mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
+
+    render(<RigGraph rigId="rig-1" />);
+
+    await waitFor(() => expect(instances.length).toBeGreaterThan(0));
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+
+    // Error
+    act(() => {
+      instances[instances.length - 1]!.simulateError();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/reconnecting/i)).toBeDefined();
+    });
+
+    mockFetch.mockClear();
+    mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
+
+    // Reconnect (open event)
+    act(() => {
+      instances[instances.length - 1]!.simulateOpen();
+    });
+
+    await waitFor(() => {
+      // Indicator cleared
+      expect(screen.queryByText(/reconnecting/i)).toBeNull();
+      // Refetch triggered
+      expect(mockFetch).toHaveBeenCalled();
+    });
   });
 });

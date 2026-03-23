@@ -1,5 +1,9 @@
 export type ExecFn = (cmd: string) => Promise<string>;
 
+export type TmuxResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
 export interface TmuxSession {
   name: string;
   windows: number;
@@ -29,6 +33,25 @@ const PANE_FORMAT = "#{pane_id}\t#{pane_index}\t#{pane_current_path}\t#{pane_wid
 
 function isNoServerError(err: unknown): boolean {
   return err instanceof Error && err.message.includes("no server running");
+}
+
+function classifyWriteError(err: unknown): TmuxResult {
+  if (!(err instanceof Error)) {
+    return { ok: false, code: "unknown", message: String(err) };
+  }
+  if (err.message.includes("duplicate session")) {
+    return { ok: false, code: "duplicate_session", message: err.message };
+  }
+  if (err.message.includes("can't find session") || err.message.includes("no server running")) {
+    return { ok: false, code: "session_not_found", message: err.message };
+  }
+  return { ok: false, code: "unknown", message: err.message };
+}
+
+/** Shell-quote a string using single quotes (POSIX-safe). */
+function shellQuote(s: string): string {
+  // Replace each ' with '"'"' (end quote, double-quote the apostrophe, resume quote)
+  return "'" + s.replace(/'/g, "'\"'\"'") + "'";
 }
 
 function parseSessionLine(line: string): TmuxSession | null {
@@ -119,5 +142,36 @@ export class TmuxAdapter {
   async hasSession(name: string): Promise<boolean> {
     const sessions = await this.listSessions();
     return sessions.some((s) => s.name === name);
+  }
+
+  async createSession(name: string, cwd?: string): Promise<TmuxResult> {
+    const cwdFlag = cwd != null ? ` -c ${shellQuote(cwd)}` : "";
+    const cmd = `tmux new-session -d -s ${shellQuote(name)}${cwdFlag}`;
+    try {
+      await this.exec(cmd);
+      return { ok: true };
+    } catch (err) {
+      return classifyWriteError(err);
+    }
+  }
+
+  async sendText(target: string, text: string): Promise<TmuxResult> {
+    const cmd = `tmux send-keys -t ${shellQuote(target)} -l ${shellQuote(text)}`;
+    try {
+      await this.exec(cmd);
+      return { ok: true };
+    } catch (err) {
+      return classifyWriteError(err);
+    }
+  }
+
+  async sendKeys(target: string, keys: string[]): Promise<TmuxResult> {
+    const cmd = `tmux send-keys -t ${shellQuote(target)} ${keys.join(" ")}`;
+    try {
+      await this.exec(cmd);
+      return { ok: true };
+    } catch (err) {
+      return classifyWriteError(err);
+    }
   }
 }

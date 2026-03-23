@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { TmuxAdapter } from "../src/adapters/tmux.js";
-import type { ExecFn } from "../src/adapters/tmux.js";
+import type { ExecFn, TmuxResult } from "../src/adapters/tmux.js";
 
 const NO_SERVER_ERROR = new Error("no server running on /tmp/tmux-1000/default");
 
@@ -149,6 +149,144 @@ describe("TmuxAdapter", () => {
     it("returns false on 'no server running' error", async () => {
       const adapter = new TmuxAdapter(mockExec({ "list-sessions": { error: NO_SERVER_ERROR } }));
       expect(await adapter.hasSession("any-session")).toBe(false);
+    });
+  });
+
+  describe("createSession", () => {
+    it("calls exec with exact command (name + cwd, both quoted)", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.createSession("r01-dev1-impl", "/home/user/code");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux new-session -d -s 'r01-dev1-impl' -c '/home/user/code'"
+      );
+    });
+
+    it("with cwd containing spaces: path is quoted", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.createSession("r01-dev1-impl", "/home/user/my project/code");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux new-session -d -s 'r01-dev1-impl' -c '/home/user/my project/code'"
+      );
+    });
+
+    it("with shell-sensitive session name: name is quoted", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.createSession("r01-dev's session", "/tmp");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux new-session -d -s 'r01-dev'\"'\"'s session' -c '/tmp'"
+      );
+    });
+
+    it("without cwd omits -c flag", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.createSession("r01-dev1-impl");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux new-session -d -s 'r01-dev1-impl'"
+      );
+    });
+
+    it("returns { ok: true } on success", async () => {
+      const adapter = new TmuxAdapter(mockExec({ "new-session": { stdout: "" } }));
+      const result: TmuxResult = await adapter.createSession("r01-dev1-impl");
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("returns { ok: false, code: 'duplicate_session' } on duplicate", async () => {
+      const err = new Error("duplicate session: r01-dev1-impl");
+      const adapter = new TmuxAdapter(mockExec({ "new-session": { error: err } }));
+      const result = await adapter.createSession("r01-dev1-impl");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("duplicate_session");
+      }
+    });
+  });
+
+  describe("sendText", () => {
+    it("calls exec with exact command using -l flag (target quoted)", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.sendText("r01-dev1-impl", "hello world");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux send-keys -t 'r01-dev1-impl' -l 'hello world'"
+      );
+    });
+
+    it("with shell-sensitive content is properly quoted", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.sendText("r01-dev1-impl", "echo \"hello\" && $HOME's dir");
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux send-keys -t 'r01-dev1-impl' -l 'echo \"hello\" && $HOME'\"'\"'s dir'"
+      );
+    });
+
+    it("returns { ok: true } on success", async () => {
+      const adapter = new TmuxAdapter(mockExec({ "send-keys": { stdout: "" } }));
+      const result: TmuxResult = await adapter.sendText("r01-dev1-impl", "test");
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("returns { ok: false, code: 'session_not_found' } on missing target", async () => {
+      const err = new Error("can't find session: r01-dev1-impl");
+      const adapter = new TmuxAdapter(mockExec({ "send-keys": { error: err } }));
+      const result = await adapter.sendText("r01-dev1-impl", "test");
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("session_not_found");
+      }
+    });
+  });
+
+  describe("sendKeys", () => {
+    it("calls exec with exact command (target quoted, key names as separate args)", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      await adapter.sendKeys("r01-dev1-impl", ["C-c", "Enter"]);
+
+      expect(exec).toHaveBeenCalledOnce();
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux send-keys -t 'r01-dev1-impl' C-c Enter"
+      );
+    });
+
+    it("returns { ok: true } on success", async () => {
+      const adapter = new TmuxAdapter(mockExec({ "send-keys": { stdout: "" } }));
+      const result: TmuxResult = await adapter.sendKeys("r01-dev1-impl", ["Enter"]);
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("returns { ok: false, code: 'session_not_found' } on missing target", async () => {
+      const err = new Error("can't find session: r01-dev1-impl");
+      const adapter = new TmuxAdapter(mockExec({ "send-keys": { error: err } }));
+      const result = await adapter.sendKeys("r01-dev1-impl", ["Enter"]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("session_not_found");
+      }
     });
   });
 

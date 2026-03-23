@@ -102,7 +102,7 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
   }
 
   return (
-    <div style={{ width: "100%", height: "100vh", position: "relative" }}>
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
       {reconnecting && (
         <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, background: "#ffa500", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
           Reconnecting...

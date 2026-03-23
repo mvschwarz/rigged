@@ -5,6 +5,7 @@ import { App } from "../src/App.js";
 describe("App", () => {
   it("renders without crash", () => {
     render(<App />);
-    expect(screen.getByText("Rigged")).toBeDefined();
+    // App renders RigGraph with rigId=null -> "No rig selected"
+    expect(screen.getByText(/no rig selected/i)).toBeDefined();
   });
 });

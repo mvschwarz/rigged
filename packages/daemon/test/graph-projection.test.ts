@@ -81,6 +81,17 @@ describe("projectRigToGraph", () => {
     expect(result.edges).toEqual([]);
   });
 
+  it("all nodes have type: 'rigNode'", () => {
+    const input = makeRig([
+      { id: "n1", logicalId: "a" },
+      { id: "n2", logicalId: "b" },
+    ]);
+    const result = projectRigToGraph(input);
+    for (const node of result.nodes) {
+      expect(node.type).toBe("rigNode");
+    }
+  });
+
   it("deterministic layout: 3-node rig has exact positions", () => {
     const input = makeRig([
       { id: "n1", logicalId: "a" },

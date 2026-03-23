@@ -15,6 +15,7 @@ interface RFNodeData {
 
 interface RFNode {
   id: string;
+  type: string;
   position: { x: number; y: number };
   data: RFNodeData;
 }
@@ -48,6 +49,7 @@ export function projectRigToGraph(input: RigGraphInput): ReactFlowGraph {
 
     return {
       id: node.id,
+      type: "rigNode",
       position: { x: 0, y: index * VERTICAL_SPACING },
       data: {
         logicalId: node.logicalId,

@@ -10,12 +10,13 @@
     "dev": "vite"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.3.0",
     "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.3.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.0",

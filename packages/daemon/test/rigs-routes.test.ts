@@ -142,6 +142,15 @@ describe("Rig CRUD routes", () => {
     expect(nodeData.data.binding).toBeNull();
   });
 
+  it("GET /api/rigs/:id/graph -> nodes have type: 'rigNode'", async () => {
+    const rig = repo.createRig("r01");
+    repo.addNode(rig.id, "worker");
+
+    const res = await app.request(`/api/rigs/${rig.id}/graph`);
+    const body = await res.json();
+    expect(body.nodes[0].type).toBe("rigNode");
+  });
+
   it("GET /api/rigs/:id/graph -> RF identity: node.id = opaque PK, edge uses PKs", async () => {
     const rig = repo.createRig("r01");
     const n1 = repo.addNode(rig.id, "a");

@@ -182,4 +182,24 @@ describe("SessionRegistry", () => {
     expect(sessions[0]!.resumeToken).toBe("my-session");
     expect(sessions[0]!.restorePolicy).toBe("checkpoint_only");
   });
+
+  // -- P2-T07: Stale-state repair methods --
+
+  it("clearBinding removes binding row for node", () => {
+    registry.updateBinding("node-1", { tmuxSession: "r01-dev1-impl" });
+    expect(registry.getBindingForNode("node-1")).not.toBeNull();
+
+    registry.clearBinding("node-1");
+    expect(registry.getBindingForNode("node-1")).toBeNull();
+  });
+
+  it("markSuperseded sets session status to 'superseded'", () => {
+    const session = registry.registerSession("node-1", "r01-dev1-impl");
+    registry.updateStatus(session.id, "running");
+
+    registry.markSuperseded(session.id);
+
+    const sessions = registry.getSessionsForRig("rig-1");
+    expect(sessions[0]!.status).toBe("superseded");
+  });
 });

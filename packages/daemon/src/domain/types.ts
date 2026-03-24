@@ -121,3 +121,9 @@ export interface RestoreNodeResult {
   status: "resumed" | "fresh_with_checkpoint" | "fresh_no_checkpoint" | "failed";
   error?: string;
 }
+
+export type RestoreOutcome =
+  | { ok: true; result: RestoreResult }
+  | { ok: false; code: "snapshot_not_found"; message: string }
+  | { ok: false; code: "rig_not_found"; message: string }
+  | { ok: false; code: "restore_error"; message: string };

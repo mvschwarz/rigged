@@ -46,6 +46,14 @@ export class SessionRegistry {
     this.updateStatus(sessionId, "detached");
   }
 
+  markSuperseded(sessionId: string): void {
+    this.updateStatus(sessionId, "superseded");
+  }
+
+  clearBinding(nodeId: string): void {
+    this.db.prepare("DELETE FROM bindings WHERE node_id = ?").run(nodeId);
+  }
+
   getSessionsForRig(rigId: string): Session[] {
     const rows = this.db
       .prepare(

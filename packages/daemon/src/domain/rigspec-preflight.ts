@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import type Database from "better-sqlite3";
 import type { RigRepository } from "./rig-repository.js";
 import type { TmuxAdapter } from "../adapters/tmux.js";
 import type { ExecFn } from "../adapters/tmux.js";
@@ -18,12 +19,14 @@ interface RigSpecPreflightDeps {
 }
 
 export class RigSpecPreflight {
+  readonly db: Database.Database;
   private rigRepo: RigRepository;
   private tmuxAdapter: TmuxAdapter;
   private exec: ExecFn;
   private cmuxExec: ExecFn;
 
   constructor(deps: RigSpecPreflightDeps) {
+    this.db = deps.rigRepo.db;
     this.rigRepo = deps.rigRepo;
     this.tmuxAdapter = deps.tmuxAdapter;
     this.exec = deps.exec;

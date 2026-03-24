@@ -65,7 +65,8 @@ export type RigEvent =
   | { type: "node.launched"; rigId: string; nodeId: string; sessionName: string }
   | { type: "snapshot.created"; rigId: string; snapshotId: string; kind: string }
   | { type: "restore.started"; rigId: string; snapshotId: string }
-  | { type: "restore.completed"; rigId: string; snapshotId: string; result: RestoreResult };
+  | { type: "restore.completed"; rigId: string; snapshotId: string; result: RestoreResult }
+  | { type: "rig.imported"; rigId: string; specName: string; specVersion: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;
@@ -170,4 +171,17 @@ export interface PreflightResult {
   ready: boolean;
   warnings: string[];
   errors: string[];
+}
+
+export type InstantiateOutcome =
+  | { ok: true; result: InstantiateResult }
+  | { ok: false; code: "validation_failed"; errors: string[] }
+  | { ok: false; code: "preflight_failed"; errors: string[]; warnings: string[] }
+  | { ok: false; code: "instantiate_error"; message: string };
+
+export interface InstantiateResult {
+  rigId: string;
+  specName: string;
+  specVersion: string;
+  nodes: { logicalId: string; status: "launched" | "failed"; error?: string }[];
 }

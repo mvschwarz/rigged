@@ -8,6 +8,7 @@ import { eventsSchema } from "../../src/db/migrations/003_events.js";
 import { snapshotsSchema } from "../../src/db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "../../src/db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "../../src/db/migrations/006_resume_metadata.js";
+import { nodeSpecFieldsSchema } from "../../src/db/migrations/007_node_spec_fields.js";
 import { RigRepository } from "../../src/domain/rig-repository.js";
 import { SessionRegistry } from "../../src/domain/session-registry.js";
 import { EventBus } from "../../src/domain/event-bus.js";
@@ -25,7 +26,7 @@ import { createApp } from "../../src/server.js";
 
 export function createFullTestDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema]);
   return db;
 }
 

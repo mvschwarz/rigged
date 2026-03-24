@@ -26,6 +26,7 @@ import { createApp, type AppDeps } from "./server.js";
 import { snapshotsSchema } from "./db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "./db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "./db/migrations/006_resume_metadata.js";
+import { nodeSpecFieldsSchema } from "./db/migrations/007_node_spec_fields.js";
 
 interface DaemonOptions {
   dbPath?: string;
@@ -44,7 +45,7 @@ interface DaemonResult {
 export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> {
   const dbPath = opts?.dbPath ?? ":memory:";
   const db = createDb(dbPath);
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema]);
 
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);

@@ -4,11 +4,12 @@ import { createDb } from "../src/db/connection.js";
 import { migrate } from "../src/db/migrate.js";
 import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
+import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, nodeSpecFieldsSchema]);
   return db;
 }
 
@@ -137,5 +138,62 @@ describe("RigRepository", () => {
 
     expect(repo.getRig(rig.id)).toBeNull();
     expect(repo.listRigs()).toHaveLength(0);
+  });
+
+  // -- P3-T00: Extended node fields --
+
+  it("addNode persists extended fields", () => {
+    const rig = repo.createRig("test-rig");
+    const node = repo.addNode(rig.id, "worker", {
+      role: "worker",
+      runtime: "claude-code",
+      surfaceHint: "tab:workers",
+      workspace: "review",
+      restorePolicy: "checkpoint_only",
+      packageRefs: ["github:example/pkg@v1", "local:./my-pkg"],
+    });
+
+    expect(node.surfaceHint).toBe("tab:workers");
+    expect(node.workspace).toBe("review");
+    expect(node.restorePolicy).toBe("checkpoint_only");
+    expect(node.packageRefs).toEqual(["github:example/pkg@v1", "local:./my-pkg"]);
+  });
+
+  it("getRig returns nodes with extended fields (parsed packageRefs)", () => {
+    const rig = repo.createRig("test-rig");
+    repo.addNode(rig.id, "worker", {
+      surfaceHint: "tab:main",
+      packageRefs: ["pkg-a", "pkg-b"],
+    });
+
+    const full = repo.getRig(rig.id);
+    const node = full!.nodes[0]!;
+    expect(node.surfaceHint).toBe("tab:main");
+    expect(node.packageRefs).toEqual(["pkg-a", "pkg-b"]);
+    expect(Array.isArray(node.packageRefs)).toBe(true);
+  });
+
+  it("addNode with no extended fields: surfaceHint=null, workspace=null, restorePolicy=null, packageRefs=[]", () => {
+    const rig = repo.createRig("test-rig");
+    const node = repo.addNode(rig.id, "worker");
+
+    expect(node.surfaceHint).toBeNull();
+    expect(node.workspace).toBeNull();
+    expect(node.restorePolicy).toBeNull();
+    expect(node.packageRefs).toEqual([]);
+  });
+});
+
+describe("Wiring regression", () => {
+  it("createFullTestDb schema includes 007 columns", async () => {
+    const { createFullTestDb } = await import("./helpers/test-app.js");
+    const db = createFullTestDb();
+    const cols = db.prepare("PRAGMA table_info(nodes)").all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).toContain("surface_hint");
+    expect(names).toContain("workspace");
+    expect(names).toContain("restore_policy");
+    expect(names).toContain("package_refs");
+    db.close();
   });
 });

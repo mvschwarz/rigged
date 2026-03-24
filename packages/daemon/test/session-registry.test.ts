@@ -5,11 +5,12 @@ import { migrate } from "../src/db/migrate.js";
 import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
+import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, resumeMetadataSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, resumeMetadataSchema, nodeSpecFieldsSchema]);
   return db;
 }
 

@@ -8,6 +8,7 @@ import { migrate } from "../src/db/migrate.js";
 import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
 import { eventsSchema } from "../src/db/migrations/003_events.js";
+import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import type { CmuxTransportFactory } from "../src/adapters/cmux.js";
@@ -15,7 +16,7 @@ import type { ExecFn } from "../src/adapters/tmux.js";
 
 function seedDbWithStaleSessions(dbPath: string, rigs: { rigName: string; logicalId: string; sessionName: string }[]) {
   const db = createDb(dbPath);
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, nodeSpecFieldsSchema]);
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);
 

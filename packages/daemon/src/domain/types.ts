@@ -13,6 +13,10 @@ export interface Node {
   runtime: string | null;
   model: string | null;
   cwd: string | null;
+  surfaceHint: string | null;
+  workspace: string | null;
+  restorePolicy: string | null;
+  packageRefs: string[];
   createdAt: string;
 }
 

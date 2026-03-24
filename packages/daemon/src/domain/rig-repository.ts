@@ -14,6 +14,10 @@ interface NodeOptions {
   runtime?: string;
   model?: string;
   cwd?: string;
+  surfaceHint?: string;
+  workspace?: string;
+  restorePolicy?: string;
+  packageRefs?: string[];
 }
 
 export class RigRepository {
@@ -37,7 +41,7 @@ export class RigRepository {
     const id = ulid();
     this.db
       .prepare(
-        "INSERT INTO nodes (id, rig_id, logical_id, role, runtime, model, cwd) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO nodes (id, rig_id, logical_id, role, runtime, model, cwd, surface_hint, workspace, restore_policy, package_refs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         id,
@@ -46,7 +50,11 @@ export class RigRepository {
         opts?.role ?? null,
         opts?.runtime ?? null,
         opts?.model ?? null,
-        opts?.cwd ?? null
+        opts?.cwd ?? null,
+        opts?.surfaceHint ?? null,
+        opts?.workspace ?? null,
+        opts?.restorePolicy ?? null,
+        opts?.packageRefs ? JSON.stringify(opts.packageRefs) : null
       );
 
     return this.rowToNode(
@@ -131,6 +139,10 @@ export class RigRepository {
       runtime: row.runtime,
       model: row.model,
       cwd: row.cwd,
+      surfaceHint: row.surface_hint ?? null,
+      workspace: row.workspace ?? null,
+      restorePolicy: row.restore_policy ?? null,
+      packageRefs: row.package_refs ? JSON.parse(row.package_refs) as string[] : [],
       createdAt: row.created_at,
     };
   }
@@ -177,6 +189,10 @@ interface NodeRow {
   runtime: string | null;
   model: string | null;
   cwd: string | null;
+  surface_hint: string | null;
+  workspace: string | null;
+  restore_policy: string | null;
+  package_refs: string | null;
   created_at: string;
 }
 

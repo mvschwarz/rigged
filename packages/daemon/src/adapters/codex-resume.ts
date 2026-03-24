@@ -1,5 +1,6 @@
 import type { TmuxAdapter } from "./tmux.js";
 import type { ResumeResult } from "./claude-resume.js";
+import { shellQuote } from "./shell-quote.js";
 
 const CODEX_TYPES = new Set(["codex_id", "codex_last"]);
 
@@ -29,7 +30,8 @@ export class CodexResumeAdapter {
 
     const cmd = resumeType === "codex_last"
       ? "codex resume --last"
-      : `codex resume ${resumeToken}`;
+      : `codex resume ${shellQuote(resumeToken!)}`;
+
 
     const textResult = await this.tmux.sendText(tmuxSessionName, cmd);
     if (!textResult.ok) {

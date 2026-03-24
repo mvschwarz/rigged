@@ -1,4 +1,5 @@
 import type { TmuxAdapter } from "./tmux.js";
+import { shellQuote } from "./shell-quote.js";
 
 export type ResumeResult =
   | { ok: true }
@@ -25,7 +26,8 @@ export class ClaudeResumeAdapter {
       return { ok: false, code: "no_resume", message: "Claude resume not available" };
     }
 
-    const cmd = `claude --resume ${resumeToken}`;
+    const cmd = `claude --resume ${shellQuote(resumeToken!)}`;
+
 
     const textResult = await this.tmux.sendText(tmuxSessionName, cmd);
     if (!textResult.ok) {

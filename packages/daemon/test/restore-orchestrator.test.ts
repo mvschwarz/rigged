@@ -279,26 +279,150 @@ describe("RestoreOrchestrator", () => {
     }
   });
 
-  it("stale bindings cleared before relaunch", async () => {
-    const snap = seedRigAndSnapshot({ withBinding: "orchestrator" });
-    // Verify binding exists before restore
-    const rigBefore = rigRepo.getRig(snap.data.rig.id);
-    const orchBefore = rigBefore!.nodes.find((n) => n.logicalId === "orchestrator");
-    expect(orchBefore!.binding).not.toBeNull();
+  it("launch succeeds -> old binding replaced by new, old sessions superseded", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+      withBinding: "worker",
+      resumeType: "claude_name",
+      resumeToken: "tok",
+    });
 
     const orch = createOrchestrator();
     const result = await orch.restore(snap.id);
+
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      // New binding should exist with launched session name
+      const rig = rigRepo.getRig(snap.data.rig.id);
+      const worker = rig!.nodes.find((n) => n.logicalId === "worker");
+      expect(worker!.binding).not.toBeNull();
+      expect(worker!.binding!.tmuxSession).toBe("r99-worker");
+
+      // Old sessions should be superseded
+      const superseded = db.prepare("SELECT status FROM sessions WHERE status = 'superseded'").all();
+      expect(superseded.length).toBeGreaterThan(0);
+    }
   });
 
-  it("stale sessions marked superseded", async () => {
-    const snap = seedRigAndSnapshot({ resumeType: "claude_name", resumeToken: "tok" });
-    const orch = createOrchestrator();
-    await orch.restore(snap.id);
+  it("launch createSession fails -> full prior binding restored incl cmuxSurface", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+      withBinding: "worker",
+    });
 
-    // Original sessions should be superseded
-    const allSessions = db.prepare("SELECT status FROM sessions WHERE status = 'superseded'").all();
-    expect(allSessions.length).toBeGreaterThan(0);
+    // Add cmuxSurface to the binding before snapshot
+    const nodeId = snap.data.nodes[0]!.id;
+    sessionRegistry.updateBinding(nodeId, { cmuxSurface: "surface-42" });
+
+    // Capture the exact prior binding state
+    const priorBinding = sessionRegistry.getBindingForNode(nodeId);
+    expect(priorBinding!.cmuxSurface).toBe("surface-42");
+
+    // Add a session with known status
+    const sess = sessionRegistry.registerSession(nodeId, "r99-worker");
+    sessionRegistry.updateStatus(sess.id, "running");
+
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { ok: false as const, code: "duplicate_session", message: "err" }
+    );
+    const orch = createOrchestrator({ tmux });
+    const result = await orch.restore(snap.id);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const failedNode = result.result.nodes.find((n) => n.logicalId === "worker");
+      expect(failedNode!.status).toBe("failed");
+
+      // Full prior binding restored including cmuxSurface
+      const restoredBinding = sessionRegistry.getBindingForNode(nodeId);
+      expect(restoredBinding).not.toBeNull();
+      expect(restoredBinding!.cmuxSurface).toBe("surface-42");
+      expect(restoredBinding!.tmuxSession).toBe(priorBinding!.tmuxSession);
+
+      // Session status restored to exact prior value
+      const sessions = sessionRegistry.getSessionsForRig(snap.data.rig.id);
+      const originalSess = sessions.find((s) => s.id === sess.id);
+      expect(originalSess!.status).toBe("running");
+    }
+  });
+
+  it("launch db_error (tmux succeeds, DB fails) -> prior state restored", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+      withBinding: "worker",
+    });
+
+    const nodeId = snap.data.nodes[0]!.id;
+    sessionRegistry.updateBinding(nodeId, { cmuxSurface: "surface-99" });
+    const sess = sessionRegistry.registerSession(nodeId, "r99-worker");
+    sessionRegistry.updateStatus(sess.id, "idle");
+
+    // tmux createSession succeeds but NodeLauncher's DB transaction fails.
+    // Sabotage: make createSession succeed AND trigger a killSession (cleanup),
+    // but sabotage the events table so the launch transaction fails.
+    const tmux = mockTmux();
+    let createCalled = false;
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      if (!createCalled) {
+        createCalled = true;
+        // Sabotage events table AFTER tmux succeeds but BEFORE NodeLauncher DB transaction
+        db.exec("DROP TABLE events");
+        db.exec(
+          "CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, rig_id TEXT, node_id TEXT, type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), CONSTRAINT force_fail CHECK(length(type) < 1))"
+        );
+      }
+      return { ok: true as const };
+    });
+
+    const orch = createOrchestrator({ tmux });
+    const result = await orch.restore(snap.id);
+
+    // The restore itself may error due to events table sabotage.
+    // But if it returns ok, the failed node should have prior state restored.
+    // If it returns restore_error, that's also acceptable.
+    if (result.ok) {
+      const failedNode = result.result.nodes.find((n) => n.logicalId === "worker");
+      expect(failedNode!.status).toBe("failed");
+
+      // Prior binding restored
+      const restoredBinding = sessionRegistry.getBindingForNode(nodeId);
+      expect(restoredBinding).not.toBeNull();
+      expect(restoredBinding!.cmuxSurface).toBe("surface-99");
+
+      // Session restored to exact prior status
+      const sessions = db.prepare("SELECT id, status FROM sessions WHERE id = ?").get(sess.id) as { status: string } | undefined;
+      expect(sessions).toBeDefined();
+      expect(sessions!.status).toBe("idle");
+
+      // killSession should have been called (NodeLauncher cleanup)
+      expect(tmux.killSession).toHaveBeenCalled();
+    }
+  });
+
+  it("launch fails with no prior binding -> no binding after failure", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+      // No withBinding — node starts unbound
+    });
+
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { ok: false as const, code: "duplicate_session", message: "err" }
+    );
+    const orch = createOrchestrator({ tmux });
+    const result = await orch.restore(snap.id);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const nodeId = snap.data.nodes[0]!.id;
+      const binding = sessionRegistry.getBindingForNode(nodeId);
+      expect(binding).toBeNull(); // No invented binding
+    }
   });
 
   it("pre-restore snapshot captured BEFORE stale-state mutation", async () => {

@@ -52,7 +52,7 @@ describe("CodexResumeAdapter", () => {
 
       expect(sendText).toHaveBeenCalledOnce();
       expect(sendText.mock.calls[0]![0]).toBe("r99-demo1-impl");
-      expect(sendText.mock.calls[0]![1]).toBe("codex resume uuid-123");
+      expect(sendText.mock.calls[0]![1]).toBe("codex resume 'uuid-123'");
       expect(sendKeys).toHaveBeenCalledOnce();
       expect(sendKeys.mock.calls[0]![1]).toEqual(["Enter"]);
       expect(sendText.mock.invocationCallOrder[0]).toBeLessThan(sendKeys.mock.invocationCallOrder[0]!);
@@ -97,6 +97,16 @@ describe("CodexResumeAdapter", () => {
       const result = await adapter.resume("r99-demo1-impl", "codex_id", null, "/repo");
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe("no_resume");
+    });
+
+    it("shell-sensitive token is quoted in command", async () => {
+      const sendText = vi.fn(async () => ({ ok: true as const }));
+      const sendKeys = vi.fn(async () => ({ ok: true as const }));
+      const adapter = new CodexResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      await adapter.resume("r99-demo1-impl", "codex_id", "uuid; rm -rf /", "/repo");
+
+      expect(sendText.mock.calls[0]![1]).toBe("codex resume 'uuid; rm -rf /'");
     });
   });
 });

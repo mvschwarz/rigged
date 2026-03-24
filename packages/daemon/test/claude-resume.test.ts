@@ -57,7 +57,7 @@ describe("ClaudeResumeAdapter", () => {
 
       expect(sendText).toHaveBeenCalledOnce();
       expect(sendText.mock.calls[0]![0]).toBe("r99-demo1-lead");
-      expect(sendText.mock.calls[0]![1]).toBe("claude --resume my-session");
+      expect(sendText.mock.calls[0]![1]).toBe("claude --resume 'my-session'");
       expect(sendKeys).toHaveBeenCalledOnce();
       expect(sendKeys.mock.calls[0]![0]).toBe("r99-demo1-lead");
       expect(sendKeys.mock.calls[0]![1]).toEqual(["Enter"]);
@@ -91,6 +91,16 @@ describe("ClaudeResumeAdapter", () => {
       const result = await adapter.resume("r99-demo1-lead", "claude_name", null, "/repo");
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe("no_resume");
+    });
+
+    it("shell-sensitive token is quoted in command", async () => {
+      const sendText = vi.fn(async () => ({ ok: true as const }));
+      const sendKeys = vi.fn(async () => ({ ok: true as const }));
+      const adapter = new ClaudeResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      await adapter.resume("r99-demo1-lead", "claude_name", "tok; rm -rf /", "/repo");
+
+      expect(sendText.mock.calls[0]![1]).toBe("claude --resume 'tok; rm -rf /'");
     });
   });
 });

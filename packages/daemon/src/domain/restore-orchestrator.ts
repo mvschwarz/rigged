@@ -104,18 +104,13 @@ export class RestoreOrchestrator {
       // 3. Emit restore.started
       this.eventBus.emit({ type: "restore.started", rigId, snapshotId });
 
-      // 4. Clear stale state for each node
-      for (const node of snapshot.data.nodes) {
-        this.clearStaleState(node.id, rigId);
-      }
-
-      // 5. Compute restore plan
+      // 4. Compute restore plan
       const plan = this.computeRestorePlan(snapshot.data);
 
-      // 6. Execute restore
+      // 5. Execute restore with compensating pattern per node
       const nodeResults: RestoreNodeResult[] = [];
       for (const entry of plan) {
-        const result = await this.restoreNode(entry, rigId, snapshot.data);
+        const result = await this.restoreNodeWithCompensation(entry, rigId, snapshot.data);
         nodeResults.push(result);
       }
 
@@ -138,16 +133,38 @@ export class RestoreOrchestrator {
     }
   }
 
-  private clearStaleState(nodeId: string, rigId: string): void {
-    // Clear binding so NodeLauncher doesn't see already_bound
-    this.sessionRegistry.clearBinding(nodeId);
+  private captureNodeState(nodeId: string, rigId: string): { binding: import("./types.js").Binding | null; sessions: { id: string; status: string }[] } {
+    const binding = this.sessionRegistry.getBindingForNode(nodeId);
+    const sessions = this.sessionRegistry.getSessionsForRig(rigId)
+      .filter((s) => s.nodeId === nodeId && s.status !== "superseded" && s.status !== "exited")
+      .map((s) => ({ id: s.id, status: s.status }));
+    return { binding, sessions };
+  }
 
-    // Mark existing sessions as superseded
+  private clearStaleState(nodeId: string, rigId: string): void {
+    this.sessionRegistry.clearBinding(nodeId);
     const sessions = this.sessionRegistry.getSessionsForRig(rigId);
     for (const sess of sessions) {
       if (sess.nodeId === nodeId && sess.status !== "superseded" && sess.status !== "exited") {
         this.sessionRegistry.markSuperseded(sess.id);
       }
+    }
+  }
+
+  private restoreNodeState(nodeId: string, priorState: { binding: import("./types.js").Binding | null; sessions: { id: string; status: string }[] }): void {
+    // Restore prior binding
+    if (priorState.binding) {
+      this.sessionRegistry.updateBinding(nodeId, {
+        tmuxSession: priorState.binding.tmuxSession ?? undefined,
+        tmuxWindow: priorState.binding.tmuxWindow ?? undefined,
+        tmuxPane: priorState.binding.tmuxPane ?? undefined,
+        cmuxWorkspace: priorState.binding.cmuxWorkspace ?? undefined,
+        cmuxSurface: priorState.binding.cmuxSurface ?? undefined,
+      });
+    }
+    // Restore prior session statuses
+    for (const sess of priorState.sessions) {
+      this.sessionRegistry.updateStatus(sess.id, sess.status);
     }
   }
 
@@ -232,27 +249,47 @@ export class RestoreOrchestrator {
     }));
   }
 
-  private async restoreNode(
+  private async restoreNodeWithCompensation(
     entry: PlanEntry,
     rigId: string,
     data: SnapshotData
   ): Promise<RestoreNodeResult> {
     const node = entry.node;
-    const session = data.sessions.find((s) => s.nodeId === node.id) ?? null;
-    const checkpoint = data.checkpoints[node.id] ?? null;
+    const nodeId = node.id;
 
-    // Launch tmux session via NodeLauncher
+    // Capture prior state for compensation
+    const priorState = this.captureNodeState(nodeId, rigId);
+
+    // Clear stale state so NodeLauncher doesn't see already_bound
+    this.clearStaleState(nodeId, rigId);
+
+    // Attempt launch — compensate ONLY if launch itself fails
     const launchResult = await this.nodeLauncher.launchNode(rigId, node.logicalId);
     if (!launchResult.ok) {
+      // Launch failed — restore prior state (compensating action)
+      this.restoreNodeState(nodeId, priorState);
       return {
-        nodeId: node.id,
+        nodeId,
         logicalId: node.logicalId,
         status: "failed",
         error: launchResult.message,
       };
     }
 
-    const sessionName = launchResult.sessionName;
+    // Launch succeeded — do NOT compensate on post-launch failures
+    // (the new session/binding are now the current state)
+    return this.postLaunchRestore(entry, rigId, data, launchResult.sessionName);
+  }
+
+  private async postLaunchRestore(
+    entry: PlanEntry,
+    rigId: string,
+    data: SnapshotData,
+    sessionName: string
+  ): Promise<RestoreNodeResult> {
+    const node = entry.node;
+    const session = data.sessions.find((s) => s.nodeId === node.id) ?? null;
+    const checkpoint = data.checkpoints[node.id] ?? null;
 
     // Check restore policy
     const restorePolicy = session?.restorePolicy ?? "resume_if_possible";

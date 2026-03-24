@@ -725,4 +725,84 @@ describe("RestoreOrchestrator", () => {
       expect(preSnap!.kind).toBe("pre_restore");
     }
   });
+
+  // -- Fix 4: Concurrency protection --
+
+  it("concurrent restore same rig -> second returns restore_in_progress", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+    });
+
+    // Make tmux createSession slow so first restore is still in progress
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true as const }), 100))
+    );
+    const orch = createOrchestrator({ tmux });
+
+    // Start two restores concurrently
+    const [r1, r2] = await Promise.all([
+      orch.restore(snap.id),
+      orch.restore(snap.id),
+    ]);
+
+    // One succeeds, one is blocked
+    const outcomes = [r1, r2];
+    const succeeded = outcomes.filter((r) => r.ok);
+    const blocked = outcomes.filter((r) => !r.ok && r.code === "restore_in_progress");
+    expect(succeeded).toHaveLength(1);
+    expect(blocked).toHaveLength(1);
+  });
+
+  it("lock released on failure: first restore errors, second restore allowed", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      edges: [],
+    });
+
+    // First restore: sabotage to cause restore_error
+    const tmux1 = mockTmux();
+    const orch = createOrchestrator({ tmux: tmux1 });
+
+    // Sabotage snapshots so pre-restore capture fails
+    db.exec("CREATE TRIGGER block_snap BEFORE INSERT ON snapshots BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+    const r1 = await orch.restore(snap.id);
+    expect(r1.ok).toBe(false);
+    db.exec("DROP TRIGGER block_snap");
+
+    // Second restore should be allowed (lock released after failure)
+    const r2 = await orch.restore(snap.id);
+    // Should not be restore_in_progress
+    if (!r2.ok) {
+      expect(r2.code).not.toBe("restore_in_progress");
+    }
+  });
+
+  it("different rigs can restore concurrently", async () => {
+    // Seed two separate rigs with snapshots
+    const rig1 = rigRepo.createRig("r98");
+    rigRepo.addNode(rig1.id, "worker", { role: "worker", runtime: "claude-code" });
+    const snap1 = snapshotCapture.captureSnapshot(rig1.id, "manual");
+
+    const rig2 = rigRepo.createRig("r97");
+    rigRepo.addNode(rig2.id, "worker", { role: "worker", runtime: "claude-code" });
+    const snap2 = snapshotCapture.captureSnapshot(rig2.id, "manual");
+
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true as const }), 50))
+    );
+    const orch = createOrchestrator({ tmux });
+
+    // Both should succeed (not blocked by each other)
+    const [r1, r2] = await Promise.all([
+      orch.restore(snap1.id),
+      orch.restore(snap2.id),
+    ]);
+
+    // Neither should be restore_in_progress
+    if (!r1.ok) expect(r1.code).not.toBe("restore_in_progress");
+    if (!r2.ok) expect(r2.code).not.toBe("restore_in_progress");
+  });
 });

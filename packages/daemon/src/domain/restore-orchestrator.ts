@@ -41,6 +41,7 @@ interface RestoreOrchestratorDeps {
 
 export class RestoreOrchestrator {
   readonly db: Database.Database;
+  private activeRestores = new Set<string>();
   private rigRepo: RigRepository;
   private sessionRegistry: SessionRegistry;
   private eventBus: EventBus;
@@ -99,6 +100,12 @@ export class RestoreOrchestrator {
       return { ok: false, code: "rig_not_found", message: `Rig ${rigId} not found` };
     }
 
+    // Per-rig concurrency lock
+    if (this.activeRestores.has(rigId)) {
+      return { ok: false, code: "restore_in_progress", message: `Restore already in progress for rig ${rigId}` };
+    }
+    this.activeRestores.add(rigId);
+
     try {
       // 2. Capture pre-restore snapshot BEFORE any mutations
       const preRestoreSnapshot = this.snapshotCapture.captureSnapshot(rigId, "pre_restore");
@@ -132,6 +139,8 @@ export class RestoreOrchestrator {
         code: "restore_error",
         message: err instanceof Error ? err.message : String(err),
       };
+    } finally {
+      this.activeRestores.delete(rigId);
     }
   }
 

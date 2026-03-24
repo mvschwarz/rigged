@@ -180,6 +180,29 @@ describe("Restore routes", () => {
   });
 });
 
+describe("Restore concurrency", () => {
+  it("restore while in progress -> 409 Conflict", async () => {
+    const db2 = createFullTestDb();
+    // Use a custom tmux mock that delays createSession
+    const { vi: vitest } = await import("vitest");
+    const setup = createTestApp(db2);
+    const rig = setup.rigRepo.createRig("r99");
+    setup.rigRepo.addNode(rig.id, "worker", { role: "worker" });
+    const snap = setup.snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    // Both requests hit concurrently — one should get 409
+    const [res1, res2] = await Promise.all([
+      setup.app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" }),
+      setup.app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" }),
+    ]);
+
+    const statuses = [res1.status, res2.status].sort();
+    expect(statuses).toContain(409);
+
+    db2.close();
+  });
+});
+
 describe("Restore response contract", () => {
   it("restore response can contain 'checkpoint_written' status", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rigged-test-"));

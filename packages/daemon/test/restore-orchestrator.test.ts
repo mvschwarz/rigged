@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type Database from "better-sqlite3";
 import { createDb } from "../src/db/connection.js";
 import { migrate } from "../src/db/migrate.js";
@@ -95,7 +98,7 @@ describe("RestoreOrchestrator", () => {
 
   function seedRigAndSnapshot(opts?: {
     edges?: { sourceLogical: string; targetLogical: string; kind: string }[];
-    nodes?: { logicalId: string; role: string; runtime: string }[];
+    nodes?: { logicalId: string; role: string; runtime: string; cwd?: string }[];
     resumeType?: string;
     resumeToken?: string;
     restorePolicy?: string;
@@ -110,7 +113,7 @@ describe("RestoreOrchestrator", () => {
     const rig = rigRepo.createRig("r99");
     const nodeMap: Record<string, string> = {};
     for (const n of nodes) {
-      const node = rigRepo.addNode(rig.id, n.logicalId, { role: n.role, runtime: n.runtime });
+      const node = rigRepo.addNode(rig.id, n.logicalId, { role: n.role, runtime: n.runtime, cwd: n.cwd });
       nodeMap[n.logicalId] = node.id;
     }
 
@@ -498,21 +501,22 @@ describe("RestoreOrchestrator", () => {
     if (result.ok) expect(result.result.nodes[0]!.status).toBe("resumed");
   });
 
-  it("resume fails -> fallback to checkpoint injection", async () => {
+  it("resume fails -> fallback to checkpoint file delivery", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rigged-test-"));
     const snap = seedRigAndSnapshot({
-      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code", cwd: tmpDir }],
       edges: [],
       resumeType: "claude_name",
       resumeToken: "tok",
       withCheckpoint: "worker",
     });
-    const tmux = mockTmux();
     const claude = mockClaudeResume({ ok: false, code: "resume_failed", message: "err" });
-    const orch = createOrchestrator({ tmux, claude });
+    const orch = createOrchestrator({ claude });
     const result = await orch.restore(snap.id);
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.result.nodes[0]!.status).toBe("fresh_with_checkpoint");
+    if (result.ok) expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it("restore_policy=relaunch_fresh -> resume NOT attempted", async () => {
@@ -530,9 +534,10 @@ describe("RestoreOrchestrator", () => {
     expect(claude.resume).not.toHaveBeenCalled();
   });
 
-  it("restore_policy=checkpoint_only -> resume NOT attempted, checkpoint injected", async () => {
+  it("restore_policy=checkpoint_only -> resume NOT attempted, checkpoint written", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rigged-test-"));
     const snap = seedRigAndSnapshot({
-      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code", cwd: tmpDir }],
       edges: [],
       resumeType: "claude_name",
       resumeToken: "tok",
@@ -540,13 +545,13 @@ describe("RestoreOrchestrator", () => {
       withCheckpoint: "worker",
     });
     const claude = mockClaudeResume();
-    const tmux = mockTmux();
-    const orch = createOrchestrator({ tmux, claude });
+    const orch = createOrchestrator({ claude });
     const result = await orch.restore(snap.id);
 
     expect(claude.resume).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.result.nodes[0]!.status).toBe("fresh_with_checkpoint");
+    if (result.ok) expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it("resume_type=none -> resume NOT attempted", async () => {
@@ -565,21 +570,43 @@ describe("RestoreOrchestrator", () => {
     expect(codex.resume).not.toHaveBeenCalled();
   });
 
-  it("checkpoint injection: sendText summary then sendKeys Enter", async () => {
+  it("checkpoint written to exactly {cwd}/.rigged-checkpoint.md with summary", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rigged-test-"));
     const snap = seedRigAndSnapshot({
-      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code", cwd: tmpDir }],
       edges: [],
       withCheckpoint: "worker",
     });
-    const tmux = mockTmux();
-    const orch = createOrchestrator({ tmux });
-    await orch.restore(snap.id);
+    const orch = createOrchestrator();
+    const result = await orch.restore(snap.id);
 
-    const sendTextCalls = (tmux.sendText as ReturnType<typeof vi.fn>).mock.calls;
-    const checkpointCall = sendTextCalls.find((c: unknown[]) =>
-      typeof c[1] === "string" && (c[1] as string).includes("Was working on feature X")
-    );
-    expect(checkpointCall).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+      // Verify exact file path and content
+      const filePath = path.join(tmpDir, ".rigged-checkpoint.md");
+      expect(fs.existsSync(filePath)).toBe(true);
+      const content = fs.readFileSync(filePath, "utf-8");
+      expect(content).toContain("Was working on feature X");
+      expect(content).toContain("src/feature.ts");
+    }
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it("checkpoint + null cwd -> status 'failed'", async () => {
+    const snap = seedRigAndSnapshot({
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }], // no cwd
+      edges: [],
+      withCheckpoint: "worker",
+    });
+    const orch = createOrchestrator();
+    const result = await orch.restore(snap.id);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.nodes[0]!.status).toBe("failed");
+      expect(result.result.nodes[0]!.error).toContain("no cwd");
+    }
   });
 
   it("no checkpoint -> status 'fresh_no_checkpoint'", async () => {
@@ -615,30 +642,19 @@ describe("RestoreOrchestrator", () => {
     }
   });
 
-  it("checkpoint injection fails -> status 'failed', not 'fresh_with_checkpoint'", async () => {
+  it("checkpoint file write fails -> status 'failed'", async () => {
+    // Use a non-existent directory path so writeFileSync fails
     const snap = seedRigAndSnapshot({
-      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
+      nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code", cwd: "/nonexistent/path/that/does/not/exist" }],
       edges: [],
       withCheckpoint: "worker",
     });
-    const tmux = mockTmux();
-    // sendText succeeds for launch but fails for checkpoint injection
-    let sendTextCallCount = 0;
-    (tmux.sendText as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-      sendTextCallCount++;
-      // First sendText calls are from launch; checkpoint injection comes later
-      if (sendTextCallCount > 0) {
-        return { ok: false as const, code: "session_not_found", message: "gone" };
-      }
-      return { ok: true as const };
-    });
-    const orch = createOrchestrator({ tmux });
+    const orch = createOrchestrator();
     const result = await orch.restore(snap.id);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.result.nodes[0]!.status).toBe("failed");
-      expect(result.result.nodes[0]!.status).not.toBe("fresh_with_checkpoint");
     }
   });
 

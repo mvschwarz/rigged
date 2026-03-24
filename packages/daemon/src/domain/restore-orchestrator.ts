@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type Database from "better-sqlite3";
 import type { RigRepository } from "./rig-repository.js";
 import type { SessionRegistry } from "./session-registry.js";
@@ -304,13 +306,16 @@ export class RestoreOrchestrator {
       }
     }
 
-    // Fall through to checkpoint injection
+    // Fall through to file-based checkpoint delivery
     if (checkpoint) {
-      const injected = await this.injectCheckpoint(sessionName, checkpoint);
-      if (!injected) {
-        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: "Checkpoint injection failed" };
+      if (!node.cwd) {
+        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: "Checkpoint available but node has no cwd" };
       }
-      return { nodeId: node.id, logicalId: node.logicalId, status: "fresh_with_checkpoint" };
+      const written = this.writeCheckpointFile(node.cwd, checkpoint);
+      if (!written) {
+        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: "Checkpoint file write failed" };
+      }
+      return { nodeId: node.id, logicalId: node.logicalId, status: "checkpoint_written" };
     }
 
     return { nodeId: node.id, logicalId: node.logicalId, status: "fresh_no_checkpoint" };
@@ -335,13 +340,30 @@ export class RestoreOrchestrator {
     return false;
   }
 
-  private async injectCheckpoint(sessionName: string, checkpoint: Checkpoint): Promise<boolean> {
-    const summary = `Resume context: ${checkpoint.summary}`;
-    const textResult = await this.tmuxAdapter.sendText(sessionName, summary);
-    if (!textResult.ok) return false;
-    const keyResult = await this.tmuxAdapter.sendKeys(sessionName, ["Enter"]);
-    if (!keyResult.ok) return false;
-    return true;
+  private writeCheckpointFile(cwd: string, checkpoint: Checkpoint): boolean {
+    try {
+      const filePath = join(cwd, ".rigged-checkpoint.md");
+      const content = [
+        "# Rigged Checkpoint",
+        "",
+        `## Summary`,
+        checkpoint.summary,
+        "",
+        checkpoint.currentTask ? `## Current Task\n${checkpoint.currentTask}\n` : "",
+        checkpoint.nextStep ? `## Next Step\n${checkpoint.nextStep}\n` : "",
+        checkpoint.blockedOn ? `## Blocked On\n${checkpoint.blockedOn}\n` : "",
+        checkpoint.keyArtifacts.length > 0
+          ? `## Key Artifacts\n${checkpoint.keyArtifacts.map((a) => `- ${a}`).join("\n")}\n`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      writeFileSync(filePath, content, "utf-8");
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

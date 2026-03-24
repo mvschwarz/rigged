@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type Database from "better-sqlite3";
 import type { Hono } from "hono";
 import type { RigRepository } from "../src/domain/rig-repository.js";
@@ -174,6 +177,30 @@ describe("Restore routes", () => {
       expect(node.logicalId).toBeDefined();
       expect(node.status).toBeDefined();
     }
+  });
+});
+
+describe("Restore response contract", () => {
+  it("restore response can contain 'checkpoint_written' status", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rigged-test-"));
+    const db2 = createFullTestDb();
+    const setup = createTestApp(db2);
+
+    const rig = setup.rigRepo.createRig("r99");
+    setup.rigRepo.addNode(rig.id, "worker", { role: "worker", cwd: tmpDir });
+    setup.checkpointStore.createCheckpoint(
+      setup.rigRepo.getRig(rig.id)!.nodes[0]!.id,
+      { summary: "test checkpoint", keyArtifacts: [] }
+    );
+    const snap = setup.snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await setup.app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.nodes[0].status).toBe("checkpoint_written");
+
+    db2.close();
+    fs.rmSync(tmpDir, { recursive: true });
   });
 });
 

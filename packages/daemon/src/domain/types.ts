@@ -118,7 +118,7 @@ export interface RestoreResult {
 export interface RestoreNodeResult {
   nodeId: string;
   logicalId: string;
-  status: "resumed" | "fresh_with_checkpoint" | "fresh_no_checkpoint" | "failed";
+  status: "resumed" | "checkpoint_written" | "fresh_no_checkpoint" | "failed";
   error?: string;
 }
 

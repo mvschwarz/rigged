@@ -84,6 +84,30 @@ describe("RigSpecSchema", () => {
       expect(result.errors.some((e) => e.includes("bad_policy"))).toBe(true);
     });
 
+    it("edge missing kind -> error", () => {
+      const raw = validRaw();
+      delete (raw["edges"] as Record<string, unknown>[])[0]!["kind"];
+      const result = RigSpecSchema.validate(raw);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("kind"))).toBe(true);
+    });
+
+    it("edge missing from -> error", () => {
+      const raw = validRaw();
+      delete (raw["edges"] as Record<string, unknown>[])[0]!["from"];
+      const result = RigSpecSchema.validate(raw);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("from"))).toBe(true);
+    });
+
+    it("edge missing to -> error", () => {
+      const raw = validRaw();
+      delete (raw["edges"] as Record<string, unknown>[])[0]!["to"];
+      const result = RigSpecSchema.validate(raw);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes("to"))).toBe(true);
+    });
+
     it("unknown edge kind -> error", () => {
       const raw = validRaw();
       (raw["edges"] as Record<string, unknown>[])[0]!["kind"] = "unknown_kind";

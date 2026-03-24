@@ -131,7 +131,22 @@ export class RigInstantiator {
       }
     }
 
-    // 5. Propagate restorePolicy to session metadata (best-effort)
+    // Check for total launch failure — clean up the rig
+    const allFailed = nodeResults.every((n) => n.status === "failed");
+    if (allFailed && nodeResults.length > 0) {
+      try {
+        this.rigRepo.deleteRig(rigId!);
+      } catch {
+        // Best-effort cleanup
+      }
+      return {
+        ok: false,
+        code: "instantiate_error",
+        message: "all node launches failed",
+      };
+    }
+
+    // 6. Propagate restorePolicy to session metadata (best-effort)
     try {
       for (const specNode of spec.nodes) {
         const restorePolicy = specNode.restorePolicy ?? "resume_if_possible";

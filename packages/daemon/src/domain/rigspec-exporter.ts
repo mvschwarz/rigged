@@ -65,11 +65,17 @@ export class RigSpecExporter {
       return specNode;
     });
 
-    const edges: RigSpecEdge[] = rig.edges.map((edge) => ({
-      from: idToLogical.get(edge.sourceId) ?? edge.sourceId,
-      to: idToLogical.get(edge.targetId) ?? edge.targetId,
-      kind: edge.kind,
-    }));
+    const edges: RigSpecEdge[] = rig.edges.map((edge) => {
+      const from = idToLogical.get(edge.sourceId);
+      if (!from) {
+        throw new Error(`Cannot export edge: unmapped source node ID '${edge.sourceId}'`);
+      }
+      const to = idToLogical.get(edge.targetId);
+      if (!to) {
+        throw new Error(`Cannot export edge: unmapped target node ID '${edge.targetId}'`);
+      }
+      return { from, to, kind: edge.kind };
+    });
 
     return {
       schemaVersion: 1,

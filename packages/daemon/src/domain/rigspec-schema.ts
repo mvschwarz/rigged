@@ -71,11 +71,24 @@ export class RigSpecSchema {
     // Validate edges
     if (Array.isArray(obj["edges"])) {
       for (const edge of obj["edges"] as Record<string, unknown>[]) {
-        const from = edge["from"] as string;
-        const to = edge["to"] as string;
-        const kind = edge["kind"] as string;
+        const from = edge["from"] as string | undefined;
+        const to = edge["to"] as string | undefined;
+        const kind = edge["kind"] as string | undefined;
 
-        if (from && to && from === to) {
+        if (!from || typeof from !== "string") {
+          errors.push("each edge must have a string 'from' field");
+          continue;
+        }
+        if (!to || typeof to !== "string") {
+          errors.push("each edge must have a string 'to' field");
+          continue;
+        }
+        if (!kind || typeof kind !== "string") {
+          errors.push("each edge must have a string 'kind' field");
+          continue;
+        }
+
+        if (from === to) {
           errors.push(`self-edge not allowed: ${from} -> ${to}`);
         }
 

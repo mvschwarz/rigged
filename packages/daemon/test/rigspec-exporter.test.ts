@@ -184,6 +184,29 @@ describe("RigSpecExporter", () => {
     expect(() => exporter.exportRig(rig.id)).toThrow(/runtime.*required/i);
   });
 
+  it("export edge with unmapped sourceId -> throws", () => {
+    const rig = rigRepo.createRig("r96");
+    const n1 = rigRepo.addNode(rig.id, "worker", { runtime: "claude-code" });
+    // Temporarily disable FK to insert corrupted edge
+    db.pragma("foreign_keys = OFF");
+    db.prepare("INSERT INTO edges (id, rig_id, source_id, target_id, kind) VALUES (?, ?, ?, ?, ?)")
+      .run("bad-edge", rig.id, "nonexistent-source", n1.id, "delegates_to");
+    db.pragma("foreign_keys = ON");
+
+    expect(() => exporter.exportRig(rig.id)).toThrow(/unmapped.*source/i);
+  });
+
+  it("export edge with unmapped targetId -> throws", () => {
+    const rig = rigRepo.createRig("r95");
+    const n1 = rigRepo.addNode(rig.id, "worker", { runtime: "claude-code" });
+    db.pragma("foreign_keys = OFF");
+    db.prepare("INSERT INTO edges (id, rig_id, source_id, target_id, kind) VALUES (?, ?, ?, ?, ?)")
+      .run("bad-edge", rig.id, n1.id, "nonexistent-target", "delegates_to");
+    db.pragma("foreign_keys = ON");
+
+    expect(() => exporter.exportRig(rig.id)).toThrow(/unmapped.*target/i);
+  });
+
   it("round-trip: export -> serialize -> parse -> validate all pass", () => {
     const { rig } = seedRig();
     const spec = exporter.exportRig(rig.id);

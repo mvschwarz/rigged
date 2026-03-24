@@ -468,4 +468,59 @@ describe("RigInstantiator", () => {
     // No rig should have been created (cycle detected before materialization)
     expect(rigRepo.listRigs()).toHaveLength(0);
   });
+
+  // -- Review Fix 2: Total launch failure cleanup --
+
+  it("all launches fail -> instantiate_error, rig deleted, no rig.imported", async () => {
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { ok: false as const, code: "err", message: "all fail" }
+    );
+    const inst = createInstantiator({ tmux });
+    const result = await inst.instantiate(validSpec());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("instantiate_error");
+      expect(result.message).toContain("all node launches failed");
+    }
+
+    // Rig should be deleted
+    expect(rigRepo.listRigs()).toHaveLength(0);
+
+    // No rig.imported event
+    const events = db.prepare("SELECT * FROM events WHERE type = 'rig.imported'").all();
+    expect(events).toHaveLength(0);
+  });
+
+  it("partial launch failure -> ok: true, rig preserved", async () => {
+    const tmux = mockTmux();
+    let callCount = 0;
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 2) return { ok: false as const, code: "err", message: "fail" };
+      return { ok: true as const };
+    });
+    const inst = createInstantiator({ tmux });
+    const result = await inst.instantiate(validSpec());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Rig preserved
+      const rig = rigRepo.getRig(result.result.rigId);
+      expect(rig).not.toBeNull();
+    }
+  });
+
+  it("total failure -> no rig.imported event row", async () => {
+    const tmux = mockTmux();
+    (tmux.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { ok: false as const, code: "err", message: "fail" }
+    );
+    const inst = createInstantiator({ tmux });
+    await inst.instantiate(validSpec());
+
+    const events = db.prepare("SELECT * FROM events WHERE type = 'rig.imported'").all();
+    expect(events).toHaveLength(0);
+  });
 });

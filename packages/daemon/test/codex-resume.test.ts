@@ -108,5 +108,30 @@ describe("CodexResumeAdapter", () => {
 
       expect(sendText.mock.calls[0]![1]).toBe("codex resume 'uuid; rm -rf /'");
     });
+
+    it("sendKeys(Enter) fails after sendText -> C-c sent to clear buffer", async () => {
+      const sendText = vi.fn(async () => ({ ok: true as const }));
+      const sendKeys = vi.fn()
+        .mockResolvedValueOnce({ ok: false as const, code: "session_not_found", message: "err" })
+        .mockResolvedValueOnce({ ok: true as const });
+      const adapter = new CodexResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      const result = await adapter.resume("r99-demo1-impl", "codex_id", "uuid-123", "/repo");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe("resume_failed");
+      expect(sendKeys).toHaveBeenCalledTimes(2);
+      expect(sendKeys.mock.calls[1]![1]).toEqual(["C-c"]);
+    });
+
+    it("sendText fails -> NO C-c attempt", async () => {
+      const sendText = vi.fn(async () => ({ ok: false as const, code: "session_not_found", message: "err" }));
+      const sendKeys = vi.fn(async () => ({ ok: true as const }));
+      const adapter = new CodexResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      await adapter.resume("r99-demo1-impl", "codex_id", "uuid-123", "/repo");
+
+      expect(sendKeys).not.toHaveBeenCalled();
+    });
   });
 });

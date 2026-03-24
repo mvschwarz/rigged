@@ -102,5 +102,32 @@ describe("ClaudeResumeAdapter", () => {
 
       expect(sendText.mock.calls[0]![1]).toBe("claude --resume 'tok; rm -rf /'");
     });
+
+    it("sendKeys(Enter) fails after sendText -> C-c sent to clear buffer", async () => {
+      const sendText = vi.fn(async () => ({ ok: true as const }));
+      const sendKeys = vi.fn()
+        .mockResolvedValueOnce({ ok: false as const, code: "session_not_found", message: "err" }) // Enter fails
+        .mockResolvedValueOnce({ ok: true as const }); // C-c succeeds
+      const adapter = new ClaudeResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      const result = await adapter.resume("r99-demo1-lead", "claude_name", "my-session", "/repo");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe("resume_failed");
+      // C-c cleanup was attempted
+      expect(sendKeys).toHaveBeenCalledTimes(2);
+      expect(sendKeys.mock.calls[1]![1]).toEqual(["C-c"]);
+    });
+
+    it("sendText fails -> NO C-c attempt", async () => {
+      const sendText = vi.fn(async () => ({ ok: false as const, code: "session_not_found", message: "err" }));
+      const sendKeys = vi.fn(async () => ({ ok: true as const }));
+      const adapter = new ClaudeResumeAdapter(mockTmux({ sendText, sendKeys }));
+
+      await adapter.resume("r99-demo1-lead", "claude_name", "my-session", "/repo");
+
+      // sendKeys should NOT have been called at all (no Enter, no C-c)
+      expect(sendKeys).not.toHaveBeenCalled();
+    });
   });
 });

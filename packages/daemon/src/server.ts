@@ -5,10 +5,14 @@ import type { EventBus } from "./domain/event-bus.js";
 import type { NodeLauncher } from "./domain/node-launcher.js";
 import type { TmuxAdapter } from "./adapters/tmux.js";
 import type { CmuxAdapter } from "./adapters/cmux.js";
+import type { SnapshotCapture } from "./domain/snapshot-capture.js";
+import type { SnapshotRepository } from "./domain/snapshot-repository.js";
+import type { RestoreOrchestrator } from "./domain/restore-orchestrator.js";
 import { rigsRoutes } from "./routes/rigs.js";
 import { sessionsRoutes, nodesRoutes } from "./routes/sessions.js";
 import { adaptersRoutes } from "./routes/adapters.js";
 import { eventsRoute } from "./routes/events.js";
+import { snapshotsRoutes, restoreRoutes } from "./routes/snapshots.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -17,6 +21,9 @@ export interface AppDeps {
   nodeLauncher: NodeLauncher;
   tmuxAdapter: TmuxAdapter;
   cmuxAdapter: CmuxAdapter;
+  snapshotCapture: SnapshotCapture;
+  snapshotRepo: SnapshotRepository;
+  restoreOrchestrator: RestoreOrchestrator;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -27,6 +34,15 @@ export function createApp(deps: AppDeps): Hono {
   }
   if (deps.rigRepo.db !== deps.sessionRegistry.db) {
     throw new Error("createApp: rigRepo and sessionRegistry must share the same db handle");
+  }
+  if (deps.rigRepo.db !== deps.snapshotRepo.db) {
+    throw new Error("createApp: snapshotRepo must share the same db handle");
+  }
+  if (deps.rigRepo.db !== deps.snapshotCapture.db) {
+    throw new Error("createApp: snapshotCapture must share the same db handle");
+  }
+  if (deps.rigRepo.db !== deps.restoreOrchestrator.db) {
+    throw new Error("createApp: restoreOrchestrator must share the same db handle");
   }
 
   const app = new Hono();
@@ -39,6 +55,9 @@ export function createApp(deps: AppDeps): Hono {
     c.set("nodeLauncher" as never, deps.nodeLauncher);
     c.set("tmuxAdapter" as never, deps.tmuxAdapter);
     c.set("cmuxAdapter" as never, deps.cmuxAdapter);
+    c.set("snapshotCapture" as never, deps.snapshotCapture);
+    c.set("snapshotRepo" as never, deps.snapshotRepo);
+    c.set("restoreOrchestrator" as never, deps.restoreOrchestrator);
     await next();
   });
 
@@ -51,6 +70,8 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/rigs/:rigId/nodes", nodesRoutes);
   app.route("/api/adapters", adaptersRoutes);
   app.route("/api/events", eventsRoute);
+  app.route("/api/rigs/:rigId/snapshots", snapshotsRoutes);
+  app.route("/api/rigs/:rigId/restore", restoreRoutes);
 
   return app;
 }

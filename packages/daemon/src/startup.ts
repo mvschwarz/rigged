@@ -15,8 +15,17 @@ import { TmuxAdapter } from "./adapters/tmux.js";
 import { CmuxAdapter } from "./adapters/cmux.js";
 import { execCommand } from "./adapters/tmux-exec.js";
 import { createCmuxCliTransport } from "./adapters/cmux-transport.js";
+import { SnapshotRepository } from "./domain/snapshot-repository.js";
+import { CheckpointStore } from "./domain/checkpoint-store.js";
+import { SnapshotCapture } from "./domain/snapshot-capture.js";
+import { RestoreOrchestrator } from "./domain/restore-orchestrator.js";
+import { ClaudeResumeAdapter } from "./adapters/claude-resume.js";
+import { CodexResumeAdapter } from "./adapters/codex-resume.js";
 import { Reconciler } from "./domain/reconciler.js";
 import { createApp, type AppDeps } from "./server.js";
+import { snapshotsSchema } from "./db/migrations/004_snapshots.js";
+import { checkpointsSchema } from "./db/migrations/005_checkpoints.js";
+import { resumeMetadataSchema } from "./db/migrations/006_resume_metadata.js";
 
 interface DaemonOptions {
   dbPath?: string;
@@ -35,7 +44,7 @@ interface DaemonResult {
 export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> {
   const dbPath = opts?.dbPath ?? ":memory:";
   const db = createDb(dbPath);
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema]);
 
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);
@@ -58,6 +67,16 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     tmuxAdapter,
   });
 
+  const snapshotRepo = new SnapshotRepository(db);
+  const checkpointStore = new CheckpointStore(db);
+  const snapshotCapture = new SnapshotCapture({ db, rigRepo, sessionRegistry, eventBus, snapshotRepo, checkpointStore });
+  const claudeResume = new ClaudeResumeAdapter(tmuxAdapter);
+  const codexResume = new CodexResumeAdapter(tmuxAdapter);
+  const restoreOrchestrator = new RestoreOrchestrator({
+    db, rigRepo, sessionRegistry, eventBus, snapshotRepo, snapshotCapture,
+    checkpointStore, nodeLauncher, tmuxAdapter, claudeResume, codexResume,
+  });
+
   // Connect to cmux at startup — degrades gracefully if absent
   await cmuxAdapter.connect();
 
@@ -75,6 +94,9 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     nodeLauncher,
     tmuxAdapter,
     cmuxAdapter,
+    snapshotCapture,
+    snapshotRepo,
+    restoreOrchestrator,
   };
 
   const app = createApp(deps);

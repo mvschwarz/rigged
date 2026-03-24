@@ -1,0 +1,221 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type Database from "better-sqlite3";
+import type { Hono } from "hono";
+import type { RigRepository } from "../src/domain/rig-repository.js";
+import type { SnapshotCapture } from "../src/domain/snapshot-capture.js";
+import type { SnapshotRepository } from "../src/domain/snapshot-repository.js";
+import { createFullTestDb, createTestApp } from "./helpers/test-app.js";
+import { createDaemon } from "../src/startup.js";
+import type { ExecFn } from "../src/adapters/tmux.js";
+
+describe("Snapshot routes", () => {
+  let db: Database.Database;
+  let app: Hono;
+  let rigRepo: RigRepository;
+  let snapshotCapture: SnapshotCapture;
+  let snapshotRepo: SnapshotRepository;
+
+  beforeEach(() => {
+    db = createFullTestDb();
+    const setup = createTestApp(db);
+    app = setup.app;
+    rigRepo = setup.rigRepo;
+    snapshotCapture = setup.snapshotCapture;
+    snapshotRepo = setup.snapshotRepo;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("POST /api/rigs/:rigId/snapshots -> 201 + snapshot with id and kind", async () => {
+    const rig = rigRepo.createRig("r99");
+
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "manual" }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.id).toBeDefined();
+    expect(body.kind).toBe("manual");
+    expect(body.rigId).toBe(rig.id);
+  });
+
+  it("GET /api/rigs/:rigId/snapshots -> list of snapshots", async () => {
+    const rig = rigRepo.createRig("r99");
+    snapshotCapture.captureSnapshot(rig.id, "manual");
+    snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveLength(2);
+  });
+
+  it("GET /api/rigs/:rigId/snapshots/:id -> snapshot with parsed data", async () => {
+    const rig = rigRepo.createRig("r99");
+    rigRepo.addNode(rig.id, "worker", { role: "worker" });
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots/${snap.id}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBe(snap.id);
+    expect(body.data.rig.name).toBe("r99");
+    expect(body.data.nodes).toHaveLength(1);
+  });
+
+  it("GET nonexistent snapshot -> 404", async () => {
+    const rig = rigRepo.createRig("r99");
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots/nonexistent`);
+    expect(res.status).toBe(404);
+  });
+
+  it("GET cross-rig snapshot -> 404", async () => {
+    const rigA = rigRepo.createRig("r99");
+    const rigB = rigRepo.createRig("r98");
+    const snap = snapshotCapture.captureSnapshot(rigA.id, "manual");
+
+    // Snapshot belongs to rigA, request under rigB
+    const res = await app.request(`/api/rigs/${rigB.id}/snapshots/${snap.id}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("Restore routes", () => {
+  let db: Database.Database;
+  let app: Hono;
+  let rigRepo: RigRepository;
+  let snapshotCapture: SnapshotCapture;
+
+  beforeEach(() => {
+    db = createFullTestDb();
+    const setup = createTestApp(db);
+    app = setup.app;
+    rigRepo = setup.rigRepo;
+    snapshotCapture = setup.snapshotCapture;
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("POST /api/rigs/:rigId/restore/:snapshotId -> 200 + RestoreResult", async () => {
+    const rig = rigRepo.createRig("r99");
+    rigRepo.addNode(rig.id, "worker", { role: "worker" });
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.snapshotId).toBe(snap.id);
+    expect(body.preRestoreSnapshotId).toBeDefined();
+    expect(body.nodes).toHaveLength(1);
+  });
+
+  it("POST nonexistent snapshot -> 404", async () => {
+    const rig = rigRepo.createRig("r99");
+    const res = await app.request(`/api/rigs/${rig.id}/restore/nonexistent`, { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST cross-rig restore -> 404, no restore performed", async () => {
+    const rigA = rigRepo.createRig("r99");
+    const rigB = rigRepo.createRig("r98");
+    rigRepo.addNode(rigA.id, "worker", { role: "worker" });
+    const snap = snapshotCapture.captureSnapshot(rigA.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rigB.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST rig not found in snapshot -> 404", async () => {
+    const rig = rigRepo.createRig("r99");
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+    // Delete the rig so restore finds snapshot but rig is gone
+    rigRepo.deleteRig(rig.id);
+
+    const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST restore_error -> 500", async () => {
+    const rig = rigRepo.createRig("r99");
+    rigRepo.addNode(rig.id, "worker", { role: "worker" });
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    // Sabotage snapshots table with a trigger that blocks new inserts
+    // (pre-restore snapshot capture will fail, triggering restore_error)
+    // Existing rows survive so the original snapshot can still be found.
+    db.exec(`
+      CREATE TRIGGER block_snapshot_insert BEFORE INSERT ON snapshots
+      BEGIN
+        SELECT RAISE(ABORT, 'sabotaged: no new snapshots');
+      END;
+    `);
+
+    const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(500);
+  });
+
+  it("restore response includes nodes array with status per node", async () => {
+    const rig = rigRepo.createRig("r99");
+    rigRepo.addNode(rig.id, "worker-a", { role: "worker" });
+    rigRepo.addNode(rig.id, "worker-b", { role: "worker" });
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    const body = await res.json();
+    expect(body.nodes).toHaveLength(2);
+    for (const node of body.nodes) {
+      expect(node.logicalId).toBeDefined();
+      expect(node.status).toBeDefined();
+    }
+  });
+});
+
+describe("Startup mount regression", () => {
+  it("createDaemon app: POST snapshot returns 201", async () => {
+    const tmuxExec: ExecFn = async () => "";
+    const cmuxExec: ExecFn = async () => { throw Object.assign(new Error(""), { code: "ENOENT" }); };
+
+    const { app, db, deps } = await createDaemon({ tmuxExec, cmuxExec });
+    const rig = deps.rigRepo.createRig("r99");
+
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "manual" }),
+    });
+    expect(res.status).toBe(201);
+    db.close();
+  });
+
+  it("createDaemon app: GET snapshots returns 200", async () => {
+    const tmuxExec: ExecFn = async () => "";
+    const cmuxExec: ExecFn = async () => { throw Object.assign(new Error(""), { code: "ENOENT" }); };
+
+    const { app, db, deps } = await createDaemon({ tmuxExec, cmuxExec });
+    const rig = deps.rigRepo.createRig("r99");
+
+    const res = await app.request(`/api/rigs/${rig.id}/snapshots`);
+    expect(res.status).toBe(200);
+    db.close();
+  });
+
+  it("createDaemon app: POST restore route returns valid response", async () => {
+    const tmuxExec: ExecFn = async () => "";
+    const cmuxExec: ExecFn = async () => { throw Object.assign(new Error(""), { code: "ENOENT" }); };
+
+    const { app, db, deps } = await createDaemon({ tmuxExec, cmuxExec });
+    const rig = deps.rigRepo.createRig("r99");
+
+    // Nonexistent snapshot -> 404 proves the route is mounted and handling requests
+    const res = await app.request(`/api/rigs/${rig.id}/restore/nonexistent`, { method: "POST" });
+    expect(res.status).toBe(404);
+    db.close();
+  });
+});

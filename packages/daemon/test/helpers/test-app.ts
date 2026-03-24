@@ -5,18 +5,27 @@ import { migrate } from "../../src/db/migrate.js";
 import { coreSchema } from "../../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../../src/db/migrations/002_bindings_sessions.js";
 import { eventsSchema } from "../../src/db/migrations/003_events.js";
+import { snapshotsSchema } from "../../src/db/migrations/004_snapshots.js";
+import { checkpointsSchema } from "../../src/db/migrations/005_checkpoints.js";
+import { resumeMetadataSchema } from "../../src/db/migrations/006_resume_metadata.js";
 import { RigRepository } from "../../src/domain/rig-repository.js";
 import { SessionRegistry } from "../../src/domain/session-registry.js";
 import { EventBus } from "../../src/domain/event-bus.js";
 import { NodeLauncher } from "../../src/domain/node-launcher.js";
+import { SnapshotRepository } from "../../src/domain/snapshot-repository.js";
+import { CheckpointStore } from "../../src/domain/checkpoint-store.js";
+import { SnapshotCapture } from "../../src/domain/snapshot-capture.js";
+import { RestoreOrchestrator } from "../../src/domain/restore-orchestrator.js";
+import { ClaudeResumeAdapter } from "../../src/adapters/claude-resume.js";
+import { CodexResumeAdapter } from "../../src/adapters/codex-resume.js";
 import { CmuxAdapter } from "../../src/adapters/cmux.js";
-import type { TmuxAdapter, TmuxResult } from "../../src/adapters/tmux.js";
+import type { TmuxAdapter } from "../../src/adapters/tmux.js";
 import type { CmuxTransportFactory } from "../../src/adapters/cmux.js";
 import { createApp } from "../../src/server.js";
 
 export function createFullTestDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema]);
   return db;
 }
 
@@ -28,8 +37,8 @@ export function mockTmuxAdapter(): TmuxAdapter {
     listWindows: async () => [],
     listPanes: async () => [],
     hasSession: async () => false,
-    sendText: async () => ({ ok: true as const }),
-    sendKeys: async () => ({ ok: true as const }),
+    sendText: vi.fn(async () => ({ ok: true as const })),
+    sendKeys: vi.fn(async () => ({ ok: true as const })),
   } as unknown as TmuxAdapter;
 }
 
@@ -47,7 +56,19 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
   const tmux = opts?.tmux ?? mockTmuxAdapter();
   const cmux = opts?.cmux ?? unavailableCmuxAdapter();
   const nodeLauncher = new NodeLauncher({ db, rigRepo, sessionRegistry, eventBus, tmuxAdapter: tmux });
+  const snapshotRepo = new SnapshotRepository(db);
+  const checkpointStore = new CheckpointStore(db);
+  const snapshotCapture = new SnapshotCapture({ db, rigRepo, sessionRegistry, eventBus, snapshotRepo, checkpointStore });
+  const claudeResume = new ClaudeResumeAdapter(tmux);
+  const codexResume = new CodexResumeAdapter(tmux);
+  const restoreOrchestrator = new RestoreOrchestrator({
+    db, rigRepo, sessionRegistry, eventBus, snapshotRepo, snapshotCapture,
+    checkpointStore, nodeLauncher, tmuxAdapter: tmux, claudeResume, codexResume,
+  });
 
-  const app = createApp({ rigRepo, sessionRegistry, eventBus, nodeLauncher, tmuxAdapter: tmux, cmuxAdapter: cmux });
-  return { app, rigRepo, sessionRegistry, eventBus, nodeLauncher, db };
+  const app = createApp({
+    rigRepo, sessionRegistry, eventBus, nodeLauncher, tmuxAdapter: tmux, cmuxAdapter: cmux,
+    snapshotCapture, snapshotRepo, restoreOrchestrator,
+  });
+  return { app, rigRepo, sessionRegistry, eventBus, nodeLauncher, snapshotRepo, snapshotCapture, checkpointStore, restoreOrchestrator, db };
 }

@@ -1,49 +1,68 @@
-import { useState, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { RigSummary } from "../hooks/useRigSummary.js";
 
-interface StatusData {
-  connected: boolean;
-  rigCount: number | null;
-  cmuxAvailable: boolean | null;
+async function fetchHealth(): Promise<boolean> {
+  const res = await fetch("/healthz");
+  if (!res.ok) throw new Error("unhealthy");
+  return true;
+}
+
+async function fetchSummary(): Promise<RigSummary[]> {
+  const res = await fetch("/api/rigs/summary");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchCmux(): Promise<{ available: boolean }> {
+  const res = await fetch("/api/adapters/cmux/status");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 export function StatusBar() {
-  const [status, setStatus] = useState<StatusData>({
-    connected: false,
-    rigCount: null,
-    cmuxAvailable: null,
+  const healthQuery = useQuery({
+    queryKey: ["daemon", "health"],
+    queryFn: fetchHealth,
+    refetchInterval: 10_000,
+    retry: false,
   });
 
+  const summaryQuery = useQuery({
+    queryKey: ["rigs", "summary"],
+    queryFn: fetchSummary,
+    refetchInterval: 30_000,
+  });
+
+  const cmuxQuery = useQuery({
+    queryKey: ["daemon", "cmux"],
+    queryFn: fetchCmux,
+    refetchInterval: 30_000,
+  });
+
+  const isConnected = healthQuery.isSuccess;
+
+  // Track reconnect for pulse animation + data refresh
+  const queryClient = useQueryClient();
+  const prevConnectedRef = useRef<boolean | null>(null);
+  const [reconnectPulse, setReconnectPulse] = useState(false);
+
   useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const healthRes = await fetch("/healthz");
-        if (!healthRes.ok) throw new Error("unhealthy");
-
-        const [summaryRes, cmuxRes] = await Promise.all([
-          fetch("/api/rigs/summary").then((r) => r.ok ? r.json() : null).catch(() => null),
-          fetch("/api/adapters/cmux/status").then((r) => r.ok ? r.json() : null).catch(() => null),
-        ]);
-
-        if (!cancelled) {
-          setStatus({
-            connected: true,
-            rigCount: Array.isArray(summaryRes) ? summaryRes.length : null,
-            cmuxAvailable: cmuxRes?.available ?? null,
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setStatus({ connected: false, rigCount: null, cmuxAvailable: null });
-        }
-      }
+    if (prevConnectedRef.current === false && isConnected) {
+      // Transitioned from disconnected -> connected
+      setReconnectPulse(true);
+      const timer = setTimeout(() => setReconnectPulse(false), 600);
+      // Immediately refresh summary + cmux on reconnect
+      queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["daemon", "cmux"] });
+      prevConnectedRef.current = isConnected;
+      return () => clearTimeout(timer);
     }
+    prevConnectedRef.current = isConnected;
+  }, [isConnected, queryClient]);
 
-    poll();
-    const interval = setInterval(poll, 10_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  const rigCount = isConnected ? (summaryQuery.data?.length ?? null) : null;
+  const cmuxAvailable = isConnected ? (cmuxQuery.data?.available ?? null) : null;
 
   return (
     <footer
@@ -53,20 +72,23 @@ export function StatusBar() {
       <span className="flex items-center gap-spacing-2">
         <span
           data-testid="health-dot"
-          className={`inline-block w-2 h-2 ${status.connected ? "bg-primary" : "bg-destructive"}`}
+          className={`inline-block w-2 h-2 ${isConnected ? "bg-primary" : "bg-destructive"} ${reconnectPulse ? "status-changed" : ""}`}
         />
-        <span data-testid="health-text" className="text-foreground-muted">
-          {status.connected ? "CONNECTED" : "DISCONNECTED"}
+        <span
+          data-testid="health-text"
+          className={isConnected ? "text-foreground-muted" : "text-destructive"}
+        >
+          {isConnected ? "CONNECTED" : "DISCONNECTED"}
         </span>
       </span>
 
-      <span data-testid="rig-count" className="text-foreground-muted">
-        RIGS: <span className="font-mono text-foreground">{status.rigCount ?? "—"}</span>
+      <span data-testid="rig-count" className="text-foreground-muted uppercase">
+        RIGS: <span className="font-mono text-foreground">{rigCount ?? "—"}</span>
       </span>
 
-      <span data-testid="cmux-status" className="text-foreground-muted">
+      <span data-testid="cmux-status" className="text-foreground-muted uppercase">
         CMUX: <span className="font-mono text-foreground">
-          {status.cmuxAvailable === null ? "—" : status.cmuxAvailable ? "OK" : "UNAVAILABLE"}
+          {cmuxAvailable === null ? "—" : cmuxAvailable ? "OK" : "UNAVAILABLE"}
         </span>
       </span>
     </footer>

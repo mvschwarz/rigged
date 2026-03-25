@@ -10,10 +10,13 @@ globalThis.fetch = mockFetch;
 
 let OriginalEventSource: typeof EventSource | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
   mockFetch.mockReset();
   OriginalEventSource = globalThis.EventSource;
   globalThis.EventSource = createMockEventSourceClass() as unknown as typeof EventSource;
+  // Clear production queryClient cache between tests to prevent stale data
+  const { queryClient } = await import("../src/lib/query-client.js");
+  queryClient.clear();
 });
 
 afterEach(() => {

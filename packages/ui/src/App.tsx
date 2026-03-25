@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dashboard } from "./components/Dashboard.js";
 import { RigGraph } from "./components/RigGraph.js";
 import { SnapshotPanel } from "./components/SnapshotPanel.js";
+import { ImportFlow } from "./components/ImportFlow.js";
 
 type View = { type: "dashboard" } | { type: "graph"; rigId: string } | { type: "import" };
 
@@ -25,12 +26,7 @@ export function App() {
   }
 
   if (view.type === "import") {
-    return (
-      <div style={{ padding: 32 }}>
-        <button onClick={() => setView({ type: "dashboard" })}>Back to Dashboard</button>
-        <div style={{ marginTop: 16 }}>Import flow placeholder</div>
-      </div>
-    );
+    return <ImportFlow onBack={() => setView({ type: "dashboard" })} />;
   }
 
   return (

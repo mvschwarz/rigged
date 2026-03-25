@@ -199,7 +199,7 @@ describe("Dashboard", () => {
     fireEvent.click(importBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/import flow/i)).toBeDefined();
+      expect(screen.getByTestId("import-flow")).toBeDefined();
     });
   });
 

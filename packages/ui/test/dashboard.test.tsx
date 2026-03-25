@@ -163,6 +163,9 @@ describe("Dashboard", () => {
       if (typeof url === "string" && url.includes("/graph")) {
         return Promise.resolve(mockGraphResponse());
       }
+      if (typeof url === "string" && url.includes("/snapshots")) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
 
@@ -290,6 +293,9 @@ describe("Dashboard", () => {
       }
       if (typeof url === "string" && url.includes("/graph")) {
         return Promise.resolve(mockGraphResponse());
+      }
+      if (typeof url === "string" && url.includes("/snapshots")) {
+        return Promise.resolve({ ok: true, json: async () => [] });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });

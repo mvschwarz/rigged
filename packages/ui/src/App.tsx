@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dashboard } from "./components/Dashboard.js";
 import { RigGraph } from "./components/RigGraph.js";
+import { SnapshotPanel } from "./components/SnapshotPanel.js";
 
 type View = { type: "dashboard" } | { type: "graph"; rigId: string } | { type: "import" };
 
@@ -13,8 +14,11 @@ export function App() {
         <div style={{ padding: 8, borderBottom: "1px solid #ccc" }}>
           <button onClick={() => setView({ type: "dashboard" })}>Back to Dashboard</button>
         </div>
-        <div style={{ flex: 1 }}>
-          <RigGraph rigId={view.rigId} />
+        <div style={{ flex: 1, display: "flex" }}>
+          <div style={{ flex: 1 }}>
+            <RigGraph rigId={view.rigId} />
+          </div>
+          <SnapshotPanel rigId={view.rigId} />
         </div>
       </div>
     );

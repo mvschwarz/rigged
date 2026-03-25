@@ -122,13 +122,37 @@
   .animate-pulse-tactical {
     animation: loading-pulse 1.5s ease-in-out infinite;
   }
+
+  /* Graph entrance — staggered node appearance */
+  @keyframes node-enter {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .node-enter {
+    animation: node-enter 150ms ease-out forwards;
+    opacity: 0;
+  }
+
+  /* Graph entrance — edge draw-in */
+  @keyframes edge-draw-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .edge-draw-in {
+    animation: edge-draw-in 300ms ease-out forwards;
+    opacity: 0;
+  }
 }
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .status-changed,
   .route-enter,
-  .animate-pulse-tactical {
+  .animate-pulse-tactical,
+  .node-enter,
+  .edge-draw-in {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
 }

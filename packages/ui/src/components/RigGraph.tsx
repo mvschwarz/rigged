@@ -1,13 +1,33 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from "react";
-import { ReactFlow, MiniMap, Controls, type NodeTypes, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
+import { ReactFlow, Controls, type NodeTypes, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
 import { useRigEvents } from "../hooks/useRigEvents.js";
+import { getEdgeStyle } from "@/lib/edge-styles";
 import { RigNode } from "./RigNode.js";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const nodeTypes: NodeTypes = {
   rigNode: RigNode,
 };
+
+/** Wireframe ghost for empty topology */
+function EmptyTopologyGhost() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full relative text-foreground-muted" data-testid="empty-topology">
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 300" fill="none" style={{ opacity: 0.08 }}>
+        <rect x="160" y="60" width="80" height="40" stroke="currentColor" strokeWidth="1" />
+        <rect x="60" y="180" width="80" height="40" stroke="currentColor" strokeWidth="1" />
+        <rect x="260" y="180" width="80" height="40" stroke="currentColor" strokeWidth="1" />
+        <line x1="200" y1="100" x2="100" y2="180" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
+        <line x1="200" y1="100" x2="300" y2="180" stroke="currentColor" strokeWidth="1" strokeDasharray="4 4" />
+      </svg>
+      <div className="relative z-10 text-center">
+        <h2 className="text-headline-md uppercase">EMPTY TOPOLOGY</h2>
+      </div>
+    </div>
+  );
+}
 
 interface FocusMessage {
   text: string;
@@ -16,17 +36,26 @@ interface FocusMessage {
 
 export function RigGraph({ rigId }: { rigId: string | null }) {
   const { data, isPending: loading, error: queryError } = useRigGraph(rigId ?? "");
-  const nodes = data?.nodes ?? [];
-  const edges = data?.edges ?? [];
+  const rawNodes = data?.nodes ?? [];
+  const rawEdges = data?.edges ?? [];
   const error = queryError?.message ?? null;
   const { reconnecting } = useRigEvents(rigId);
   const [focusMessage, setFocusMessage] = useState<FocusMessage | null>(null);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showFocusMessage = useCallback((msg: FocusMessage) => {
-    if (dismissTimerRef.current) {
-      clearTimeout(dismissTimerRef.current);
+  // Entrance animation tracking — keyed by rigId, fires once per navigation
+  const animatedRigRef = useRef<string | null>(null);
+  const shouldAnimate = rigId !== null && animatedRigRef.current !== rigId;
+
+  // Mark animation as done after first render
+  useEffect(() => {
+    if (rigId && rawNodes.length > 0 && animatedRigRef.current !== rigId) {
+      animatedRigRef.current = rigId;
     }
+  }, [rigId, rawNodes.length]);
+
+  const showFocusMessage = useCallback((msg: FocusMessage) => {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     setFocusMessage(msg);
     dismissTimerRef.current = setTimeout(() => {
       setFocusMessage(null);
@@ -34,36 +63,59 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
     }, 3000);
   }, []);
 
-  // Clear timer on unmount
   useEffect(() => {
     return () => {
-      if (dismissTimerRef.current) {
-        clearTimeout(dismissTimerRef.current);
-      }
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     };
   }, []);
 
-  const rfNodes = useMemo(() => nodes as Node[], [nodes]);
-  const rfEdges = useMemo(() => edges as Edge[], [edges]);
+  // Apply edge styles from design system + entrance animation
+  const rfEdges = useMemo(() => {
+    return (rawEdges as (Edge & { data?: { kind?: string } })[]).map((edge) => {
+      const kind = (edge as { data?: { kind?: string } }).data?.kind ??
+        (edge as { label?: string }).label ?? "delegates_to";
+      const styleResult = getEdgeStyle(kind);
+      return {
+        ...edge,
+        ...styleResult,
+        className: shouldAnimate ? "edge-draw-in" : undefined,
+        style: {
+          ...styleResult.style,
+          animationDelay: shouldAnimate ? `${rawNodes.length * 50 + 100}ms` : undefined,
+        },
+      };
+    });
+  }, [rawEdges, shouldAnimate, rawNodes.length]);
+
+  // Apply entrance animation to nodes via className
+  const rfNodes = useMemo(() => {
+    return (rawNodes as Node[]).map((node, index) => ({
+      ...node,
+      className: shouldAnimate ? "node-enter" : undefined,
+      style: {
+        ...(node.style ?? {}),
+        animationDelay: shouldAnimate ? `${index * 50}ms` : undefined,
+      },
+    }));
+  }, [rawNodes, shouldAnimate]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_event, node) => {
       if (!rigId) return;
 
-      const data = node.data as {
+      const nodeData = node.data as {
         logicalId: string;
         binding: { cmuxSurface?: string | null } | null;
       };
 
-      // Client-side guard: no binding or no cmuxSurface -> not bound
-      if (!data.binding?.cmuxSurface) {
+      if (!nodeData.binding?.cmuxSurface) {
         showFocusMessage({ text: "Not bound to cmux surface", type: "info" });
         return;
       }
 
       try {
         const res = await fetch(
-          `/api/rigs/${rigId}/nodes/${data.logicalId}/focus`,
+          `/api/rigs/${rigId}/nodes/${nodeData.logicalId}/focus`,
           { method: "POST" }
         );
 
@@ -89,30 +141,51 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
   );
 
   if (rigId === null) {
-    return <div>No rig selected</div>;
+    return <div className="p-spacing-6 text-foreground-muted">No rig selected</div>;
   }
 
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="p-spacing-6" data-testid="graph-loading">
+        <div className="h-8 w-48 animate-pulse-tactical mb-spacing-4" />
+        <div className="h-64 animate-pulse-tactical" />
+      </div>
+    );
   }
 
   if (error) {
-    return <div>Error: {error}</div>;
+    return (
+      <div className="p-spacing-6">
+        <Alert data-testid="graph-error">
+          <AlertDescription>Error: {error}</AlertDescription>
+        </Alert>
+      </div>
+    );
   }
 
   if (rfNodes.length === 0) {
-    return <div>No nodes in this rig</div>;
+    return <EmptyTopologyGhost />;
   }
 
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+    <div
+      className="w-full h-full relative"
+      data-testid="graph-view"
+      data-animated={shouldAnimate ? "true" : "false"}
+    >
       {reconnecting && (
-        <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, background: "#ffa500", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-          Reconnecting...
+        <div className="absolute top-spacing-2 right-spacing-2 z-10">
+          <Alert>
+            <AlertDescription className="text-warning">Reconnecting...</AlertDescription>
+          </Alert>
         </div>
       )}
       {focusMessage && (
-        <div style={{ position: "absolute", top: 8, left: 8, zIndex: 10, background: focusMessage.type === "success" ? "#4caf50" : focusMessage.type === "error" ? "#f44336" : "#2196f3", color: "#fff", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+        <div className={`absolute top-spacing-2 left-spacing-2 z-10 px-spacing-3 py-spacing-1 text-label-md font-mono ${
+          focusMessage.type === "success" ? "bg-primary text-primary-foreground" :
+          focusMessage.type === "error" ? "bg-destructive text-destructive-foreground" :
+          "bg-surface-high text-foreground"
+        }`}>
           {focusMessage.text}
         </div>
       )}
@@ -123,7 +196,6 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
         onNodeClick={onNodeClick}
         fitView
       >
-        <MiniMap />
         <Controls />
       </ReactFlow>
     </div>

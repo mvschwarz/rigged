@@ -135,7 +135,7 @@ describe("RigGraph", () => {
     mockFetch.mockReturnValueOnce(new Promise(() => {}));
 
     render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
-    expect(screen.getByText(/loading/i)).toBeDefined();
+    expect(screen.getByTestId("graph-loading")).toBeDefined();
   });
 
   it("empty state rendered when nodes array is empty", async () => {
@@ -144,7 +144,7 @@ describe("RigGraph", () => {
     render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
-      expect(screen.getByText(/no nodes/i)).toBeDefined();
+      expect(screen.getByTestId("empty-topology")).toBeDefined();
     });
   });
 
@@ -184,8 +184,8 @@ describe("RigGraph", () => {
       // React Flow uses our custom node type — nodes have class react-flow__node-rigNode
       const customNodes = container.querySelectorAll(".react-flow__node-rigNode");
       expect(customNodes.length).toBe(2);
-      // RigNode renders runtime text — only our custom node does this
-      expect(screen.getByText("claude-code")).toBeDefined();
+      // RigNode renders runtime text in combined format
+      expect(screen.getByText(/claude-code/)).toBeDefined();
     });
   });
 });
@@ -208,8 +208,7 @@ describe("RigNode", () => {
     );
 
     expect(screen.getByText("dev1-impl")).toBeDefined();
-    expect(screen.getAllByText("worker").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("claude-code")).toBeDefined();
+    expect(screen.getByText(/claude-code · opus/)).toBeDefined();
     expect(screen.getByText("running")).toBeDefined();
   });
 
@@ -230,6 +229,124 @@ describe("RigNode", () => {
     );
 
     expect(screen.getByText(/unbound/i)).toBeDefined();
+  });
+
+  // UIF-T05 Test 1: Status dot color per status
+  it("status dot has correct color class per status", () => {
+    const statuses = [
+      { status: "running", expected: "bg-primary" },
+      { status: "idle", expected: "bg-foreground-muted" },
+      { status: "exited", expected: "bg-destructive" },
+      { status: "detached", expected: "bg-warning" },
+      { status: null, expected: "bg-foreground-muted/50" },
+    ];
+
+    for (const { status, expected } of statuses) {
+      cleanup();
+      const data = {
+        logicalId: "test-node",
+        role: "worker",
+        runtime: "claude-code",
+        model: null,
+        status,
+        binding: null,
+      };
+
+      render(
+        <ReactFlowProvider>
+          <RigNode data={data} />
+        </ReactFlowProvider>
+      );
+
+      const dot = screen.getByTestId("status-dot-test-node");
+      expect(dot.className).toContain(expected);
+    }
+  });
+});
+
+// UIF-T05: Edge style helper tests
+describe("Edge styles", () => {
+  it("delegates_to: solid, primary color", async () => {
+    const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
+    const result = getEdgeStyle("delegates_to");
+    expect(result.style.stroke).toContain("--primary");
+    expect(result.style.strokeDasharray).toBeUndefined();
+  });
+
+  it("spawned_by: dashed, primary color", async () => {
+    const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
+    const result = getEdgeStyle("spawned_by");
+    expect(result.style.stroke).toContain("--primary");
+    expect(result.style.strokeDasharray).toBeDefined();
+  });
+
+  it("can_observe: dotted, foreground-muted", async () => {
+    const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
+    const result = getEdgeStyle("can_observe");
+    expect(result.style.stroke).toContain("--foreground-muted");
+    expect(result.style.strokeDasharray).toBeDefined();
+  });
+
+  it("uses: thin solid, accent color", async () => {
+    const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
+    const result = getEdgeStyle("uses");
+    expect(result.style.stroke).toContain("--accent");
+    expect(result.style.strokeWidth).toBe(1);
+    expect(result.style.strokeDasharray).toBeUndefined();
+  });
+});
+
+// UIF-T05: Graph entrance animation
+describe("Graph entrance animation", () => {
+  it("initial navigation sets data-animated='true'", async () => {
+    mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
+    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+
+    await waitFor(() => {
+      const view = screen.getByTestId("graph-view");
+      expect(view.dataset.animated).toBe("true");
+    });
+  });
+
+  it("after initial render, subsequent renders have data-animated='false'", async () => {
+    let callCount = 0;
+    mockFetch.mockImplementation(() => {
+      callCount++;
+      return Promise.resolve(mockGraphResponse(sampleNodes(), sampleEdges()));
+    });
+
+    const { rerender } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+
+    // Wait for first render with data
+    await waitFor(() => expect(screen.getByTestId("graph-view")).toBeDefined());
+
+    // Force a rerender (simulating data refresh)
+    rerender(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+
+    // After the useEffect has set animatedRigRef, shouldAnimate should be false
+    await waitFor(() => {
+      const view = screen.getByTestId("graph-view");
+      expect(view.dataset.animated).toBe("false");
+    });
+  });
+
+  it("empty topology state renders wireframe ghost", async () => {
+    mockFetch.mockResolvedValue(mockGraphResponse([], []));
+    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("empty-topology")).toBeDefined();
+      expect(screen.getByText("EMPTY TOPOLOGY")).toBeDefined();
+    });
+  });
+
+  it("loading state shows skeleton", async () => {
+    mockFetch.mockReturnValue(new Promise(() => {}));
+    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("graph-loading")).toBeDefined();
+    });
   });
 });
 

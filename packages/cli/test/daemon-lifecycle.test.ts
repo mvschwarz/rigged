@@ -320,4 +320,74 @@ describe("Daemon Lifecycle", () => {
     // daemon.json must NOT be deleted — process is still running
     expect(deps.removeFile).not.toHaveBeenCalled();
   });
+
+  // Test 19: start with stale PID (pid alive but healthz fails) -> allows start (PID reuse safety)
+  it("start: stale PID (alive but not rigged) -> proceeds to start new daemon", async () => {
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    let fetchCount = 0;
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn(() => true),
+      // First fetch (verify existing PID): fails -> stale PID
+      // Subsequent fetches (healthz poll for new daemon): succeed
+      fetch: vi.fn(async () => {
+        fetchCount++;
+        if (fetchCount === 1) throw new Error("connection refused");
+        return { ok: true };
+      }),
+    });
+
+    const result = await startDaemon({ port: 7433 }, deps);
+    expect(result.pid).toBe(12345); // new daemon spawned
+  });
+
+  // Test 20: stop with stale PID (alive but not rigged) -> cleans up state, no SIGTERM
+  it("stop: stale PID (alive but not rigged) -> removes state, does not kill", async () => {
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn(() => true),
+      fetch: vi.fn(async () => { throw new Error("connection refused"); }),
+    });
+
+    await stopDaemon(deps);
+    expect(deps.kill).not.toHaveBeenCalled();
+    expect(deps.removeFile).toHaveBeenCalledWith(STATE_FILE);
+  });
+
+  // Test 21: malformed daemon.json -> treated as stopped, no crash
+  it("malformed daemon.json -> getDaemonStatus returns stopped", async () => {
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return "NOT VALID JSON {{{";
+        return null;
+      }),
+    });
+
+    const status = await getDaemonStatus(deps);
+    expect(status.state).toBe("stopped");
+  });
+
+  // Test 22: malformed daemon.json -> startDaemon proceeds (treats as no state)
+  it("malformed daemon.json -> startDaemon proceeds normally", async () => {
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return "GARBAGE";
+        return null;
+      }),
+    });
+
+    const result = await startDaemon({ port: 7433 }, deps);
+    expect(result.pid).toBe(12345);
+  });
 });

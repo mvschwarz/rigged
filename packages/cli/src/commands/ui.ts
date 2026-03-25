@@ -4,17 +4,17 @@ import { realDeps } from "./daemon.js";
 
 export interface UiDeps {
   lifecycleDeps: LifecycleDeps;
-  exec: (cmd: string) => Promise<void>;
+  exec: (cmd: string, args: string[]) => Promise<void>;
 }
 
 export function uiCommand(depsOverride?: UiDeps): Command {
   const cmd = new Command("ui").description("UI commands");
   const getDeps = (): UiDeps => depsOverride ?? {
     lifecycleDeps: realDeps(),
-    exec: async (c) => {
-      const { exec: cpExec } = await import("node:child_process");
+    exec: async (cmd, args) => {
+      const { execFile } = await import("node:child_process");
       const { promisify } = await import("node:util");
-      await promisify(cpExec)(c);
+      await promisify(execFile)(cmd, args);
     },
   };
 
@@ -39,7 +39,7 @@ export function uiCommand(depsOverride?: UiDeps): Command {
       console.log(url);
 
       try {
-        await deps.exec(`open ${url}`);
+        await deps.exec("open", [url]);
       } catch {
         console.error("Failed to open browser — open the URL manually");
         process.exitCode = 1;

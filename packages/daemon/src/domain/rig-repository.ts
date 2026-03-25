@@ -115,6 +115,29 @@ export class RigRepository {
     return rows.map((r) => this.rowToRig(r));
   }
 
+  getRigSummaries(): Array<{ id: string; name: string; nodeCount: number; latestSnapshotAt: string | null; latestSnapshotId: string | null }> {
+    const rows = this.db.prepare(`
+      SELECT
+        r.id,
+        r.name,
+        (SELECT COUNT(*) FROM nodes n WHERE n.rig_id = r.id) AS node_count,
+        s.id AS latest_snapshot_id,
+        s.created_at AS latest_snapshot_at
+      FROM rigs r
+      LEFT JOIN snapshots s ON s.rig_id = r.id
+        AND s.created_at = (SELECT MAX(s2.created_at) FROM snapshots s2 WHERE s2.rig_id = r.id)
+      ORDER BY r.created_at
+    `).all() as Array<{ id: string; name: string; node_count: number; latest_snapshot_id: string | null; latest_snapshot_at: string | null }>;
+
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      nodeCount: r.node_count,
+      latestSnapshotAt: r.latest_snapshot_at,
+      latestSnapshotId: r.latest_snapshot_id,
+    }));
+  }
+
   deleteRig(rigId: string): void {
     this.db.prepare("DELETE FROM rigs WHERE id = ?").run(rigId);
   }

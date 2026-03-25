@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { RigRepository } from "../domain/rig-repository.js";
 import type { SessionRegistry } from "../domain/session-registry.js";
 import type { EventBus } from "../domain/event-bus.js";
-import type { SnapshotRepository } from "../domain/snapshot-repository.js";
 import { projectRigToGraph } from "../domain/graph-projection.js";
 
 export const rigsRoutes = new Hono();
@@ -15,28 +14,10 @@ function getSessionRegistry(c: { get: (key: string) => unknown }): SessionRegist
   return c.get("sessionRegistry" as never) as SessionRegistry;
 }
 
-function getSnapshotRepo(c: { get: (key: string) => unknown }): SnapshotRepository {
-  return c.get("snapshotRepo" as never) as SnapshotRepository;
-}
-
 // GET /api/rigs/summary — MUST be registered before /:id to avoid Hono resolving "summary" as a rig ID
 rigsRoutes.get("/summary", (c) => {
   const repo = getRepo(c);
-  const snapshotRepo = getSnapshotRepo(c);
-
-  const rigs = repo.listRigs();
-  const summaries = rigs.map((rig) => {
-    const full = repo.getRig(rig.id);
-    const latest = snapshotRepo.getLatestSnapshot(rig.id);
-    return {
-      id: rig.id,
-      name: rig.name,
-      nodeCount: full?.nodes.length ?? 0,
-      latestSnapshotAt: latest?.createdAt ?? null,
-      latestSnapshotId: latest?.id ?? null,
-    };
-  });
-
+  const summaries = repo.getRigSummaries();
   return c.json(summaries);
 });
 

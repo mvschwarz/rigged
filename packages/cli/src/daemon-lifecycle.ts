@@ -54,13 +54,29 @@ function readState(deps: LifecycleDeps): DaemonState | null {
   if (!deps.exists(STATE_FILE)) return null;
   const raw = deps.readFile(STATE_FILE);
   if (!raw) return null;
-  return JSON.parse(raw) as DaemonState;
+  try {
+    return JSON.parse(raw) as DaemonState;
+  } catch {
+    // Malformed daemon.json — treat as no state
+    console.error("Warning: malformed daemon.json, treating as stopped");
+    return null;
+  }
+}
+
+async function verifyDaemonPid(state: DaemonState, deps: LifecycleDeps): Promise<boolean> {
+  if (!deps.isProcessAlive(state.pid)) return false;
+  try {
+    const res = await deps.fetch(`http://localhost:${state.port}/healthz`);
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Promise<DaemonState> {
-  // Check if already running
+  // Check if already running — verify PID is actually a rigged daemon via healthz
   const existing = readState(deps);
-  if (existing && deps.isProcessAlive(existing.pid)) {
+  if (existing && await verifyDaemonPid(existing, deps)) {
     throw new Error(`Daemon already running (pid ${existing.pid} on port ${existing.port})`);
   }
 
@@ -122,6 +138,13 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
 export async function stopDaemon(deps: LifecycleDeps): Promise<void> {
   const state = readState(deps);
   if (!state) return; // Not running — clean exit
+
+  // Verify PID is actually a rigged daemon before killing
+  if (!await verifyDaemonPid(state, deps)) {
+    // PID is not a rigged daemon — clean up stale state file
+    deps.removeFile(STATE_FILE);
+    return;
+  }
 
   deps.kill(state.pid, "SIGTERM");
 

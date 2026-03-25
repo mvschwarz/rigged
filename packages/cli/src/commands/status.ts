@@ -59,6 +59,12 @@ export function statusCommand(depsOverride?: StatusDeps): Command {
 
     console.log(`Daemon running on port ${status.port}`);
 
+    if (summaryRes.status !== 200) {
+      console.error(`Failed to fetch rig summary (HTTP ${summaryRes.status})`);
+      process.exitCode = 1;
+      return;
+    }
+
     const rigs = summaryRes.data;
     if (rigs.length === 0) {
       console.log("No rigs");

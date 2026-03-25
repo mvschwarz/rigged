@@ -36,21 +36,39 @@ export function Dashboard({ onSelectRig, onImport }: DashboardProps) {
     return () => { cancelled = true; };
   }, []);
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const handleSnapshot = async (rigId: string) => {
-    await fetch(`/api/rigs/${rigId}/snapshots`, { method: "POST" });
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/rigs/${rigId}/snapshots`, { method: "POST" });
+      if (!res.ok) {
+        setActionError(`Snapshot failed (HTTP ${res.status})`);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Snapshot failed");
+    }
   };
 
   const handleExport = async (rigId: string) => {
-    const res = await fetch(`/api/rigs/${rigId}/spec`);
-    if (!res.ok) return;
-    const yaml = await res.text();
-    const blob = new Blob([yaml], { type: "text/yaml" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${rigId}.yaml`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/rigs/${rigId}/spec`);
+      if (!res.ok) {
+        setActionError(`Export failed (HTTP ${res.status})`);
+        return;
+      }
+      const yaml = await res.text();
+      const blob = new Blob([yaml], { type: "text/yaml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${rigId}.yaml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Export failed");
+    }
   };
 
   if (loading) return <div>Loading dashboard...</div>;
@@ -71,6 +89,7 @@ export function Dashboard({ onSelectRig, onImport }: DashboardProps) {
         <h2>Rigs</h2>
         <button onClick={onImport}>Import Rig</button>
       </div>
+      {actionError && <div style={{ color: "red", marginBottom: 8 }}>{actionError}</div>}
       {rigs.map((rig) => (
         <RigCard
           key={rig.id}

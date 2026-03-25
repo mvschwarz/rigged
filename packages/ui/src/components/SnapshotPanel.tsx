@@ -13,7 +13,7 @@ interface SnapshotPanelProps {
 }
 
 export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
-  const { snapshots, loading, refresh } = useSnapshots(rigId);
+  const { snapshots, loading, error: fetchError, refresh } = useSnapshots(rigId);
   const [creating, setCreating] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
         {creating ? "Creating..." : "Create Snapshot"}
       </button>
 
-      {error && <div data-testid="restore-error" style={{ color: "red", marginTop: 8 }}>{error}</div>}
+      {(error ?? fetchError) && <div data-testid="restore-error" style={{ color: "red", marginTop: 8 }}>{error ?? fetchError}</div>}
 
       {restoreResult && (
         <div data-testid="restore-result" style={{ marginTop: 8 }}>

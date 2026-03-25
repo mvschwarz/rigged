@@ -317,4 +317,61 @@ describe("rigged status", () => {
     // Should have output (not crash or "unknown command")
     expect(logs.join("\n")).toMatch(/not running/i);
   });
+
+  // Test 9: summary 500 -> error message, does not crash
+  describe("summary returns 500", () => {
+    let srv: ReturnType<typeof createDaemonServer>;
+    let port: number;
+
+    beforeAll(async () => {
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url!, "http://localhost");
+        if (url.pathname === "/api/rigs/summary") {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "internal" }));
+          return;
+        }
+        if (url.pathname === "/healthz") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok" }));
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+      srv = {
+        server,
+        port: 0,
+        close: () => new Promise<void>((r) => server.close(() => r())),
+        listen: () => new Promise<number>((r) => {
+          server.listen(0, () => {
+            const addr = server.address();
+            r(typeof addr === "object" && addr ? addr.port : 0);
+          });
+        }),
+      };
+      port = await srv.listen();
+    });
+    afterAll(async () => { await srv.close(); });
+
+    it("summary 500 -> error message, no crash", async () => {
+      const deps: StatusDeps = {
+        lifecycleDeps: mockLifecycleDeps({
+          exists: vi.fn((p: string) => p === STATE_FILE),
+          readFile: vi.fn((p: string) => {
+            if (p === STATE_FILE) return JSON.stringify(runningState(port));
+            return null;
+          }),
+          fetch: vi.fn(async () => ({ ok: true })),
+        }),
+        clientFactory: (baseUrl) => new DaemonClient(baseUrl),
+      };
+
+      const program = new Command();
+      program.addCommand(statusCommand(deps));
+      const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "status"]));
+
+      expect(logs.join("\n")).toMatch(/failed.*summary|HTTP 500/i);
+    });
+  });
 });

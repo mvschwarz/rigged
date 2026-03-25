@@ -61,7 +61,7 @@ describe("rigged ui open", () => {
     program.addCommand(uiCommand(deps));
     const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "ui", "open"]));
 
-    expect(execFn).toHaveBeenCalledWith("open http://localhost:8888");
+    expect(execFn).toHaveBeenCalledWith("open", ["http://localhost:8888"]);
     expect(logs.join("\n")).toContain("http://localhost:8888");
   });
 
@@ -88,7 +88,7 @@ describe("rigged ui open", () => {
     program.addCommand(uiCommand(deps));
     const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "ui", "open"]));
 
-    expect(execFn).toHaveBeenCalledWith("open http://localhost:9999");
+    expect(execFn).toHaveBeenCalledWith("open", ["http://localhost:9999"]);
     expect(logs.join("\n")).toContain("9999");
   });
 

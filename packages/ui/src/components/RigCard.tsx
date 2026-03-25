@@ -66,25 +66,25 @@ export function RigCard({ rig, onSelect, onSnapshot, onExport }: RigCardProps) {
         </div>
       </div>
 
-      {/* Action buttons — light text on dark card */}
-      <div className="flex gap-spacing-3">
+      {/* Action buttons — light styled buttons on dark card */}
+      <div className="flex gap-spacing-2">
         <button
-          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors"
+          className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark bg-white/6 border border-white/10 hover:bg-white/12 hover:text-foreground-on-dark transition-all"
           onClick={(e) => { e.stopPropagation(); onSnapshot(); }}
         >
-          [ SNAPSHOT ]
+          SNAPSHOT
         </button>
         <button
-          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors"
+          className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark bg-white/6 border border-white/10 hover:bg-white/12 hover:text-foreground-on-dark transition-all"
           onClick={(e) => { e.stopPropagation(); onExport(); }}
         >
-          [ EXPORT ]
+          EXPORT
         </button>
         <button
-          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors ml-auto group-hover:text-foreground-on-dark"
+          className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-on-dark bg-white/10 border border-white/15 hover:bg-white/20 transition-all ml-auto"
           onClick={(e) => { e.stopPropagation(); onSelect(rig.id); }}
         >
-          [ GRAPH &rarr; ]
+          GRAPH &rarr;
         </button>
       </div>
     </div>

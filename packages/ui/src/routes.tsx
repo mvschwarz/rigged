@@ -3,8 +3,9 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  Link,
 } from "@tanstack/react-router";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client.js";
 import { AppShell } from "./components/AppShell.js";
 import { Dashboard } from "./components/Dashboard.js";
@@ -33,15 +34,35 @@ const indexRoute = createRoute({
 // Rig detail route — Graph + SnapshotPanel
 function RigDetail() {
   const { rigId } = rigDetailRoute.useParams();
+
+  // Fetch rig name from summary cache or fresh
+  const { data: rigs } = useQuery({
+    queryKey: ["rigs", "summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/rigs/summary");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const rigName = rigs?.find((r: { id: string; name: string }) => r.id === rigId)?.name;
+
   return (
     <div className="flex flex-col flex-1 h-full">
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 relative">
+      {/* Rig header bar */}
+      <div className="flex items-center gap-spacing-3 px-spacing-4 py-spacing-2 bg-background border-b border-foreground/6 shrink-0">
+        <Link to="/" className="text-label-md text-foreground-muted hover:text-foreground transition-colors">
+          &larr; RIGS
+        </Link>
+        <span className="text-foreground/20">/</span>
+        <span className="text-label-lg font-bold uppercase">{rigName ?? rigId.slice(0, 8)}</span>
+      </div>
+
+      {/* Graph + Snapshots: side-by-side on wide, stacked on narrow */}
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+        <div className="flex-1 relative min-h-[300px]">
           <RigGraph rigId={rigId} />
         </div>
-        <div className="relative border-l border-ghost-border/30">
-          <SnapshotPanel rigId={rigId} />
-        </div>
+        <SnapshotPanel rigId={rigId} />
       </div>
     </div>
   );

@@ -76,16 +76,16 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
   };
 
   return (
-    <div data-testid="snapshot-panel" className="card-dark bg-noise-dark p-spacing-4 min-w-[260px] max-w-[300px] overflow-y-auto">
+    <div data-testid="snapshot-panel" className="card-dark bg-noise-dark p-spacing-4 lg:min-w-[260px] lg:max-w-[300px] overflow-y-auto">
       {/* Header */}
       <div className="flex justify-between items-center mb-spacing-4">
         <h3 className="text-headline-md uppercase text-foreground-on-dark tracking-[0.02em]">SNAPSHOTS</h3>
         <button
-          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors disabled:opacity-50"
+          className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-on-dark bg-white/10 border border-white/15 hover:bg-white/20 transition-all disabled:opacity-50"
           onClick={handleCreate}
           disabled={createSnapshot.isPending}
         >
-          [ {createSnapshot.isPending ? "CREATING..." : "CREATE"} ]
+          {createSnapshot.isPending ? "CREATING..." : "CREATE"}
         </button>
       </div>
 
@@ -148,11 +148,11 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
                   </div>
                 </div>
                 <button
-                  className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors"
+                  className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark bg-white/6 border border-white/10 hover:bg-white/12 hover:text-foreground-on-dark transition-all"
                   data-testid={`restore-btn-${snap.id}`}
                   onClick={() => setConfirmRestore(snap.id)}
                 >
-                  [ RESTORE ]
+                  RESTORE
                 </button>
               </div>
             </div>

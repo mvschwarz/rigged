@@ -55,15 +55,11 @@ describe("shadcn components", () => {
     render(<Button variant="tactical" data-testid="tac">SNAPSHOT</Button>);
 
     const btn = screen.getByTestId("tac");
-    // Should contain spaced bracket decoration: [ SNAPSHOT ]
-    expect(btn.textContent).toContain("[");
-    expect(btn.textContent).toContain("]");
     expect(btn.textContent).toContain("SNAPSHOT");
-    // Verify spaced format (nbsp around content)
-    expect(btn.textContent).toMatch(/\[\s+SNAPSHOT\s+\]/);
-    // Should have uppercase + tracking classes
+    // Should have uppercase + tracking + border classes (tech button style)
     expect(btn.className).toContain("uppercase");
     expect(btn.className).toContain("text-label-md");
+    expect(btn.className).toContain("border");
   });
 
   // Test 3: Button primary variant has correct classes

@@ -19,7 +19,7 @@ const buttonVariants = cva(
         ghost: "text-foreground-muted hover:bg-foreground/5 hover:text-foreground",
         link: "text-accent underline-offset-4 hover:underline",
         tactical:
-          "bg-transparent text-foreground-muted uppercase text-label-md tracking-[0.04em] hover:text-foreground transition-all",
+          "bg-foreground/8 text-foreground uppercase text-label-md tracking-[0.04em] hover:bg-foreground/15 transition-all border border-foreground/10",
       },
       size: {
         default: "h-10 px-4 py-2",
@@ -44,23 +44,13 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
-    const isTactical = variant === "tactical"
-
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
       >
-        {isTactical ? (
-          <>
-            <span aria-hidden="true">[{"\u00a0"}</span>
-            {children}
-            <span aria-hidden="true">{"\u00a0"}]</span>
-          </>
-        ) : (
-          children
-        )}
+        {children}
       </Comp>
     )
   }

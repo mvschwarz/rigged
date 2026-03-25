@@ -88,13 +88,13 @@ describe("shadcn components", () => {
   });
 
   // Test 5: Card uses surface-low background
-  it("Card uses bg-surface-low", async () => {
+  it("Card uses bg-card", async () => {
     const { Card } = await import("../src/components/ui/card.js");
 
     render(<Card data-testid="card">content</Card>);
 
     const card = screen.getByTestId("card");
-    expect(card.className).toContain("bg-surface-low");
+    expect(card.className).toContain("bg-card");
   });
 
   // Test 6: Dialog overlay uses backdrop-blur for glassmorphism
@@ -105,7 +105,7 @@ describe("shadcn components", () => {
     // Read dialog source — easier than rendering since Dialog requires Portal
     const src = readFileSync(resolve(__dirname, "../src/components/ui/dialog.tsx"), "utf-8");
     expect(src).toContain("backdrop-blur");
-    expect(src).toContain("bg-surface/70");
+    expect(src).toContain("bg-black/40");
   });
 
   // Test 7: Separator uses ghost-border

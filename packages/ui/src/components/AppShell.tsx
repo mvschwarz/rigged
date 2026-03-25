@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Sidebar } from "./Sidebar.js";
 import { StatusBar } from "./StatusBar.js";
@@ -10,43 +10,52 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
-      {/* Header — machined top bar with brand presence */}
+    <div className="h-screen flex flex-col">
+      {/* Header — dark chrome bar */}
       <header
         data-testid="app-header"
-        className="h-14 flex items-center justify-between px-spacing-6 bg-background shrink-0 relative"
+        className="h-12 flex items-center justify-between px-spacing-4 bg-surface-dark text-foreground-on-dark shrink-0 relative z-30"
       >
         <div className="flex items-center gap-spacing-3">
-          {/* Brand mark */}
-          <div className="flex items-center gap-spacing-2">
-            <div className="w-2 h-2 bg-primary" />
-            <h1 className="text-headline-lg uppercase tracking-[0.08em] text-foreground font-inter">
-              RIGGED
-            </h1>
-          </div>
-          <span className="text-label-sm text-foreground-muted font-grotesk tracking-[0.06em] opacity-50 ml-spacing-2">
-            CONTROL PLANE
-          </span>
+          {/* Hamburger — visible on narrow viewports, or always as toggle */}
+          <button
+            data-testid="sidebar-toggle"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="flex flex-col gap-[3px] p-1 lg:hidden"
+            aria-label="Toggle navigation"
+          >
+            <span className="block w-4 h-[1.5px] bg-foreground-on-dark" />
+            <span className="block w-4 h-[1.5px] bg-foreground-on-dark" />
+            <span className="block w-3 h-[1.5px] bg-foreground-on-dark" />
+          </button>
+
+          <h1 className="text-label-lg uppercase tracking-[0.08em] font-inter font-bold">
+            RIGGED
+          </h1>
         </div>
 
-        {/* Version/status indicator in header */}
-        <div className="text-label-sm font-mono text-foreground-muted opacity-40">
+        <span className="text-label-sm font-mono text-foreground-muted-on-dark">
           v0.1.0
-        </div>
-
-        {/* Bottom edge — ghost border replacement with gradient fade */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-ghost-border to-transparent" />
+        </span>
       </header>
 
       {/* Main: Sidebar + Content */}
-      <div className="flex flex-1 min-h-0">
-        <Sidebar />
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Sidebar overlay backdrop for mobile */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/30 z-20 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
         <main data-testid="content-area" className="flex-1 overflow-auto bg-background relative">
-          {/* Atmospheric dot grid */}
-          <div className="bg-grid absolute inset-0 pointer-events-none z-0" />
-          {/* Subtle dither grain */}
+          {/* Subtle dither grain texture on canvas */}
           <div className="bg-dither absolute inset-0 pointer-events-none z-0" />
           <div key={pathname} className="relative z-10 route-enter">{children}</div>
         </main>

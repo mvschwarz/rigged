@@ -25,10 +25,10 @@ describe("Tailwind Foundation", () => {
     const root = document.documentElement;
     const styles = getComputedStyle(root);
 
-    expect(styles.getPropertyValue("--background").trim()).toContain("0 2% 8%");
-    expect(styles.getPropertyValue("--foreground").trim()).toContain("20 7% 89%");
-    expect(styles.getPropertyValue("--primary").trim()).toContain("72 12% 75%");
-    expect(styles.getPropertyValue("--destructive").trim()).toContain("6 100% 84%");
+    expect(styles.getPropertyValue("--background").trim()).toContain("50 5% 84%");
+    expect(styles.getPropertyValue("--foreground").trim()).toContain("0 0% 2%");
+    expect(styles.getPropertyValue("--primary").trim()).toContain("0 0% 2%");
+    expect(styles.getPropertyValue("--destructive").trim()).toContain("0 72% 51%");
   });
 
   // Test 2: ALL borderRadius tokens zeroed in config
@@ -77,8 +77,8 @@ describe("Tailwind Foundation", () => {
     expect(cssContent).toMatch(/\.bg-background\b/);
     expect(cssContent).toContain("hsl(var(--background))");
 
-    // bg-surface-low should be in the build (used by Card, RigNode, etc.)
-    expect(cssContent).toMatch(/\.bg-surface-low\b/);
+    // bg-card should be in the build (used by Card, etc.)
+    expect(cssContent).toMatch(/\.bg-card\b/);
   });
 
   // Test 5: main.tsx imports globals.css (source code verification)
@@ -93,7 +93,7 @@ describe("Tailwind Foundation", () => {
     const cssText = Array.from(styleSheets).map((s) => s.textContent).join("");
 
     expect(cssText).toContain("--background");
-    expect(cssText).toContain("--surface-low");
+    expect(cssText).toContain("--surface-dark");
     expect(cssText).toContain("--ghost-border");
   });
 });

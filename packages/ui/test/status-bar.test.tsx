@@ -37,14 +37,14 @@ function mockDisconnected() {
 
 describe("StatusBar", () => {
   // Test 1: Connected state
-  it("shows CONNECTED with health dot bg-primary", async () => {
+  it("shows CONNECTED with health dot bg-success", async () => {
     mockConnected();
     const qc = createTestQueryClient();
     render(<QueryClientProvider client={qc}><StatusBar /></QueryClientProvider>);
 
     await waitFor(() => {
       expect(screen.getByTestId("health-text").textContent).toBe("CONNECTED");
-      expect(screen.getByTestId("health-dot").className).toContain("bg-primary");
+      expect(screen.getByTestId("health-dot").className).toContain("bg-success");
     });
   });
 

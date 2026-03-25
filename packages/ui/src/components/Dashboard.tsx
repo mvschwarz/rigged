@@ -5,34 +5,25 @@ import { useCreateSnapshot } from "../hooks/mutations.js";
 import { RigCard } from "./RigCard.js";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent } from "@/components/ui/card";
 
 /** Wireframe ghost SVG — faint blueprint of a topology */
 function WireframeGhost() {
   return (
     <svg
       data-testid="wireframe-ghost"
-      className="absolute inset-0 w-full h-full"
+      className="absolute inset-0 w-full h-full text-foreground"
       viewBox="0 0 400 300"
       fill="none"
       style={{ opacity: 0.06 }}
     >
-      {/* Nodes */}
       <rect x="160" y="40" width="80" height="40" stroke="currentColor" strokeWidth="0.5" />
       <rect x="60" y="160" width="80" height="40" stroke="currentColor" strokeWidth="0.5" />
       <rect x="260" y="160" width="80" height="40" stroke="currentColor" strokeWidth="0.5" />
-      {/* Edges */}
       <line x1="200" y1="80" x2="100" y2="160" stroke="currentColor" strokeWidth="0.5" strokeDasharray="4 4" />
       <line x1="200" y1="80" x2="300" y2="160" stroke="currentColor" strokeWidth="0.5" strokeDasharray="4 4" />
-      {/* Connection dots */}
       <circle cx="200" cy="80" r="2" fill="currentColor" />
       <circle cx="100" cy="160" r="2" fill="currentColor" />
       <circle cx="300" cy="160" r="2" fill="currentColor" />
-      {/* Extra ghost nodes for atmosphere */}
-      <rect x="30" y="240" width="60" height="30" stroke="currentColor" strokeWidth="0.3" opacity="0.5" />
-      <rect x="310" y="240" width="60" height="30" stroke="currentColor" strokeWidth="0.3" opacity="0.5" />
-      <line x1="100" y1="200" x2="60" y2="240" stroke="currentColor" strokeWidth="0.3" strokeDasharray="2 6" opacity="0.5" />
-      <line x1="300" y1="200" x2="340" y2="240" stroke="currentColor" strokeWidth="0.3" strokeDasharray="2 6" opacity="0.5" />
     </svg>
   );
 }
@@ -63,22 +54,20 @@ export function Dashboard() {
     }
   };
 
-  // Loading state — skeleton cards with shimmer
+  // Loading state
   if (isPending) {
     return (
-      <div className="p-spacing-8" data-testid="dashboard-loading">
-        <div className="flex justify-between mb-spacing-8">
+      <div className="p-spacing-6" data-testid="dashboard-loading">
+        <div className="flex justify-between mb-spacing-6">
           <div className="h-8 w-24 shimmer" />
           <div className="h-8 w-32 shimmer" />
         </div>
         {[1, 2].map((i) => (
-          <Card key={i} className="mb-spacing-2">
-            <CardContent className="p-spacing-6">
-              <div className="h-6 w-48 shimmer mb-spacing-4" />
-              <div className="h-20 shimmer mb-spacing-4" />
-              <div className="h-8 w-64 shimmer" />
-            </CardContent>
-          </Card>
+          <div key={i} className="card-dark p-spacing-6 mb-spacing-3">
+            <div className="h-6 w-48 shimmer-dark mb-spacing-4" />
+            <div className="h-16 shimmer-dark mb-spacing-4" />
+            <div className="h-8 w-64 shimmer-dark" />
+          </div>
         ))}
       </div>
     );
@@ -87,7 +76,7 @@ export function Dashboard() {
   // Error state
   if (error) {
     return (
-      <div className="p-spacing-8">
+      <div className="p-spacing-6">
         <Alert data-testid="dashboard-error">
           <AlertDescription>{error.message}</AlertDescription>
         </Alert>
@@ -98,13 +87,13 @@ export function Dashboard() {
   // Empty state
   if (!rigs || rigs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] relative text-foreground-muted" data-testid="dashboard-empty">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] relative" data-testid="dashboard-empty">
         <WireframeGhost />
         <div className="relative z-10 text-center">
           <h2 className="text-display-lg text-foreground mb-spacing-4">NO RIGS</h2>
           <p className="text-body-md text-foreground-muted mb-spacing-8">Import a rig spec to get started</p>
           <Button
-            variant="tactical"
+            variant="default"
             size="lg"
             onClick={() => navigate({ to: "/import" })}
           >
@@ -116,16 +105,16 @@ export function Dashboard() {
   }
 
   return (
-    <div className="p-spacing-8 max-w-[960px]">
+    <div className="p-spacing-6 max-w-[800px]">
       {/* Page header */}
-      <div className="flex justify-between items-baseline mb-spacing-8">
+      <div className="flex justify-between items-baseline mb-spacing-6">
         <div>
-          <h2 className="text-headline-lg uppercase tracking-[0.06em] mb-spacing-1">RIGS</h2>
-          <p className="text-label-md text-foreground-muted font-grotesk">
+          <h2 className="text-headline-lg uppercase">RIGS</h2>
+          <p className="text-label-md text-foreground-muted font-grotesk mt-spacing-1">
             {rigs.length} active topolog{rigs.length !== 1 ? "ies" : "y"}
           </p>
         </div>
-        <Button variant="tactical" onClick={() => navigate({ to: "/import" })}>
+        <Button variant="default" size="sm" onClick={() => navigate({ to: "/import" })}>
           IMPORT
         </Button>
       </div>

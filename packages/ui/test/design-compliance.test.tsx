@@ -46,7 +46,7 @@ describe("Design System Compliance", () => {
   it("status color mapping matches design-system.md", async () => {
     const { getStatusColorClass } = await import("../src/lib/status-colors.js");
 
-    expect(getStatusColorClass("running")).toBe("bg-primary");
+    expect(getStatusColorClass("running")).toBe("bg-success");
     expect(getStatusColorClass("idle")).toBe("bg-foreground-muted");
     expect(getStatusColorClass("exited")).toBe("bg-destructive");
     expect(getStatusColorClass("detached")).toBe("bg-warning");

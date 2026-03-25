@@ -7,37 +7,37 @@ export interface EdgeStyleResult {
 }
 
 /**
- * Maps edge kind to React Flow edge style props per design-system.md §2.
+ * Maps edge kind to React Flow edge style — dark edges on light canvas.
  */
 export function getEdgeStyle(kind: string): EdgeStyleResult {
   switch (kind) {
     case "delegates_to":
       return {
-        style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
+        style: { stroke: "#050505", strokeWidth: 2 },
         animated: false,
         type: "smoothstep",
       };
     case "spawned_by":
       return {
-        style: { stroke: "hsl(var(--primary))", strokeWidth: 2, strokeDasharray: "6 3" },
+        style: { stroke: "#050505", strokeWidth: 2, strokeDasharray: "6 3" },
         animated: false,
         type: "smoothstep",
       };
     case "can_observe":
       return {
-        style: { stroke: "hsl(var(--foreground-muted))", strokeWidth: 1.5, strokeDasharray: "2 2" },
+        style: { stroke: "#666666", strokeWidth: 1.5, strokeDasharray: "2 2" },
         animated: false,
         type: "smoothstep",
       };
     case "uses":
       return {
-        style: { stroke: "hsl(var(--accent))", strokeWidth: 1 },
+        style: { stroke: "#1272b8", strokeWidth: 1 },
         animated: false,
         type: "smoothstep",
       };
     default:
       return {
-        style: { stroke: "hsl(var(--foreground-muted))", strokeWidth: 1 },
+        style: { stroke: "#666666", strokeWidth: 1 },
         animated: false,
         type: "smoothstep",
       };

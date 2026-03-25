@@ -164,7 +164,7 @@ describe("SnapshotPanel", () => {
     mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
       if (typeof url === "string" && url.includes("/restore/") && opts?.method === "POST") {
         return Promise.resolve(mockRestoreResult([
-          { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
+          { nodeId: "n1", logicalId: "orchestrator", status: "launched" },
           { nodeId: "n2", logicalId: "worker", status: "failed" },
         ]));
       }
@@ -183,8 +183,8 @@ describe("SnapshotPanel", () => {
     fireEvent.click(screen.getByTestId("confirm-restore-snap-1"));
 
     await waitFor(() => {
-      const resumed = screen.getByTestId("restore-status-orchestrator");
-      expect(resumed.className).toContain("text-primary");
+      const launched = screen.getByTestId("restore-status-orchestrator");
+      expect(launched.className).toContain("text-success");
       const failed = screen.getByTestId("restore-status-worker");
       expect(failed.className).toContain("text-destructive");
     });

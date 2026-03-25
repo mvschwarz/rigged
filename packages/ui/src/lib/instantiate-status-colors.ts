@@ -6,7 +6,7 @@
 export function getInstantiateStatusColorClass(status: string): string {
   switch (status) {
     case "launched":
-      return "text-primary";
+      return "text-success";
     case "failed":
       return "text-destructive";
     default:

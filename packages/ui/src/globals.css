@@ -4,54 +4,56 @@
 
 @layer base {
   :root {
-    /* Tactical Control Plane — Dark Theme */
-    /* Source: docs/design/design-system.md */
+    /* Anduril-inspired Light Theme */
+    /* Reference: anduril.com/lattice/command-and-control */
 
-    /* Surface hierarchy */
-    --background: 0 2% 8%;         /* #141313 */
-    --surface-low: 0 2% 11%;       /* #1c1b1b */
-    --surface: 0 1% 14%;           /* #242323 */
-    --surface-high: 0 1% 21%;      /* #353434 */
+    /* Canvas — warm Anduril beige */
+    --background: 50 5% 84%;          /* #d8d8d4 — the signature Anduril beige */
+    --background-warm: 45 6% 88%;     /* #e3e1dc — slightly lighter warm tone */
 
-    /* Foreground */
-    --foreground: 20 7% 89%;       /* #e5e2e1 */
-    --foreground-muted: 60 2% 56%; /* #919188 */
+    /* Dark surfaces — cards, header, sidebar, panels */
+    --surface-dark: 0 0% 2%;          /* #050505 — near-black, Anduril card color */
+    --surface-mid: 0 0% 8%;           /* #141414 — slightly lighter dark */
+    --surface-raised: 0 0% 14%;       /* #242424 — elevated dark elements */
 
-    /* Primary — Tactical Olive */
-    --primary: 72 12% 75%;         /* #c4c9b3 */
-    --primary-dark: 70 10% 30%;    /* #505544 */
-    --primary-foreground: 0 2% 8%; /* #141313 */
+    /* Foreground — text colors */
+    --foreground: 0 0% 2%;            /* #050505 — black text on light bg */
+    --foreground-muted: 0 0% 40%;     /* #666666 — secondary text on light bg */
+    --foreground-on-dark: 50 5% 84%;  /* #d8d8d4 — light text on dark bg */
+    --foreground-muted-on-dark: 0 0% 55%;  /* #8c8c8c — muted text on dark bg */
+
+    /* Accent */
+    --primary: 0 0% 2%;              /* Black — primary actions on light bg */
+    --primary-foreground: 50 5% 84%; /* Beige — text on primary buttons */
 
     /* Semantic */
-    --destructive: 6 100% 84%;     /* #ffb4ab */
-    --destructive-foreground: 0 2% 8%; /* #141313 */
-    --warning: 40 72% 69%;         /* #e5c07b */
-    --accent: 207 82% 66%;         /* #61afef */
+    --destructive: 0 72% 51%;         /* #de3b2f — red that works on both */
+    --destructive-foreground: 0 0% 100%;
+    --warning: 40 90% 50%;            /* #f0a500 — amber */
+    --accent: 207 82% 40%;            /* #1272b8 — blue links/info */
+    --success: 145 63% 35%;           /* #21955a — green for running/ok */
 
-    /* Ghost border */
-    --ghost-border: rgba(145, 145, 136, 0.15);
+    /* Borders */
+    --ghost-border: rgba(0, 0, 0, 0.1);
+    --ghost-border-dark: rgba(255, 255, 255, 0.08);
 
-    /* shadcn compatibility tokens */
+    /* shadcn compatibility */
     --border: var(--ghost-border);
-    --input: 0 1% 14%;             /* --surface */
-    --ring: 72 12% 75%;            /* --primary */
+    --input: 0 0% 2%;
+    --ring: 0 0% 2%;
     --radius: 0px;
 
-    /* Card */
-    --card: 0 2% 11%;              /* --surface-low */
-    --card-foreground: 20 7% 89%;  /* --foreground */
+    --card: 0 0% 2%;
+    --card-foreground: 50 5% 84%;
 
-    /* Popover */
-    --popover: 0 1% 14%;           /* --surface */
-    --popover-foreground: 20 7% 89%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 50 5% 84%;
 
-    /* Muted */
-    --muted: 0 2% 11%;             /* --surface-low */
-    --muted-foreground: 60 2% 56%; /* --foreground-muted */
+    --muted: 50 3% 78%;
+    --muted-foreground: 0 0% 40%;
 
-    /* Secondary */
-    --secondary: 0 1% 21%;         /* --surface-high */
-    --secondary-foreground: 20 7% 89%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 50 5% 84%;
   }
 
   * {
@@ -66,38 +68,22 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Selection highlight */
   ::selection {
-    background-color: hsl(var(--primary) / 0.25);
+    background-color: hsl(var(--foreground) / 0.15);
     color: hsl(var(--foreground));
   }
 }
 
-/* Background Textures — docs/design/design-system.md §7 */
+/* Textures — Anduril dithered grain on warm surfaces */
 
 @layer components {
-  /* Dot grid: faint tactical grid on --background surfaces only */
+  /* Dot grid on warm beige canvas */
   .bg-grid {
-    background-image: radial-gradient(circle, hsl(var(--foreground-muted)) 0.5px, transparent 0.5px);
+    background-image: radial-gradient(circle, hsl(var(--foreground) / 0.12) 0.5px, transparent 0.5px);
     background-size: 24px 24px;
-    opacity: 0.06;
   }
 
-  /* Noise texture: subtle carbon-fiber feel on --surface-low surfaces */
-  .bg-noise {
-    position: relative;
-  }
-  .bg-noise::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-    opacity: 0.03;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* Dithered grain overlay — the Anduril signature effect */
+  /* Dithered grain — the Anduril signature */
   .bg-dither {
     position: relative;
   }
@@ -105,61 +91,76 @@
     content: '';
     position: absolute;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    opacity: 0.04;
     pointer-events: none;
-    mix-blend-mode: overlay;
+    mix-blend-mode: multiply;
     z-index: 1;
   }
 
-  /* Scanline-free subtle horizontal lines for depth */
-  .bg-hatch {
-    background-image: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 3px,
-      hsl(var(--foreground-muted) / 0.02) 3px,
-      hsl(var(--foreground-muted) / 0.02) 4px
+  /* Noise on dark surfaces */
+  .bg-noise-dark {
+    position: relative;
+  }
+  .bg-noise-dark::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+    opacity: 0.04;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Dark card — the primary container on light bg */
+  .card-dark {
+    background-color: hsl(var(--surface-dark));
+    color: hsl(var(--foreground-on-dark));
+  }
+
+  /* Telemetry inset on dark cards */
+  .inset-dark {
+    background-color: hsl(0 0% 0% / 0.3);
+  }
+
+  /* Telemetry inset on light surfaces */
+  .inset-light {
+    background-color: hsl(var(--foreground) / 0.04);
+    border: 1px solid hsl(var(--foreground) / 0.06);
+  }
+
+  /* Shimmer for loading states */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--foreground) / 0.04) 25%,
+      hsl(var(--foreground) / 0.08) 50%,
+      hsl(var(--foreground) / 0.04) 75%
     );
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
   }
-
-  /* Glow accent — for key interactive surfaces */
-  .glow-primary {
-    box-shadow: 0 0 20px -6px hsl(var(--primary) / 0.15),
-                inset 0 1px 0 hsl(var(--foreground) / 0.03);
-  }
-
-  /* Rim light — top edge catch on elevated surfaces */
-  .rim-light {
-    border-top: 1px solid hsl(var(--foreground) / 0.06);
-  }
-
-  /* Inset surface — recessed telemetry blocks */
-  .inset-surface {
-    background-color: hsl(var(--background));
-    box-shadow: inset 0 1px 4px hsl(0 0% 0% / 0.4);
-    border: 1px solid hsl(0 0% 0% / 0.2);
-  }
-
-  /* Elevated card with subtle depth */
-  .card-elevated {
-    background-color: hsl(var(--surface-low));
-    border-top: 1px solid hsl(var(--foreground) / 0.04);
-    box-shadow: 0 2px 8px -2px hsl(0 0% 0% / 0.3);
-  }
-  .card-elevated:hover {
-    background-color: hsl(var(--surface));
-    box-shadow: 0 4px 16px -4px hsl(0 0% 0% / 0.4),
-                0 0 0 1px hsl(var(--primary) / 0.06);
+  .shimmer-dark {
+    background: linear-gradient(
+      90deg,
+      hsl(0 0% 100% / 0.02) 25%,
+      hsl(0 0% 100% / 0.06) 50%,
+      hsl(0 0% 100% / 0.02) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
   }
 }
 
-/* Motion — docs/design/design-system.md §8 */
+/* Motion */
 
 @layer components {
-  /* Status change ping — one pulse, not repeating */
   @keyframes status-ping {
-    0% { box-shadow: 0 0 0 0 var(--status-color, hsl(var(--primary))); }
+    0% { box-shadow: 0 0 0 0 var(--status-color, hsl(var(--success))); }
     70% { box-shadow: 0 0 0 6px transparent; }
     100% { box-shadow: 0 0 0 0 transparent; }
   }
@@ -167,26 +168,22 @@
     animation: status-ping 600ms ease-out;
   }
 
-  /* Panel switch — route-enter flash */
   @keyframes panel-switch {
-    0% { opacity: 0; background-color: hsl(var(--surface-low)); }
-    30% { opacity: 1; background-color: hsl(var(--surface-low)); }
-    100% { opacity: 1; background-color: transparent; }
+    0% { opacity: 0; }
+    100% { opacity: 1; }
   }
   .route-enter {
-    animation: panel-switch 200ms ease-out;
+    animation: panel-switch 150ms ease-out;
   }
 
-  /* Loading pulse — radar sweep */
   @keyframes loading-pulse {
-    0%, 100% { background-color: hsl(var(--surface-high)); }
-    50% { background-color: hsl(var(--surface-low)); }
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
   }
   .animate-pulse-tactical {
     animation: loading-pulse 1.5s ease-in-out infinite;
   }
 
-  /* Graph entrance — staggered node appearance */
   @keyframes node-enter {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
@@ -196,7 +193,6 @@
     opacity: 0;
   }
 
-  /* Graph entrance — edge draw-in */
   @keyframes edge-draw-in {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -206,7 +202,6 @@
     opacity: 0;
   }
 
-  /* Ambient status glow for running nodes */
   @keyframes ambient-pulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }
@@ -214,51 +209,32 @@
   .status-dot-running {
     animation: ambient-pulse 3s ease-in-out infinite;
   }
-
-  /* Subtle shimmer for loading states */
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      hsl(var(--surface-low)) 25%,
-      hsl(var(--surface-high)) 50%,
-      hsl(var(--surface-low)) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s ease-in-out infinite;
-  }
 }
 
-/* React Flow overrides — tactical control plane styling */
+/* React Flow — styled for light canvas with dark nodes */
 @layer components {
   .react-flow__controls {
     border: none !important;
-    box-shadow: none !important;
+    box-shadow: 0 1px 4px hsl(0 0% 0% / 0.15) !important;
   }
   .react-flow__controls-button {
-    background-color: hsl(var(--surface-high)) !important;
+    background-color: hsl(var(--background)) !important;
     border: none !important;
-    border-bottom: 1px solid hsl(var(--foreground) / 0.06) !important;
+    border-bottom: 1px solid hsl(var(--foreground) / 0.08) !important;
     fill: hsl(var(--foreground-muted)) !important;
   }
   .react-flow__controls-button:hover {
-    background-color: hsl(var(--primary) / 0.15) !important;
+    background-color: hsl(var(--foreground) / 0.05) !important;
     fill: hsl(var(--foreground)) !important;
   }
   .react-flow__edge-path {
     stroke-width: 1.5;
   }
   .react-flow__handle {
-    background-color: hsl(var(--primary) / 0.4) !important;
-    border: 1px solid hsl(var(--primary) / 0.6) !important;
+    background-color: hsl(var(--foreground) / 0.3) !important;
+    border: 1px solid hsl(var(--foreground) / 0.5) !important;
     width: 6px !important;
     height: 6px !important;
-  }
-  .react-flow__background {
-    opacity: 0.03;
   }
 }
 
@@ -270,7 +246,8 @@
   .node-enter,
   .edge-draw-in,
   .status-dot-running,
-  .shimmer {
+  .shimmer,
+  .shimmer-dark {
     animation: none;
     opacity: 1;
     transform: none;

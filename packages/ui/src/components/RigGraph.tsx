@@ -187,9 +187,9 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
       )}
       {focusMessage && (
         <div className={`absolute top-spacing-4 left-spacing-4 z-20 px-spacing-4 py-spacing-2 text-label-md font-mono rim-light ${
-          focusMessage.type === "success" ? "bg-primary text-primary-foreground" :
-          focusMessage.type === "error" ? "bg-destructive text-destructive-foreground" :
-          "bg-surface-high text-foreground"
+          focusMessage.type === "success" ? "card-dark text-foreground-on-dark" :
+          focusMessage.type === "error" ? "bg-destructive text-white" :
+          "card-dark text-foreground-on-dark"
         }`}>
           {focusMessage.text}
         </div>

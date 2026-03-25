@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { getStatusColorClass } from "@/lib/status-colors";
 
 interface RigNodeData {
   logicalId: string;
@@ -14,18 +13,37 @@ interface RigNodeData {
   } | null;
 }
 
+function getStatusColor(status: string | null): string {
+  switch (status) {
+    case "running": return "bg-success";
+    case "idle": return "bg-foreground-muted-on-dark";
+    case "exited": return "bg-destructive";
+    case "detached": return "bg-warning";
+    default: return "bg-foreground-muted-on-dark";
+  }
+}
+
 function getStatusCssColor(status: string | null): string {
   switch (status) {
-    case "running": return "hsl(var(--primary))";
-    case "idle": return "hsl(var(--foreground-muted))";
+    case "running": return "hsl(var(--success))";
+    case "idle": return "hsl(var(--foreground-muted-on-dark))";
     case "exited": return "hsl(var(--destructive))";
     case "detached": return "hsl(var(--warning))";
-    default: return "hsl(var(--foreground-muted))";
+    default: return "hsl(var(--foreground-muted-on-dark))";
+  }
+}
+
+function getStatusTextClass(status: string | null): string {
+  switch (status) {
+    case "running": return "text-success";
+    case "exited": return "text-destructive";
+    case "detached": return "text-warning";
+    default: return "text-foreground-muted-on-dark";
   }
 }
 
 export function RigNode({ data }: { data: RigNodeData }) {
-  const statusColor = getStatusColorClass(data.status);
+  const statusColor = getStatusColor(data.status);
   const statusCssColor = getStatusCssColor(data.status);
   const prevStatusRef = useRef(data.status);
   const [statusChanged, setStatusChanged] = useState(false);
@@ -46,17 +64,12 @@ export function RigNode({ data }: { data: RigNodeData }) {
 
   return (
     <div
-      className="min-w-[220px] relative transition-all duration-150 ease-tactical card-elevated cursor-pointer"
+      className="card-dark min-w-[200px] cursor-pointer transition-all duration-150 ease-tactical hover:bg-surface-mid"
       data-testid="rig-node"
     >
       <Handle type="target" position={Position.Top} />
 
-      {/* Left accent bar for running nodes */}
-      {isRunning && (
-        <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary opacity-60" />
-      )}
-
-      <div className="p-spacing-4">
+      <div className="p-spacing-3">
         {/* Header: status dot + uppercase label */}
         <div className="flex items-center gap-spacing-2 mb-spacing-2">
           <span
@@ -64,34 +77,34 @@ export function RigNode({ data }: { data: RigNodeData }) {
             className={`inline-block w-2 h-2 ${statusColor} ${statusChanged ? "status-changed" : ""} ${isRunning ? "status-dot-running" : ""}`}
             style={{ "--status-color": statusCssColor } as React.CSSProperties}
           />
-          <span className="text-label-lg uppercase tracking-[0.03em] text-foreground font-inter">
+          <span className="text-label-lg uppercase tracking-[0.03em] text-foreground-on-dark">
             {data.logicalId}
           </span>
         </div>
 
         {/* Runtime + model */}
         {runtimeModel && (
-          <div className="text-label-md text-foreground-muted mb-spacing-1 pl-spacing-4">
+          <div className="text-label-md text-foreground-muted-on-dark mb-spacing-1 pl-spacing-4">
             {runtimeModel}
           </div>
         )}
 
-        {/* Session name (mono) */}
+        {/* Session name */}
         {sessionName && (
-          <div className="text-label-sm font-mono text-foreground-muted opacity-60 mb-spacing-3 pl-spacing-4">
+          <div className="text-label-sm font-mono text-foreground-muted-on-dark/60 mb-spacing-2 pl-spacing-4">
             {sessionName}
           </div>
         )}
 
-        {/* Recessed telemetry block */}
-        <div className="inset-surface p-spacing-3 mt-spacing-2">
+        {/* Telemetry block */}
+        <div className="inset-dark p-spacing-2 mt-spacing-2">
           <div className="grid grid-cols-[auto_1fr] gap-x-spacing-3 gap-y-spacing-1 text-label-sm">
-            <span className="text-foreground-muted uppercase tracking-[0.06em] opacity-60">STATUS</span>
-            <span className={`font-mono ${data.status === "running" ? "text-primary" : data.status === "exited" ? "text-destructive" : data.status === "detached" ? "text-warning" : "text-foreground-muted"}`}>
+            <span className="text-foreground-muted-on-dark/60 uppercase tracking-[0.06em]">STATUS</span>
+            <span className={`font-mono ${getStatusTextClass(data.status)}`}>
               {data.status ?? "unknown"}
             </span>
-            <span className="text-foreground-muted uppercase tracking-[0.06em] opacity-60">BOUND</span>
-            <span className="font-mono text-foreground-muted">
+            <span className="text-foreground-muted-on-dark/60 uppercase tracking-[0.06em]">BOUND</span>
+            <span className="font-mono text-foreground-muted-on-dark">
               {data.binding ? `tmux:${data.binding.tmuxSession ?? "\u2014"}` : "unbound"}
             </span>
           </div>

@@ -1,4 +1,3 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCountUp } from "../hooks/useCountUp.js";
 
@@ -35,76 +34,59 @@ export function RigCard({ rig, onSelect, onSnapshot, onExport }: RigCardProps) {
   const animatedCount = useCountUp(rig.nodeCount);
 
   return (
-    <Card
+    <div
       data-testid={`rig-card-${rig.id}`}
-      className="cursor-pointer mb-spacing-3 card-elevated transition-all duration-150 ease-tactical group"
+      className="card-dark p-spacing-6 mb-spacing-3 cursor-pointer transition-all duration-150 ease-tactical hover:bg-surface-mid group"
       role="button"
       tabIndex={0}
       onClick={() => onSelect(rig.id)}
       onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onSelect(rig.id); } }}
     >
-      <CardContent className="p-spacing-6">
-        {/* Header: name + node count */}
-        <div className="flex justify-between items-baseline mb-spacing-4">
-          <div className="flex items-center gap-spacing-3">
-            {/* Active indicator dot */}
-            <div className="w-1.5 h-1.5 bg-primary opacity-60" />
-            <h3 className="text-headline-md uppercase tracking-[0.02em]">{rig.name}</h3>
-          </div>
-          <span className="text-label-lg font-mono text-foreground-muted" data-testid={`node-count-${rig.id}`}>
-            <span className="font-mono text-foreground text-body-md">{animatedCount}</span>
-            {" "}NODE{rig.nodeCount !== 1 ? "S" : ""}
-          </span>
-        </div>
+      {/* Header: name + node count */}
+      <div className="flex justify-between items-baseline mb-spacing-4">
+        <h3 className="text-headline-md uppercase text-foreground-on-dark">{rig.name}</h3>
+        <span className="text-label-md font-mono text-foreground-muted-on-dark" data-testid={`node-count-${rig.id}`}>
+          {animatedCount} NODE{rig.nodeCount !== 1 ? "S" : ""}
+        </span>
+      </div>
 
-        {/* Recessed telemetry section */}
-        <div className="inset-surface p-spacing-4 mb-spacing-4">
-          <div className="flex gap-spacing-8 text-label-md">
-            <div className="flex flex-col gap-spacing-1">
-              <span className="text-label-sm uppercase text-foreground-muted opacity-60 tracking-[0.06em]">
-                SNAPSHOT
-              </span>
-              <span className="font-mono text-foreground text-body-sm" data-testid={`snapshot-age-${rig.id}`}>
-                {formatAge(rig.latestSnapshotAt)}
-              </span>
-            </div>
-            <div className="flex flex-col gap-spacing-1">
-              <span className="text-label-sm uppercase text-foreground-muted opacity-60 tracking-[0.06em]">
-                STATUS
-              </span>
-              <span className="font-mono text-primary text-body-sm">
-                ACTIVE
-              </span>
-            </div>
+      {/* Telemetry section */}
+      <div className="inset-dark p-spacing-4 mb-spacing-4">
+        <div className="flex gap-spacing-8 text-label-md">
+          <div>
+            <span className="text-foreground-muted-on-dark/60 uppercase text-label-sm tracking-[0.06em]">SNAPSHOT </span>
+            <span className="font-mono text-foreground-on-dark" data-testid={`snapshot-age-${rig.id}`}>
+              {formatAge(rig.latestSnapshotAt)}
+            </span>
+          </div>
+          <div>
+            <span className="text-foreground-muted-on-dark/60 uppercase text-label-sm tracking-[0.06em]">STATUS </span>
+            <span className="font-mono text-success">ACTIVE</span>
           </div>
         </div>
+      </div>
 
-        {/* Tactical action buttons */}
-        <div className="flex gap-spacing-3 pt-spacing-2">
-          <Button
-            variant="tactical"
-            size="sm"
-            onClick={(e) => { e.stopPropagation(); onSnapshot(); }}
-          >
-            SNAPSHOT
-          </Button>
-          <Button
-            variant="tactical"
-            size="sm"
-            onClick={(e) => { e.stopPropagation(); onExport(); }}
-          >
-            EXPORT
-          </Button>
-          <Button
-            variant="tactical"
-            size="sm"
-            className="ml-auto group-hover:text-primary transition-colors"
-            onClick={(e) => { e.stopPropagation(); onSelect(rig.id); }}
-          >
-            GRAPH &rarr;
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      {/* Action buttons — light text on dark card */}
+      <div className="flex gap-spacing-3">
+        <button
+          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors"
+          onClick={(e) => { e.stopPropagation(); onSnapshot(); }}
+        >
+          [ SNAPSHOT ]
+        </button>
+        <button
+          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors"
+          onClick={(e) => { e.stopPropagation(); onExport(); }}
+        >
+          [ EXPORT ]
+        </button>
+        <button
+          className="text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors ml-auto group-hover:text-foreground-on-dark"
+          onClick={(e) => { e.stopPropagation(); onSelect(rig.id); }}
+        >
+          [ GRAPH &rarr; ]
+        </button>
+      </div>
+    </div>
   );
 }

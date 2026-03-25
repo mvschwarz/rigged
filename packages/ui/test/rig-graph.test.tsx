@@ -234,11 +234,11 @@ describe("RigNode", () => {
   // UIF-T05 Test 1: Status dot color per status
   it("status dot has correct color class per status", () => {
     const statuses = [
-      { status: "running", expected: "bg-primary" },
-      { status: "idle", expected: "bg-foreground-muted" },
+      { status: "running", expected: "bg-success" },
+      { status: "idle", expected: "bg-foreground-muted-on-dark" },
       { status: "exited", expected: "bg-destructive" },
       { status: "detached", expected: "bg-warning" },
-      { status: null, expected: "bg-foreground-muted/50" },
+      { status: null, expected: "bg-foreground-muted-on-dark" },
     ];
 
     for (const { status, expected } of statuses) {
@@ -269,28 +269,28 @@ describe("Edge styles", () => {
   it("delegates_to: solid, primary color", async () => {
     const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
     const result = getEdgeStyle("delegates_to");
-    expect(result.style.stroke).toContain("--primary");
+    expect(result.style.stroke).toBe("#050505");
     expect(result.style.strokeDasharray).toBeUndefined();
   });
 
   it("spawned_by: dashed, primary color", async () => {
     const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
     const result = getEdgeStyle("spawned_by");
-    expect(result.style.stroke).toContain("--primary");
+    expect(result.style.stroke).toBe("#050505");
     expect(result.style.strokeDasharray).toBeDefined();
   });
 
   it("can_observe: dotted, foreground-muted", async () => {
     const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
     const result = getEdgeStyle("can_observe");
-    expect(result.style.stroke).toContain("--foreground-muted");
+    expect(result.style.stroke).toBe("#666666");
     expect(result.style.strokeDasharray).toBeDefined();
   });
 
   it("uses: thin solid, accent color", async () => {
     const { getEdgeStyle } = await import("../src/lib/edge-styles.js");
     const result = getEdgeStyle("uses");
-    expect(result.style.stroke).toContain("--accent");
+    expect(result.style.stroke).toBe("#1272b8");
     expect(result.style.strokeWidth).toBe(1);
     expect(result.style.strokeDasharray).toBeUndefined();
   });

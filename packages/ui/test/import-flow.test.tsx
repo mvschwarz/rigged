@@ -38,7 +38,8 @@ describe("ImportFlow", () => {
   it("step indicator shows step 1 active on input screen", async () => {
     await renderImportFlow();
     const step1 = screen.getByTestId("step-1");
-    expect(step1.className).toContain("text-primary");
+    expect(step1.className).toContain("text-foreground");
+    expect(step1.className).toContain("bg-foreground/10");
     const step2 = screen.getByTestId("step-2");
     expect(step2.className).toContain("text-foreground-muted");
   });
@@ -75,7 +76,7 @@ describe("ImportFlow", () => {
       expect(errEl.textContent).toContain("no nodes");
       // Step 1 should still be active (error occurred at step 1)
       const step1 = screen.getByTestId("step-1");
-      expect(step1.className).toContain("text-primary");
+      expect(step1.className).toContain("text-foreground");
     });
     expect(screen.queryByTestId("preflight-btn")).toBeNull();
   });
@@ -124,7 +125,7 @@ describe("ImportFlow", () => {
       expect(result.textContent).toContain("imported-rig");
 
       const launchedEl = screen.getByTestId("inst-status-orchestrator");
-      expect(launchedEl.className).toContain("text-primary");
+      expect(launchedEl.className).toContain("text-success");
 
       const failedEl = screen.getByTestId("inst-status-worker");
       expect(failedEl.className).toContain("text-destructive");
@@ -189,7 +190,8 @@ describe("ImportFlow", () => {
       const step1 = screen.getByTestId("step-1");
       expect(step1.textContent).toContain("✓");
       const step2 = screen.getByTestId("step-2");
-      expect(step2.className).toContain("text-primary");
+      expect(step2.className).toContain("text-foreground");
+      expect(step2.className).toContain("bg-foreground/10");
     });
   });
 

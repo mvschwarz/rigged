@@ -65,7 +65,7 @@ function StepIndicator({ currentStep, errorAtStep }: { currentStep: Step; errorA
   const activeNum = currentStep === "error" ? errorAtStep : getStepNumber(currentStep);
 
   return (
-    <div className="flex items-center gap-spacing-2 mb-spacing-8 p-spacing-4 inset-surface" data-testid="step-indicator">
+    <div className="flex items-center gap-spacing-2 mb-spacing-8 p-spacing-4 inset-light" data-testid="step-indicator">
       {STEPS.map((s, i) => {
         const isCompleted = activeNum > s.num;
         const isActive = activeNum === s.num;
@@ -80,7 +80,7 @@ function StepIndicator({ currentStep, errorAtStep }: { currentStep: Step; errorA
               data-testid={`step-${s.num}`}
               className={`text-label-md uppercase tracking-[0.04em] font-mono px-spacing-2 py-spacing-1 transition-colors ${
                 isCompleted ? "text-foreground-muted" :
-                isActive ? "text-primary bg-primary/10" :
+                isActive ? "text-foreground bg-foreground/10" :
                 isPending ? "text-foreground-muted/30" : ""
               }`}
             >

@@ -18,11 +18,17 @@ const config: Config = {
     extend: {
       colors: {
         background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        "background-warm": "hsl(var(--background-warm))",
+        foreground: {
+          DEFAULT: "hsl(var(--foreground))",
+          muted: "hsl(var(--foreground-muted))",
+          "on-dark": "hsl(var(--foreground-on-dark))",
+          "muted-on-dark": "hsl(var(--foreground-muted-on-dark))",
+        },
+        // Keep simple aliases for shadcn compat
         "foreground-muted": "hsl(var(--foreground-muted))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
-          dark: "hsl(var(--primary-dark))",
           foreground: "hsl(var(--primary-foreground))",
         },
         destructive: {
@@ -31,12 +37,31 @@ const config: Config = {
         },
         warning: "hsl(var(--warning))",
         accent: "hsl(var(--accent))",
+        success: "hsl(var(--success))",
         surface: {
-          low: "hsl(var(--surface-low))",
-          DEFAULT: "hsl(var(--surface))",
-          high: "hsl(var(--surface-high))",
+          dark: "hsl(var(--surface-dark))",
+          mid: "hsl(var(--surface-mid))",
+          raised: "hsl(var(--surface-raised))",
         },
         "ghost-border": "var(--ghost-border)",
+        "ghost-border-dark": "var(--ghost-border-dark)",
+        // shadcn compat
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
       },
       fontFamily: {
         inter: ["Inter", "system-ui", "sans-serif"],
@@ -56,8 +81,8 @@ const config: Config = {
       },
       fontSize: {
         "display-lg": ["3.5rem", { lineHeight: "1.1", fontWeight: "700", letterSpacing: "-0.02em" }],
-        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "600", letterSpacing: "0.05em" }],
-        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "600" }],
+        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "700", letterSpacing: "-0.01em" }],
+        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "700" }],
         "body-lg": ["1.125rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-md": ["1rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-sm": ["0.875rem", { lineHeight: "1.5", fontWeight: "400" }],
@@ -67,10 +92,6 @@ const config: Config = {
       },
       transitionTimingFunction: {
         tactical: "cubic-bezier(0.2, 0, 0, 1)",
-      },
-      transitionDuration: {
-        "150": "150ms",
-        "250": "250ms",
       },
     },
   },

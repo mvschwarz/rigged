@@ -1,10 +1,10 @@
 /**
- * Maps node status to Tailwind background color class per design-system.md §2.
+ * Maps node status to Tailwind background color class.
  */
 export function getStatusColorClass(status: string | null): string {
   switch (status) {
     case "running":
-      return "bg-primary";
+      return "bg-success";
     case "idle":
       return "bg-foreground-muted";
     case "exited":

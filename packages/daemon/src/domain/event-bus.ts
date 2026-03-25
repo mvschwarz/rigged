@@ -32,13 +32,14 @@ export class EventBus {
    * Does NOT notify subscribers — call notifySubscribers() after commit.
    */
   persistWithinTransaction(event: RigEvent): PersistedEvent {
+    const rigId = "rigId" in event ? (event as { rigId: string }).rigId : null;
     const nodeId = "nodeId" in event ? event.nodeId : null;
 
     const result = this.db
       .prepare(
         "INSERT INTO events (rig_id, node_id, type, payload) VALUES (?, ?, ?, ?)"
       )
-      .run(event.rigId, nodeId, event.type, JSON.stringify(event));
+      .run(rigId, nodeId, event.type, JSON.stringify(event));
 
     const seq = Number(result.lastInsertRowid);
 
@@ -80,6 +81,16 @@ export class EventBus {
         "SELECT seq, rig_id, node_id, type, payload, created_at FROM events WHERE rig_id = ? AND seq > ? ORDER BY seq"
       )
       .all(rigId, seq) as EventRow[];
+
+    return rows.map((row) => this.rowToPersistedEvent(row));
+  }
+
+  replayAll(seq: number): PersistedEvent[] {
+    const rows = this.db
+      .prepare(
+        "SELECT seq, rig_id, node_id, type, payload, created_at FROM events WHERE seq > ? ORDER BY seq"
+      )
+      .all(seq) as EventRow[];
 
     return rows.map((row) => this.rowToPersistedEvent(row));
   }

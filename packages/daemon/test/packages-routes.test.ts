@@ -16,6 +16,7 @@ import { packagesSchema } from "../src/db/migrations/008_packages.js";
 import { installJournalSchema } from "../src/db/migrations/009_install_journal.js";
 import { journalSeqSchema } from "../src/db/migrations/010_journal_seq.js";
 import { createTestApp } from "./helpers/test-app.js";
+import type { PersistedEvent } from "../src/domain/types.js";
 
 const ALL_MIGRATIONS = [
   coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema,
@@ -566,5 +567,258 @@ describe("Package API routes", () => {
     expect(body.verification.passed).toBe(false);
 
     vi.restoreAllMocks();
+  });
+
+  // === PUX-T00: Event emission tests ===
+
+  function getEvents(database: Database.Database): Array<{ type: string; payload: string }> {
+    return database.prepare("SELECT type, payload FROM events ORDER BY seq").all() as Array<{ type: string; payload: string }>;
+  }
+
+  // --- Test 20: Install emits package.installed event ---
+  it("POST /api/packages/install emits package.installed event", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+
+    const events = getEvents(db).filter((e) => e.type === "package.installed");
+    expect(events.length).toBe(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.type).toBe("package.installed");
+    expect(payload.packageName).toBe("test-pkg");
+    expect(payload.packageVersion).toBe("1.0.0");
+    expect(typeof payload.installId).toBe("string");
+    expect(typeof payload.applied).toBe("number");
+    expect(typeof payload.deferred).toBe("number");
+  });
+
+  // --- Test 21: Rollback emits package.rolledback event ---
+  it("POST /api/packages/:installId/rollback emits package.rolledback event", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    const installRes = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    const { installId } = await installRes.json();
+
+    await app.request(`/api/packages/${installId}/rollback`, { method: "POST" });
+
+    const events = getEvents(db).filter((e) => e.type === "package.rolledback");
+    expect(events.length).toBe(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.installId).toBe(installId);
+    expect(typeof payload.restored).toBe("number");
+  });
+
+  // --- Test 22: Install conflict emits package.install_failed ---
+  it("POST /api/packages/install with conflict emits package.install_failed", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Create conflicting skill
+    const conflictPath = path.join(targetDir, ".claude", "skills", "helper", "SKILL.md");
+    fs.mkdirSync(path.dirname(conflictPath), { recursive: true });
+    fs.writeFileSync(conflictPath, "# Different");
+
+    await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+
+    const events = getEvents(db).filter((e) => e.type === "package.install_failed");
+    expect(events.length).toBe(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.code).toBe("conflict_blocked");
+    expect(payload.packageName).toBe("test-pkg");
+  });
+
+  // --- Test 23: SSE global stream receives package.installed event ---
+  it("GET /api/events (global) receives package.installed via SSE", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Start SSE stream (no rigId = global)
+    const ssePromise = app.request("/api/events");
+
+    // Small delay to let SSE subscribe
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Trigger install
+    await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+
+    // Read SSE events
+    const sseRes = await ssePromise;
+    const reader = sseRes.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const deadline = Date.now() + 1000;
+    const sseEvents: Array<{ id: string; data: string }> = [];
+
+    while (sseEvents.length < 1 && Date.now() < deadline) {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        new Promise<{ value: undefined; done: true }>((resolve) =>
+          setTimeout(() => resolve({ value: undefined, done: true }), Math.max(1, deadline - Date.now()))
+        ),
+      ]);
+      if (done && !value) break;
+      if (value) buffer += decoder.decode(value, { stream: true });
+
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop()!;
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        let id = "";
+        let data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("id:")) id = line.slice(3).trim();
+          if (line.startsWith("data:")) data = line.slice(5).trim();
+        }
+        if (data) sseEvents.push({ id, data });
+      }
+    }
+    reader.cancel().catch(() => {});
+
+    // Find the package.installed event in the SSE stream
+    const installedEvents = sseEvents.filter((e) => {
+      const parsed = JSON.parse(e.data);
+      return parsed.type === "package.installed";
+    });
+    expect(installedEvents.length).toBeGreaterThanOrEqual(1);
+    const parsed = JSON.parse(installedEvents[0]!.data);
+    expect(parsed.packageName).toBe("test-pkg");
+  });
+
+  // --- Test 24: Validate emits package.validated event ---
+  it("POST /api/packages/validate emits package.validated event", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    await app.request("/api/packages/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir }),
+    });
+
+    const events = getEvents(db).filter((e) => e.type === "package.validated");
+    expect(events.length).toBe(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.packageName).toBe("test-pkg");
+    expect(payload.valid).toBe(true);
+  });
+
+  // --- Test 25: Plan emits package.planned event ---
+  it("POST /api/packages/plan emits package.planned event", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    await app.request("/api/packages/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+
+    const events = getEvents(db).filter((e) => e.type === "package.planned");
+    expect(events.length).toBe(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.packageName).toBe("test-pkg");
+    expect(typeof payload.actionable).toBe("number");
+    expect(typeof payload.deferred).toBe("number");
+    expect(typeof payload.conflicts).toBe("number");
+  });
+
+  // --- Test 26: SSE with rigId still works (backward compat) ---
+  it("GET /api/events?rigId=X returns only rig-scoped events, not package events", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Emit a rig event first
+    setup.eventBus.emit({ type: "rig.created", rigId: "test-rig" });
+
+    // Trigger a package event
+    await app.request("/api/packages/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir }),
+    });
+
+    // SSE with rigId should only get rig events
+    const sseRes = await app.request("/api/events?rigId=test-rig");
+    const reader = sseRes.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const deadline = Date.now() + 500;
+    const sseEvents: Array<{ data: string }> = [];
+
+    while (Date.now() < deadline) {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        new Promise<{ value: undefined; done: true }>((resolve) =>
+          setTimeout(() => resolve({ value: undefined, done: true }), Math.max(1, deadline - Date.now()))
+        ),
+      ]);
+      if (done && !value) break;
+      if (value) buffer += decoder.decode(value, { stream: true });
+
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop()!;
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        let data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("data:")) data = line.slice(5).trim();
+        }
+        if (data) sseEvents.push({ data });
+      }
+    }
+    reader.cancel().catch(() => {});
+
+    // Should have rig.created, but NOT package.validated
+    const types = sseEvents.map((e) => JSON.parse(e.data).type);
+    expect(types).toContain("rig.created");
+    expect(types).not.toContain("package.validated");
+  });
+
+  // --- Test 27: manifest_hash_mismatch emits package.install_failed ---
+  it("POST /api/packages/install manifest_hash_mismatch emits package.install_failed", async () => {
+    // First install with original manifest
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+    const res1 = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    expect(res1.status).toBe(201);
+
+    // Modify the manifest (different content, same name+version)
+    const altManifest = VALID_MANIFEST_YAML.replace("A test package", "A DIFFERENT test package");
+    writePkg(pkgDir, altManifest, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Second install — same name+version, different manifest hash
+    const altTargetDir = path.join(tmpDir, "target2");
+    fs.mkdirSync(altTargetDir, { recursive: true });
+    const res2 = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: altTargetDir, runtime: "claude-code" }),
+    });
+
+    expect(res2.status).toBe(409);
+    const body = await res2.json();
+    expect(body.code).toBe("manifest_hash_mismatch");
+
+    // Verify event was emitted
+    const events = getEvents(db).filter((e) => e.type === "package.install_failed");
+    const hashMismatchEvents = events.filter((e) => JSON.parse(e.payload).code === "manifest_hash_mismatch");
+    expect(hashMismatchEvents.length).toBe(1);
+    const payload = JSON.parse(hashMismatchEvents[0]!.payload);
+    expect(payload.packageName).toBe("test-pkg");
+    expect(payload.code).toBe("manifest_hash_mismatch");
   });
 });

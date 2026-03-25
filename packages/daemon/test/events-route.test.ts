@@ -184,9 +184,15 @@ describe("SSE events route", () => {
     expect(parsed.rigId).toBe(rig1.id);
   });
 
-  it("missing rigId -> 400", async () => {
+  it("missing rigId -> global SSE stream (200)", async () => {
     const res = await app.request("/api/events");
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    // Cancel the stream
+    if (res.body) {
+      const reader = res.body.getReader();
+      reader.cancel().catch(() => {});
+    }
   });
 
   it("invalid Last-Event-ID (non-numeric) -> treated as 0, replays all", async () => {

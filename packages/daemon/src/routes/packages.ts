@@ -12,6 +12,7 @@ import { detectConflicts } from "../domain/conflict-detector.js";
 import { applyPolicy } from "../domain/install-policy.js";
 import type { ResolvedPackage, FsOps } from "../domain/package-resolver.js";
 import type { EngineFsOps } from "../domain/install-engine.js";
+import type { EventBus } from "../domain/event-bus.js";
 
 export const packagesRoutes = new Hono();
 
@@ -21,6 +22,7 @@ function getDeps(c: { get: (key: string) => unknown }) {
     installRepo: c.get("installRepo" as never) as InstallRepository,
     installEngine: c.get("installEngine" as never) as InstallEngine,
     installVerifier: c.get("installVerifier" as never) as InstallVerifier,
+    eventBus: c.get("eventBus" as never) as EventBus,
   };
 }
 
@@ -128,6 +130,9 @@ packagesRoutes.post("/validate", async (c) => {
   }
 
   const m = result.resolved.manifest;
+  const { eventBus } = getDeps(c);
+  eventBus.emit({ type: "package.validated", packageName: m.name, valid: true });
+
   return c.json({
     valid: true,
     manifest: {
@@ -176,6 +181,15 @@ packagesRoutes.post("/plan", async (c) => {
   const plan = planner.plan(result.resolved, targetRoot, runtime, { roleName });
   const refined = detectConflicts(plan, fsOps);
 
+  const { eventBus } = getDeps(c);
+  eventBus.emit({
+    type: "package.planned",
+    packageName: refined.packageName,
+    actionable: refined.actionable.length,
+    deferred: refined.deferred.length,
+    conflicts: refined.conflicts.length,
+  });
+
   return c.json({
     packageName: refined.packageName,
     packageVersion: refined.packageVersion,
@@ -222,8 +236,11 @@ packagesRoutes.post("/install", async (c) => {
   const plan = planner.plan(resolved, targetRoot, runtime, { roleName });
   const refined = detectConflicts(plan, fsOps);
 
+  const { eventBus } = getDeps(c);
+
   // Check for content-level conflicts
   if (refined.conflicts.length > 0) {
+    eventBus.emit({ type: "package.install_failed", packageName: resolved.manifest.name, code: "conflict_blocked", message: `${refined.conflicts.length} unresolved conflicts` });
     return c.json({
       error: "Unresolved conflicts",
       code: "conflict_blocked",
@@ -236,6 +253,7 @@ packagesRoutes.post("/install", async (c) => {
 
   // If nothing approved → 422
   if (policyResult.approved.length === 0) {
+    eventBus.emit({ type: "package.install_failed", packageName: resolved.manifest.name, code: "policy_rejected", message: "No entries approved by policy" });
     return c.json({
       error: "No entries approved by policy",
       code: "policy_rejected",
@@ -246,6 +264,7 @@ packagesRoutes.post("/install", async (c) => {
   // Dedup package record — verify manifest hash matches if reusing
   const existing = packageRepo.findByNameVersion(resolved.manifest.name, resolved.manifest.version);
   if (existing && existing.manifestHash !== resolved.manifestHash) {
+    eventBus.emit({ type: "package.install_failed", packageName: resolved.manifest.name, code: "manifest_hash_mismatch", message: "Package already registered with different content" });
     return c.json({
       error: `Package '${resolved.manifest.name}' v${resolved.manifest.version} already registered with different content (manifest hash mismatch)`,
       code: "manifest_hash_mismatch",
@@ -267,12 +286,14 @@ packagesRoutes.post("/install", async (c) => {
   try {
     result = installEngine.apply(policyResult, refined, pkg.id, targetRoot);
   } catch (err) {
+    eventBus.emit({ type: "package.install_failed", packageName: resolved.manifest.name, code: "apply_error", message: (err as Error).message });
     return c.json({ error: (err as Error).message, code: "apply_error" }, 500);
   }
 
   // Verify
   const verification = installVerifier.verify(result.installId);
   if (!verification.passed) {
+    eventBus.emit({ type: "package.install_failed", packageName: resolved.manifest.name, code: "verification_failed", message: "Post-apply verification failed" });
     return c.json({
       error: "Post-apply verification failed",
       code: "verification_failed",
@@ -280,6 +301,15 @@ packagesRoutes.post("/install", async (c) => {
       verification,
     }, 500);
   }
+
+  eventBus.emit({
+    type: "package.installed",
+    packageName: resolved.manifest.name,
+    packageVersion: resolved.manifest.version,
+    installId: result.installId,
+    applied: result.applied.length,
+    deferred: result.deferred.length,
+  });
 
   return c.json({
     installId: result.installId,
@@ -305,6 +335,8 @@ packagesRoutes.post("/:installId/rollback", async (c) => {
 
   try {
     const result = installEngine.rollback(installId);
+    const { eventBus } = getDeps(c);
+    eventBus.emit({ type: "package.rolledback", installId, restored: result.restored.length });
     return c.json(result);
   } catch (err) {
     return c.json({ error: (err as Error).message }, 500);

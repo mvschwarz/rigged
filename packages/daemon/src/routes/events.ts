@@ -10,10 +10,7 @@ function getEventBus(c: { get: (key: string) => unknown }): EventBus {
 }
 
 eventsRoute.get("/", (c) => {
-  const rigId = c.req.query("rigId");
-  if (!rigId) {
-    return c.json({ error: "rigId query parameter is required" }, 400);
-  }
+  const rigId = c.req.query("rigId"); // Optional — omit for global stream
 
   const lastEventIdRaw = c.req.header("Last-Event-ID") ?? "0";
   const lastEventId = parseInt(lastEventIdRaw, 10);
@@ -29,7 +26,11 @@ eventsRoute.get("/", (c) => {
 
     // 1. Subscribe to live bus BEFORE replay query (no gap)
     const unsubscribe = eventBus.subscribe((event) => {
-      if (event.rigId !== rigId) return;
+      // Rig-scoped: filter by rigId. Global: accept all events.
+      if (rigId) {
+        const eventRigId = "rigId" in event ? (event as { rigId: string }).rigId : null;
+        if (eventRigId !== rigId) return;
+      }
       if (replaying) {
         buffer.push(event);
       } else {
@@ -41,7 +42,9 @@ eventsRoute.get("/", (c) => {
 
     try {
       // 2. Replay missed events from DB
-      const missed = eventBus.replaySince(lastSeq, rigId);
+      const missed = rigId
+        ? eventBus.replaySince(lastSeq, rigId)
+        : eventBus.replayAll(lastSeq);
       for (const event of missed) {
         await stream.writeSSE({ id: String(event.seq), data: JSON.stringify(event) });
         if (event.seq > maxReplayedSeq) maxReplayedSeq = event.seq;

@@ -66,7 +66,13 @@ export type RigEvent =
   | { type: "snapshot.created"; rigId: string; snapshotId: string; kind: string }
   | { type: "restore.started"; rigId: string; snapshotId: string }
   | { type: "restore.completed"; rigId: string; snapshotId: string; result: RestoreResult }
-  | { type: "rig.imported"; rigId: string; specName: string; specVersion: string };
+  | { type: "rig.imported"; rigId: string; specName: string; specVersion: string }
+  // Package events (cross-rig, no rigId)
+  | { type: "package.validated"; packageName: string; valid: boolean }
+  | { type: "package.planned"; packageName: string; actionable: number; deferred: number; conflicts: number }
+  | { type: "package.installed"; packageName: string; packageVersion: string; installId: string; applied: number; deferred: number }
+  | { type: "package.rolledback"; installId: string; restored: number }
+  | { type: "package.install_failed"; packageName: string; code: string; message: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;

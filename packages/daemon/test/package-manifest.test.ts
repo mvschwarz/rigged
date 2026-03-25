@@ -344,6 +344,92 @@ exports:
     expect(result.errors.some((e) => e.includes("totally_invalid_scope"))).toBe(true);
   });
 
+  // Test 20: Bare '..' path traversal rejected for skills
+  it("bare '..' path traversal rejected for skills", () => {
+    const yaml = VALID_YAML.replace("source: skills/deep-pr-review", "source: ..");
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("path traversal"))).toBe(true);
+  });
+
+  // Test 21: Hook with path traversal rejected
+  it("hook with path traversal rejected", () => {
+    const yaml = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  skills:
+    - source: skills/foo
+      name: foo
+  hooks:
+    - source: ../../../etc/shadow
+`;
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Hook export source must not contain path traversal"))).toBe(true);
+  });
+
+  // Test 22: MCP with path traversal rejected
+  it("MCP with path traversal rejected", () => {
+    const yaml = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  skills:
+    - source: skills/foo
+      name: foo
+  mcp:
+    - source: ../../../etc/shadow
+`;
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("MCP export source must not contain path traversal"))).toBe(true);
+  });
+
+  // Test 23: Duplicate agent names rejected
+  it("duplicate agent names rejected", () => {
+    const yaml = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  agents:
+    - source: agents/review.md
+      name: review
+    - source: agents/other.md
+      name: review
+`;
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("Duplicate agent name"))).toBe(true);
+  });
+
+  // Test 24: Package name with invalid characters rejected
+  it("package name with invalid characters rejected", () => {
+    const yaml = VALID_YAML.replace("name: com.example.review-stack", "name: bad-->name");
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("name must match"))).toBe(true);
+  });
+
+  // Test 25: Package name with valid characters passes
+  it("package name with valid characters passes", () => {
+    const yaml = VALID_YAML.replace("name: com.example.review-stack", "name: my-package.v2");
+    const result = validateManifest(parseManifest(yaml));
+    expect(result.valid).toBe(true);
+  });
+
   // Test 18: Duplicate skill names -> error
   it("duplicate skill names -> error", () => {
     const yaml = `

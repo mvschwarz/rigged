@@ -111,6 +111,12 @@ export function parseManifest(yamlString: string): unknown {
 
 // --- Validate ---
 
+function hasPathTraversal(source: string): boolean {
+  return source.includes("../") || source === ".." || source.endsWith("/..");
+}
+
+const PACKAGE_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
 export function validateManifest(raw: unknown): ValidationResult {
   const errors: string[] = [];
 
@@ -128,6 +134,8 @@ export function validateManifest(raw: unknown): ValidationResult {
   // name
   if (!m["name"] || typeof m["name"] !== "string") {
     errors.push("name is required and must be a string");
+  } else if (!PACKAGE_NAME_PATTERN.test(m["name"] as string)) {
+    errors.push("name must match [a-zA-Z0-9][a-zA-Z0-9._-]* (alphanumeric, dots, hyphens, underscores)");
   }
 
   // version
@@ -168,7 +176,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       for (const skill of exports["skills"] as Record<string, unknown>[]) {
         if (!skill["source"] || typeof skill["source"] !== "string") {
           errors.push("Skill export: source is required");
-        } else if ((skill["source"] as string).includes("../")) {
+        } else if (hasPathTraversal(skill["source"] as string)) {
           errors.push(`Skill export source must not contain path traversal: '${skill["source"]}'`);
         }
         if (!skill["name"] || typeof skill["name"] !== "string") {
@@ -199,7 +207,7 @@ export function validateManifest(raw: unknown): ValidationResult {
       for (const g of exports["guidance"] as Record<string, unknown>[]) {
         if (!g["source"] || typeof g["source"] !== "string") {
           errors.push("Guidance export: source is required");
-        } else if ((g["source"] as string).includes("../")) {
+        } else if (hasPathTraversal(g["source"] as string)) {
           errors.push(`Guidance export source must not contain path traversal: '${g["source"]}'`);
         }
         if (g["kind"] && !KNOWN_GUIDANCE_KINDS.has(g["kind"] as string)) {
@@ -237,17 +245,43 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
 
     // agents
+    const agentNames = new Set<string>();
     if (Array.isArray(exports["agents"])) {
       for (const a of exports["agents"] as Record<string, unknown>[]) {
         if (!a["source"] || typeof a["source"] !== "string") {
           errors.push("Agent export: source is required");
-        } else if ((a["source"] as string).includes("../")) {
+        } else if (hasPathTraversal(a["source"] as string)) {
           errors.push(`Agent export source must not contain path traversal: '${a["source"]}'`);
         }
+        const agentName = (a["name"] as string | undefined) ??
+          (a["source"] ? (a["source"] as string).replace(/\.[^.]+$/, "").split("/").pop()! : "");
+        if (agentName && agentNames.has(agentName)) {
+          errors.push(`Duplicate agent name: '${agentName}'`);
+        }
+        if (agentName) agentNames.add(agentName);
       }
     }
 
-    // hooks + mcp are parsed but not rejected (Phase 4 deferred)
+    // hooks
+    if (Array.isArray(exports["hooks"])) {
+      for (const h of exports["hooks"] as Record<string, unknown>[]) {
+        if (!h["source"] || typeof h["source"] !== "string") {
+          errors.push("Hook export: source is required");
+        } else if (hasPathTraversal(h["source"] as string)) {
+          errors.push(`Hook export source must not contain path traversal: '${h["source"]}'`);
+        }
+      }
+    }
+    // mcp
+    if (Array.isArray(exports["mcp"])) {
+      for (const mc of exports["mcp"] as Record<string, unknown>[]) {
+        if (!mc["source"] || typeof mc["source"] !== "string") {
+          errors.push("MCP export: source is required");
+        } else if (hasPathTraversal(mc["source"] as string)) {
+          errors.push(`MCP export source must not contain path traversal: '${mc["source"]}'`);
+        }
+      }
+    }
 
     // roles
     if (Array.isArray(m["roles"])) {

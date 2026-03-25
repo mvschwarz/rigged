@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -468,5 +468,36 @@ describe("InstallEngine", () => {
     }).toThrow(/UNIQUE/);
 
     upgradeDb.close();
+  });
+
+  // Test 19: Journal write failure undoes file mutation (R2-H3)
+  it("journal write failure undoes file mutation for that entry", () => {
+    const pkg = seedPackage();
+    const sourcePath = writeSource("skills/foo/SKILL.md", "New content");
+    const targetPath = path.join(repoRoot, ".agents/skills/foo/SKILL.md");
+
+    const entry = makeEntry({ targetPath, sourcePath });
+    const engine = new InstallEngine(installRepo, realFs(tmpDir));
+
+    // Spy: first call to createJournalEntry throws
+    vi.spyOn(installRepo, "createJournalEntry").mockImplementationOnce(() => {
+      throw new Error("journal write failed");
+    });
+
+    expect(() => {
+      engine.apply(makePolicy([entry]), makePlan([entry]), pkg.id, repoRoot);
+    }).toThrow("journal write failed");
+
+    // Target file should NOT exist (new file case: undo deletes it)
+    expect(fs.existsSync(targetPath)).toBe(false);
+
+    // Journal should have 0 applied entries
+    const installs = installRepo.listInstalls(pkg.id);
+    expect(installs).toHaveLength(1);
+    expect(installs[0]!.status).toBe("failed");
+
+    const journal = installRepo.getJournalEntries(installs[0]!.id);
+    const applyEntries = journal.filter((j) => j.action !== "rollback");
+    expect(applyEntries).toHaveLength(0);
   });
 });

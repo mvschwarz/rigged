@@ -22,7 +22,14 @@ exports:
     - source: agents/reviewer.yaml
 `;
 
-function mockFs(files: Record<string, string | true>): FsOps {
+/** Standard source files that match BASIC_MANIFEST */
+const BASIC_SOURCE_FILES: Record<string, string | true> = {
+  "/pkg/skills/foo/SKILL.md": "# Foo skill",
+  "/pkg/guidance/AGENTS.md": "# Guidance",
+  "/pkg/agents/reviewer.yaml": "name: reviewer",
+};
+
+function mockFs(files: Record<string, string | true>, listFilesMap?: Record<string, string[]>): FsOps {
   return {
     readFile: vi.fn((p: string) => {
       const v = files[p];
@@ -30,6 +37,9 @@ function mockFs(files: Record<string, string | true>): FsOps {
       throw new Error(`ENOENT: ${p}`);
     }),
     exists: vi.fn((p: string) => p in files),
+    listFiles: listFilesMap
+      ? vi.fn((dirPath: string) => listFilesMap[dirPath] ?? ["SKILL.md"])
+      : undefined,
   };
 }
 
@@ -42,7 +52,7 @@ describe("InstallPlanner", () => {
   // Test 1: Clean repo -> all safe_projection
   it("clean repo -> all entries classified safe_projection", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const plannerFs = mockFs({});
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
     const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
@@ -58,13 +68,14 @@ describe("InstallPlanner", () => {
   it("existing skill with same name -> conflict detected", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
     const plannerFs = mockFs({
+      ...BASIC_SOURCE_FILES,
       "/repo/.agents/skills/foo/SKILL.md": true,
     });
     const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
     expect(plan.conflicts).toHaveLength(1);
-    expect(plan.conflicts[0]!.exportName).toBe("foo");
+    expect(plan.conflicts[0]!.exportName).toBe("foo/SKILL.md");
     expect(plan.conflicts[0]!.conflict).toBeDefined();
     expect(plan.conflicts[0]!.conflict!.reason).toContain("already exists");
   });
@@ -73,6 +84,7 @@ describe("InstallPlanner", () => {
   it("existing AGENTS.md -> guidance classified managed_merge", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
     const plannerFs = mockFs({
+      ...BASIC_SOURCE_FILES,
       "/repo/AGENTS.md": true,
     });
     const planner = new InstallPlanner(plannerFs);
@@ -86,7 +98,7 @@ describe("InstallPlanner", () => {
   // Test 4: No existing AGENTS.md -> safe_projection
   it("no existing AGENTS.md -> guidance classified safe_projection", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const plannerFs = mockFs({});
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
     const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
@@ -113,7 +125,9 @@ exports:
       supported_runtimes: [claude-code]
 `;
     const resolved = resolvePackage(manifest);
-    const planner = new InstallPlanner(mockFs({}));
+    const planner = new InstallPlanner(mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+    }));
     const plan = planner.plan(resolved, "/repo", "claude-code");
 
     const hookEntry = plan.deferred.find((e) => e.exportType === "hook");
@@ -140,7 +154,9 @@ exports:
       supported_runtimes: [claude-code]
 `;
     const resolved = resolvePackage(manifest);
-    const planner = new InstallPlanner(mockFs({}));
+    const planner = new InstallPlanner(mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+    }));
     const plan = planner.plan(resolved, "/repo", "claude-code");
 
     const mcpEntry = plan.deferred.find((e) => e.exportType === "mcp");
@@ -151,9 +167,10 @@ exports:
   // Test 7: Target paths correct per runtime
   it("plan includes correct target paths per runtime", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
 
-    // Claude Code
+    // Claude Code — guidance is agents_md which defers on claude-code, so only check skill
     const ccPlan = planner.plan(resolved, "/repo", "claude-code");
     const ccSkill = ccPlan.entries.find((e) => e.exportType === "skill");
     expect(ccSkill!.targetPath).toContain(".claude/skills/foo");
@@ -184,6 +201,8 @@ exports:
 `;
     const resolved = resolvePackage(manifest);
     const plannerFs = mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+      "/pkg/skills/bar/SKILL.md": "# Bar",
       "/repo/.agents/skills/foo/SKILL.md": true, // conflict
     });
     const planner = new InstallPlanner(plannerFs);
@@ -197,7 +216,8 @@ exports:
   // Test 9: Multiple exports planned correctly
   it("multiple exports planned correctly", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
     // Should have skill + guidance + agent entries
@@ -228,18 +248,22 @@ roles:
     skills: [foo]
 `;
     const resolved = resolvePackage(manifest);
-    const planner = new InstallPlanner(mockFs({}));
+    const planner = new InstallPlanner(mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+      "/pkg/skills/bar/SKILL.md": "# Bar",
+    }));
     const plan = planner.plan(resolved, "/repo", "codex", { roleName: "minimal" });
 
     const skillEntries = plan.entries.filter((e) => e.exportType === "skill");
     expect(skillEntries).toHaveLength(1);
-    expect(skillEntries[0]!.exportName).toBe("foo");
+    expect(skillEntries[0]!.exportName).toBe("foo/SKILL.md");
   });
 
   // Test 11: Agent name derived from source basename
   it("agent without explicit name uses derived basename", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
     const agentEntry = plan.entries.find((e) => e.exportType === "agent");
@@ -252,7 +276,8 @@ roles:
   // Test 18: Agent targets are .yaml files (not directories)
   it("agent targets are .yaml files, not directories", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
 
     const ccPlan = planner.plan(resolved, "/repo", "claude-code");
     const ccAgent = ccPlan.entries.find((e) => e.exportType === "agent");
@@ -287,7 +312,12 @@ requirements:
     - name: ripgrep
 `;
     const resolved = resolvePackage(manifest);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+      "/pkg/guidance/AGENTS.md": "# Guidance",
+      "/pkg/agents/reviewer.yaml": "name: reviewer",
+    });
+    const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
     const skill = plan.entries.find((e) => e.exportType === "skill");
@@ -355,7 +385,8 @@ exports:
   // Test 14: agents_md on claude-code -> deferred
   it("agents_md guidance on claude-code -> deferred", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "claude-code");
 
     const entry = plan.deferred.find((e) => e.exportType === "guidance" && e.exportName === "review-guide");
@@ -408,7 +439,9 @@ requirements:
     - name: ripgrep
 `;
     const resolved = resolvePackage(manifest);
-    const planner = new InstallPlanner(mockFs({}));
+    const planner = new InstallPlanner(mockFs({
+      "/pkg/skills/foo/SKILL.md": "# Foo",
+    }));
     const plan = planner.plan(resolved, "/repo", "claude-code");
 
     const reqEntries = plan.deferred.filter((e) => e.exportType === "requirement");
@@ -421,9 +454,213 @@ requirements:
   // Test 17: packageId is undefined (set by caller on persistence)
   it("plan.packageId is undefined before persistence", () => {
     const resolved = resolvePackage(BASIC_MANIFEST);
-    const planner = new InstallPlanner(mockFs({}));
+    const plannerFs = mockFs(BASIC_SOURCE_FILES);
+    const planner = new InstallPlanner(plannerFs);
     const plan = planner.plan(resolved, "/repo", "codex");
 
     expect(plan.packageId).toBeUndefined();
+  });
+
+  // --- New tests for R2-H1, R2-H2, F2.1 ---
+
+  // Test 20: Multi-file skill projection
+  it("multi-file skill projection creates one entry per file", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  skills:
+    - source: skills/review
+      name: review
+`;
+    const resolved = resolvePackage(manifest);
+    const plannerFs = mockFs(
+      {
+        "/pkg/skills/review/SKILL.md": "# Review skill",
+        "/pkg/skills/review/helper.md": "# Helper content",
+      },
+      {
+        "/pkg/skills/review": ["SKILL.md", "helper.md"],
+      },
+    );
+    const planner = new InstallPlanner(plannerFs);
+    const plan = planner.plan(resolved, "/repo", "claude-code");
+
+    const skillEntries = plan.entries.filter((e) => e.exportType === "skill");
+    expect(skillEntries).toHaveLength(2);
+    expect(skillEntries.some((e) => e.exportName === "review/SKILL.md")).toBe(true);
+    expect(skillEntries.some((e) => e.exportName === "review/helper.md")).toBe(true);
+    // Check target paths
+    expect(skillEntries.find((e) => e.exportName === "review/SKILL.md")!.targetPath).toContain(".claude/skills/review/SKILL.md");
+    expect(skillEntries.find((e) => e.exportName === "review/helper.md")!.targetPath).toContain(".claude/skills/review/helper.md");
+  });
+
+  // Test 21: Incompatible runtime -> throws
+  it("incompatible runtime throws error", () => {
+    const manifest = `
+schema_version: 1
+name: codex-only
+version: 1.0.0
+summary: Codex only package
+compatibility:
+  runtimes: [codex]
+exports:
+  skills:
+    - source: skills/foo
+      name: foo
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+
+    expect(() => planner.plan(resolved, "/repo", "claude-code")).toThrow(
+      "Package 'codex-only' does not support runtime 'claude-code'. Supported: codex",
+    );
+  });
+
+  // Test 22: Unsupported scope -> deferred
+  it("skill with unsupported scope is deferred", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  skills:
+    - source: skills/foo
+      name: foo
+      supported_scopes: [user_global]
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+    const plan = planner.plan(resolved, "/repo", "claude-code");
+
+    const entry = plan.deferred.find((e) => e.exportType === "skill");
+    expect(entry).toBeDefined();
+    expect(entry!.deferred).toBe(true);
+    expect(entry!.deferReason).toContain("does not support project_shared scope");
+    expect(entry!.exportName).toBe("foo");
+  });
+
+  // Test 23: Missing source file -> throws
+  it("missing source file throws error", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [claude-code]
+exports:
+  skills:
+    - source: skills/foo
+      name: foo
+`;
+    const resolved = resolvePackage(manifest);
+    // No source files in the mock -> source doesn't exist
+    const planner = new InstallPlanner(mockFs({}));
+
+    expect(() => planner.plan(resolved, "/repo", "claude-code")).toThrow(
+      "Source file not found: /pkg/skills/foo/SKILL.md",
+    );
+  });
+
+  // Test 24: Missing guidance source file -> throws
+  it("missing guidance source file throws error", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [codex]
+exports:
+  guidance:
+    - source: guidance/AGENTS.md
+      kind: agents_md
+      merge_strategy: managed_block
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+
+    expect(() => planner.plan(resolved, "/repo", "codex")).toThrow(
+      "Source file not found: /pkg/guidance/AGENTS.md",
+    );
+  });
+
+  // Test 25: Missing agent source file -> throws
+  it("missing agent source file throws error", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [codex]
+exports:
+  agents:
+    - source: agents/reviewer.yaml
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+
+    expect(() => planner.plan(resolved, "/repo", "codex")).toThrow(
+      "Source file not found: /pkg/agents/reviewer.yaml",
+    );
+  });
+
+  // Test 26: Guidance with unsupported scope -> deferred
+  it("guidance with unsupported scope is deferred", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [codex]
+exports:
+  guidance:
+    - source: guidance/AGENTS.md
+      kind: agents_md
+      merge_strategy: managed_block
+      supported_scopes: [user_global]
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+    const plan = planner.plan(resolved, "/repo", "codex");
+
+    const entry = plan.deferred.find((e) => e.exportType === "guidance");
+    expect(entry).toBeDefined();
+    expect(entry!.deferred).toBe(true);
+    expect(entry!.deferReason).toContain("does not support project_shared scope");
+  });
+
+  // Test 27: Agent with unsupported scope -> deferred
+  it("agent with unsupported scope is deferred", () => {
+    const manifest = `
+schema_version: 1
+name: test
+version: 1.0.0
+summary: Test
+compatibility:
+  runtimes: [codex]
+exports:
+  agents:
+    - source: agents/reviewer.yaml
+      supported_scopes: [user_global]
+`;
+    const resolved = resolvePackage(manifest);
+    const planner = new InstallPlanner(mockFs({}));
+    const plan = planner.plan(resolved, "/repo", "codex");
+
+    const entry = plan.deferred.find((e) => e.exportType === "agent");
+    expect(entry).toBeDefined();
+    expect(entry!.deferred).toBe(true);
+    expect(entry!.deferReason).toContain("does not support project_shared scope");
   });
 });

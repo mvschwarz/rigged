@@ -73,7 +73,7 @@ describe("ConflictDetector", () => {
     const result = resolveAndPlan(BASIC_MANIFEST, {
       "/repo/.agents/skills/foo/SKILL.md": SKILL_CONTENT_DIFFERENT,
     });
-    const conflict = result.conflicts.find((e) => e.exportName === "foo");
+    const conflict = result.conflicts.find((e) => e.exportName === "foo/SKILL.md");
     expect(conflict).toBeDefined();
     expect(conflict!.conflict!.existingHash).toBeDefined();
     expect(conflict!.conflict!.sourceHash).toBeDefined();
@@ -86,7 +86,7 @@ describe("ConflictDetector", () => {
       "/repo/.agents/skills/foo/SKILL.md": SKILL_CONTENT,
     });
     expect(result.noOps).toHaveLength(1);
-    expect(result.noOps[0]!.exportName).toBe("foo");
+    expect(result.noOps[0]!.exportName).toBe("foo/SKILL.md");
     expect(result.conflicts).toHaveLength(0);
   });
 

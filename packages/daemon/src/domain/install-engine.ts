@@ -81,19 +81,30 @@ export class InstallEngine {
           ? hashContent(this.fs.readFile(entry.targetPath))
           : undefined;
 
-        const journal = this.installRepo.createJournalEntry({
-          installId: install.id,
-          action: entry.classification === "managed_merge" ? "merge_block" : "copy",
-          exportType: entry.exportType,
-          classification: entry.classification,
-          targetPath: entry.targetPath,
-          backupPath,
-          beforeHash,
-          afterHash,
-          status: "applied",
-        });
-
-        applied.push(journal);
+        try {
+          const journal = this.installRepo.createJournalEntry({
+            installId: install.id,
+            action: entry.classification === "managed_merge" ? "merge_block" : "copy",
+            exportType: entry.exportType,
+            classification: entry.classification,
+            targetPath: entry.targetPath,
+            backupPath,
+            beforeHash,
+            afterHash,
+            status: "applied",
+          });
+          applied.push(journal);
+        } catch (journalErr) {
+          // Undo this entry's file mutation since it won't be in the rollback list
+          try {
+            if (backupPath && this.fs.exists(backupPath)) {
+              this.fs.copyFile(backupPath, entry.targetPath);
+            } else if (this.fs.exists(entry.targetPath)) {
+              this.fs.deleteFile(entry.targetPath);
+            }
+          } catch { /* best-effort undo */ }
+          throw journalErr;
+        }
       }
 
       this.installRepo.updateInstallStatus(install.id, "applied");

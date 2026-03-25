@@ -81,6 +81,20 @@ function realFsOps(): FsOps {
   return {
     readFile: (p) => fs.readFileSync(p, "utf-8"),
     exists: (p) => fs.existsSync(p),
+    listFiles: (dirPath) => {
+      const results: string[] = [];
+      function walk(dir: string, prefix: string) {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            walk(nodePath.join(dir, entry.name), nodePath.join(prefix, entry.name));
+          } else {
+            results.push(prefix ? nodePath.join(prefix, entry.name) : entry.name);
+          }
+        }
+      }
+      walk(dirPath, "");
+      return results;
+    },
   };
 }
 
@@ -138,7 +152,11 @@ packagesRoutes.post("/plan", async (c) => {
   const sourceRef = typeof body["sourceRef"] === "string" ? body["sourceRef"] : "";
   const cwd = typeof body["cwd"] === "string" ? body["cwd"] : undefined;
   const targetRoot = typeof body["targetRoot"] === "string" ? body["targetRoot"] : "";
-  const runtime = (body["runtime"] === "codex" ? "codex" : "claude-code") as "claude-code" | "codex";
+  const runtimeInput = typeof body["runtime"] === "string" ? body["runtime"] : "claude-code";
+  if (runtimeInput !== "claude-code" && runtimeInput !== "codex") {
+    return c.json({ error: `Unknown runtime: '${runtimeInput}'. Must be 'claude-code' or 'codex'` }, 400);
+  }
+  const runtime = runtimeInput as "claude-code" | "codex";
   const roleName = typeof body["roleName"] === "string" ? body["roleName"] : undefined;
 
   if (!sourceRef || !targetRoot) {
@@ -176,7 +194,11 @@ packagesRoutes.post("/install", async (c) => {
   const sourceRef = typeof body["sourceRef"] === "string" ? body["sourceRef"] : "";
   const cwd = typeof body["cwd"] === "string" ? body["cwd"] : undefined;
   const targetRoot = typeof body["targetRoot"] === "string" ? body["targetRoot"] : "";
-  const runtime = (body["runtime"] === "codex" ? "codex" : "claude-code") as "claude-code" | "codex";
+  const installRuntimeInput = typeof body["runtime"] === "string" ? body["runtime"] : "claude-code";
+  if (installRuntimeInput !== "claude-code" && installRuntimeInput !== "codex") {
+    return c.json({ error: `Unknown runtime: '${installRuntimeInput}'. Must be 'claude-code' or 'codex'` }, 400);
+  }
+  const runtime = installRuntimeInput as "claude-code" | "codex";
   const roleName = typeof body["roleName"] === "string" ? body["roleName"] : undefined;
   const allowMerge = body["allowMerge"] === true;
 
@@ -221,8 +243,16 @@ packagesRoutes.post("/install", async (c) => {
     }, 422);
   }
 
-  // Dedup package record
+  // Dedup package record — verify manifest hash matches if reusing
   const existing = packageRepo.findByNameVersion(resolved.manifest.name, resolved.manifest.version);
+  if (existing && existing.manifestHash !== resolved.manifestHash) {
+    return c.json({
+      error: `Package '${resolved.manifest.name}' v${resolved.manifest.version} already registered with different content (manifest hash mismatch)`,
+      code: "manifest_hash_mismatch",
+      existingHash: existing.manifestHash,
+      currentHash: resolved.manifestHash,
+    }, 409);
+  }
   const pkg = existing ?? packageRepo.createPackage({
     name: resolved.manifest.name,
     version: resolved.manifest.version,

@@ -18,6 +18,7 @@ export interface ResolvedPackage {
 export interface FsOps {
   readFile: (filePath: string) => string;
   exists: (filePath: string) => boolean;
+  listFiles?: (dirPath: string) => string[]; // relative paths of files in dir
 }
 
 export class PackageResolver {

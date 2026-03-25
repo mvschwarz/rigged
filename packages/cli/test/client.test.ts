@@ -21,6 +21,17 @@ function createEchoServer(): { server: http.Server; port: number; close: () => P
       return;
     }
 
+    // POST /api/echo-raw -> echoes content-type and raw body (for postText test)
+    if (req.method === "POST" && url.pathname === "/api/echo-raw") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ contentType: req.headers["content-type"], body }));
+      });
+      return;
+    }
+
     // Collect body for POST
     let body = "";
     req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
@@ -146,7 +157,18 @@ describe("DaemonClient", () => {
     expect(res.data).toEqual({ error: "already exists" });
   });
 
-  // Test 8: getText returns raw text body for non-JSON content (YAML export)
+  // Test 8: postText sends raw text body with correct Content-Type
+  it("postText sends raw text body with text/yaml Content-Type", async () => {
+    const client = new DaemonClient(baseUrl);
+    const yaml = "schema_version: 1\nname: test\n";
+    const res = await client.postText<{ contentType: string; body: string }>("/api/echo-raw", yaml);
+
+    expect(res.status).toBe(200);
+    expect(res.data.contentType).toBe("text/yaml");
+    expect(res.data.body).toBe(yaml); // Raw text, NOT JSON-stringified
+  });
+
+  // Test 9: getText returns raw text body for non-JSON content (YAML export)
   it("getText returns raw text body for text/yaml response", async () => {
     const client = new DaemonClient(baseUrl);
     const res = await client.getText("/api/rigs/r1/spec");

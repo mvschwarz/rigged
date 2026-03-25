@@ -35,6 +35,14 @@ export class DaemonClient {
     });
   }
 
+  async postText<T = unknown>(path: string, text: string, contentType = "text/yaml"): Promise<DaemonResponse<T>> {
+    return this.requestJson<T>(path, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body: text,
+    });
+  }
+
   private async fetch(path: string, init: RequestInit): Promise<Response> {
     try {
       return await fetch(`${this.baseUrl}${path}`, init);

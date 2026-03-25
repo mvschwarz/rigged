@@ -303,4 +303,27 @@ describe("Rig CRUD routes", () => {
     // Must be an array (summary shape), not an object (rig-by-id shape or 404 error shape)
     expect(Array.isArray(body)).toBe(true);
   });
+
+  it("GET /api/rigs/summary -> same-second snapshots: no duplicate rig rows, deterministic tiebreak by id", async () => {
+    const rig = repo.createRig("epsilon");
+    repo.addNode(rig.id, "worker", { runtime: "codex" });
+
+    // Two snapshots with identical created_at — ULID "ZZZZ" sorts after "AAAA"
+    db.prepare(
+      "INSERT INTO snapshots (id, rig_id, kind, status, data, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("AAAA_snap", rig.id, "manual", "complete", "{}", "2026-03-23 05:00:00");
+    db.prepare(
+      "INSERT INTO snapshots (id, rig_id, kind, status, data, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("ZZZZ_snap", rig.id, "manual", "complete", "{}", "2026-03-23 05:00:00");
+
+    const res = await app.request("/api/rigs/summary");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Must have exactly one row for epsilon (no duplicates)
+    const epsilons = body.filter((r: { name: string }) => r.name === "epsilon");
+    expect(epsilons).toHaveLength(1);
+    // ZZZZ sorts after AAAA, so ZZZZ_snap should win the tiebreak
+    expect(epsilons[0].latestSnapshotId).toBe("ZZZZ_snap");
+  });
 });

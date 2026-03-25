@@ -63,21 +63,32 @@ function readState(deps: LifecycleDeps): DaemonState | null {
   }
 }
 
-async function verifyDaemonPid(state: DaemonState, deps: LifecycleDeps): Promise<boolean> {
-  if (!deps.isProcessAlive(state.pid)) return false;
+/** Check if a PID is a rigged daemon. Returns:
+ *  - "rigged" — healthz responded (ok or not) → this is our daemon
+ *  - "not_rigged" — connection refused → PID is alive but not listening on our port
+ *  - "dead" — PID not alive */
+async function checkPid(state: DaemonState, deps: LifecycleDeps): Promise<"rigged" | "not_rigged" | "dead"> {
+  if (!deps.isProcessAlive(state.pid)) return "dead";
   try {
-    const res = await deps.fetch(`http://localhost:${state.port}/healthz`);
-    return res.ok;
+    await deps.fetch(`http://localhost:${state.port}/healthz`);
+    // Any response (ok or not) means something is listening on our port → rigged
+    return "rigged";
   } catch {
-    return false;
+    // Connection refused → PID alive but not our daemon
+    return "not_rigged";
   }
 }
 
 export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Promise<DaemonState> {
-  // Check if already running — verify PID is actually a rigged daemon via healthz
+  // Check if already running
   const existing = readState(deps);
-  if (existing && await verifyDaemonPid(existing, deps)) {
-    throw new Error(`Daemon already running (pid ${existing.pid} on port ${existing.port})`);
+  if (existing) {
+    const pidState = await checkPid(existing, deps);
+    if (pidState === "rigged") {
+      // Our daemon is running (possibly unhealthy, but alive on our port)
+      throw new Error(`Daemon already running (pid ${existing.pid} on port ${existing.port})`);
+    }
+    // "dead" or "not_rigged" → stale state, safe to proceed
   }
 
   const port = opts.port ?? DEFAULT_PORT;
@@ -139,13 +150,19 @@ export async function stopDaemon(deps: LifecycleDeps): Promise<void> {
   const state = readState(deps);
   if (!state) return; // Not running — clean exit
 
-  // Verify PID is actually a rigged daemon before killing
-  if (!await verifyDaemonPid(state, deps)) {
-    // PID is not a rigged daemon — clean up stale state file
+  const pidState = await checkPid(state, deps);
+  if (pidState === "dead") {
+    // Already dead — clean up stale state
+    deps.removeFile(STATE_FILE);
+    return;
+  }
+  if (pidState === "not_rigged") {
+    // PID alive but not our daemon (reused PID) — clean up state, don't kill
     deps.removeFile(STATE_FILE);
     return;
   }
 
+  // pidState === "rigged" — safe to SIGTERM
   deps.kill(state.pid, "SIGTERM");
 
   // Wait briefly for process to exit

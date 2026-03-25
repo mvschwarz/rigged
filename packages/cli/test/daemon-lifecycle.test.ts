@@ -390,4 +390,42 @@ describe("Daemon Lifecycle", () => {
     const result = await startDaemon({ port: 7433 }, deps);
     expect(result.pid).toBe(12345);
   });
+
+  // Test 23: start with unhealthy rigged daemon (healthz responds non-ok) -> blocks start
+  it("start: unhealthy rigged daemon (healthz responds) -> throws already running", async () => {
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn(() => true),
+      // healthz responds (even if not ok) → port is ours → rigged
+      fetch: vi.fn(async () => ({ ok: false })),
+    });
+
+    await expect(startDaemon({ port: 7433 }, deps)).rejects.toThrow(/already running/i);
+  });
+
+  // Test 24: stop with unhealthy rigged daemon -> still sends SIGTERM (it's our process)
+  it("stop: unhealthy rigged daemon -> sends SIGTERM", async () => {
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn()
+        .mockReturnValueOnce(true)  // checkPid: alive
+        .mockReturnValueOnce(false), // after kill: dead
+      // healthz responds (non-ok) → still rigged
+      fetch: vi.fn(async () => ({ ok: false })),
+    });
+
+    await stopDaemon(deps);
+    expect(deps.kill).toHaveBeenCalledWith(999, "SIGTERM");
+    expect(deps.removeFile).toHaveBeenCalledWith(STATE_FILE);
+  });
 });

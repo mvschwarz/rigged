@@ -41,7 +41,7 @@ export function RigCard({ rig, onSelect, onSnapshot, onExport }: RigCardProps) {
       role="button"
       tabIndex={0}
       onClick={() => onSelect(rig.id)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(rig.id); } }}
+      onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onSelect(rig.id); } }}
     >
       <CardContent className="p-spacing-4">
         {/* Header: name + node count */}

@@ -36,6 +36,12 @@ import { ExternalInstallPlanner } from "./domain/external-install-planner.js";
 import { ExternalInstallExecutor } from "./domain/external-install-executor.js";
 import { PackageInstallService } from "./domain/package-install-service.js";
 import { BootstrapOrchestrator } from "./domain/bootstrap-orchestrator.js";
+import { TmuxDiscoveryScanner } from "./domain/tmux-discovery-scanner.js";
+import { SessionFingerprinter } from "./domain/session-fingerprinter.js";
+import { SessionEnricher } from "./domain/session-enricher.js";
+import { DiscoveryRepository } from "./domain/discovery-repository.js";
+import { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
+import { ClaimService } from "./domain/claim-service.js";
 import { createApp, type AppDeps } from "./server.js";
 import fs from "node:fs";
 import nodePath from "node:path";
@@ -164,6 +170,22 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     packageInstallService, rigInstantiator, fsOps: resolverFsOps,
   });
 
+  // Discovery services
+  const tmuxScanner = new TmuxDiscoveryScanner({ tmuxAdapter });
+  const sessionFingerprinter = new SessionFingerprinter({
+    cmuxAdapter, tmuxAdapter, fsExists: (p: string) => fs.existsSync(p),
+  });
+  const sessionEnricher = new SessionEnricher({
+    fsExists: (p: string) => fs.existsSync(p),
+    fsReaddir: (p: string) => fs.readdirSync(p),
+  });
+  const discoveryRepo = new DiscoveryRepository(db);
+  const discoveryCoordinator = new DiscoveryCoordinator({
+    scanner: tmuxScanner, fingerprinter: sessionFingerprinter, enricher: sessionEnricher,
+    discoveryRepo, sessionRegistry, eventBus,
+  });
+  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus });
+
   const deps: AppDeps = {
     rigRepo,
     sessionRegistry,
@@ -183,6 +205,9 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     installVerifier,
     bootstrapOrchestrator,
     bootstrapRepo,
+    discoveryCoordinator,
+    discoveryRepo,
+    claimService,
   };
 
   const app = createApp(deps);

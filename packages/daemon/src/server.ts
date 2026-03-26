@@ -17,6 +17,9 @@ import type { InstallEngine } from "./domain/install-engine.js";
 import type { InstallVerifier } from "./domain/install-verifier.js";
 import type { BootstrapOrchestrator } from "./domain/bootstrap-orchestrator.js";
 import type { BootstrapRepository } from "./domain/bootstrap-repository.js";
+import type { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
+import type { DiscoveryRepository } from "./domain/discovery-repository.js";
+import type { ClaimService } from "./domain/claim-service.js";
 import { rigsRoutes } from "./routes/rigs.js";
 import { sessionsRoutes, nodesRoutes } from "./routes/sessions.js";
 import { adaptersRoutes } from "./routes/adapters.js";
@@ -25,6 +28,7 @@ import { snapshotsRoutes, restoreRoutes } from "./routes/snapshots.js";
 import { handleExportYaml, handleExportJson, rigspecImportRoutes } from "./routes/rigspec.js";
 import { packagesRoutes } from "./routes/packages.js";
 import { bootstrapRoutes } from "./routes/bootstrap.js";
+import { discoveryRoutes } from "./routes/discovery.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -45,6 +49,9 @@ export interface AppDeps {
   installVerifier: InstallVerifier;
   bootstrapOrchestrator: BootstrapOrchestrator;
   bootstrapRepo: BootstrapRepository;
+  discoveryCoordinator: DiscoveryCoordinator;
+  discoveryRepo: DiscoveryRepository;
+  claimService: ClaimService;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -82,6 +89,12 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.rigRepo.db !== deps.bootstrapRepo.db) {
     throw new Error("createApp: bootstrapRepo must share the same db handle");
   }
+  if (deps.rigRepo.db !== deps.discoveryRepo.db) {
+    throw new Error("createApp: discoveryRepo must share the same db handle");
+  }
+  if (deps.rigRepo.db !== deps.claimService.db) {
+    throw new Error("createApp: claimService must share the same db handle");
+  }
 
   const app = new Hono();
 
@@ -105,6 +118,9 @@ export function createApp(deps: AppDeps): Hono {
     c.set("installVerifier" as never, deps.installVerifier);
     c.set("bootstrapOrchestrator" as never, deps.bootstrapOrchestrator);
     c.set("bootstrapRepo" as never, deps.bootstrapRepo);
+    c.set("discoveryCoordinator" as never, deps.discoveryCoordinator);
+    c.set("discoveryRepo" as never, deps.discoveryRepo);
+    c.set("claimService" as never, deps.claimService);
     await next();
   });
 
@@ -124,6 +140,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/rigs/:rigId/spec.json", handleExportJson);
   app.route("/api/packages", packagesRoutes);
   app.route("/api/bootstrap", bootstrapRoutes);
+  app.route("/api/discovery", discoveryRoutes);
 
   return app;
 }

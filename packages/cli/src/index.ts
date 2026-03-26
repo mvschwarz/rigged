@@ -10,6 +10,8 @@ import { uiCommand, type UiDeps } from "./commands/ui.js";
 import { packageCommand } from "./commands/package.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { requirementsCommand } from "./commands/requirements.js";
+import { discoverCommand } from "./commands/discover.js";
+import { claimCommand } from "./commands/claim.js";
 import type { LifecycleDeps } from "./daemon-lifecycle.js";
 
 export interface ProgramDeps {
@@ -23,6 +25,8 @@ export interface ProgramDeps {
   packageDeps?: StatusDeps;
   bootstrapDeps?: StatusDeps;
   requirementsDeps?: StatusDeps;
+  discoverDeps?: StatusDeps;
+  claimDeps?: StatusDeps;
 }
 
 export function createProgram(depsOverride?: ProgramDeps): Command {
@@ -43,6 +47,8 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(packageCommand(depsOverride?.packageDeps));
   program.addCommand(bootstrapCommand(depsOverride?.bootstrapDeps));
   program.addCommand(requirementsCommand(depsOverride?.requirementsDeps));
+  program.addCommand(discoverCommand(depsOverride?.discoverDeps));
+  program.addCommand(claimCommand(depsOverride?.claimDeps));
 
   return program;
 }

@@ -1078,4 +1078,100 @@ requirements:
     expect(payload.packageName).toBe("test-pkg");
     expect(payload.code).toBe("manifest_hash_mismatch");
   });
+
+  // --- Test 28: package.planned event actionable count matches response (R2-M1) ---
+  it("POST /api/packages/plan event actionable count matches response after policy", async () => {
+    // Guidance-only package: with allowMerge:false, policy rejects managed_merge entries
+    // so response actionable=0 but pre-policy actionable=1
+    writePkg(pkgDir, GUIDANCE_MANIFEST_YAML, { "guidance/rules.md": "# Rules" });
+    // Create existing CLAUDE.md so guidance classifies as managed_merge
+    fs.writeFileSync(path.join(targetDir, "CLAUDE.md"), "# Existing");
+
+    const res = await app.request("/api/packages/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code", allowMerge: false }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Response says 0 actionable because policy rejected managed_merge without allowMerge
+    expect(body.actionable).toBe(0);
+    expect(body.rejected).toBe(1);
+
+    // Event must match response — actionable:0, not pre-policy 1
+    const events = getEvents(db).filter((e) => e.type === "package.planned");
+    expect(events.length).toBe(1);
+    const eventPayload = JSON.parse(events[0]!.payload);
+    expect(eventPayload.actionable).toBe(body.actionable);
+  });
+
+  // --- Test 29: /plan returns 400 on nonexistent role (R2-M2) ---
+  it("POST /api/packages/plan with nonexistent role returns 400", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    const res = await app.request("/api/packages/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code", roleName: "nonexistent" }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("plan_error");
+    expect(body.error).toContain("nonexistent");
+  });
+
+  // --- Test 30: /install returns 400 on nonexistent role (R2-M2) ---
+  it("POST /api/packages/install with nonexistent role returns 400", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    const res = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code", roleName: "nonexistent" }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("plan_error");
+    expect(body.error).toContain("nonexistent");
+  });
+
+  // --- Test 31: Double rollback returns 409 with no journal/event growth (R2-M3) ---
+  it("POST rollback on already rolled-back install returns 409, no journal/event growth", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Install
+    const installRes = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    expect(installRes.status).toBe(201);
+    const { installId } = await installRes.json();
+
+    // First rollback — should succeed
+    const rollback1 = await app.request(`/api/packages/${installId}/rollback`, { method: "POST" });
+    expect(rollback1.status).toBe(200);
+
+    // Capture journal and event counts after first rollback
+    const journalAfterFirst = db.prepare("SELECT COUNT(*) AS cnt FROM install_journal WHERE install_id = ?").get(installId) as { cnt: number };
+    const eventsAfterFirst = getEvents(db).filter((e) => e.type === "package.rolledback").length;
+
+    // Second rollback — should be rejected
+    const rollback2 = await app.request(`/api/packages/${installId}/rollback`, { method: "POST" });
+    expect(rollback2.status).toBe(409);
+    const body = await rollback2.json();
+    expect(body.code).toBe("not_applied");
+    expect(body.status).toBe("rolled_back");
+
+    // Journal count must NOT have grown
+    const journalAfterSecond = db.prepare("SELECT COUNT(*) AS cnt FROM install_journal WHERE install_id = ?").get(installId) as { cnt: number };
+    expect(journalAfterSecond.cnt).toBe(journalAfterFirst.cnt);
+
+    // Event count must NOT have grown
+    const eventsAfterSecond = getEvents(db).filter((e) => e.type === "package.rolledback").length;
+    expect(eventsAfterSecond).toBe(eventsAfterFirst);
+  });
 });

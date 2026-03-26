@@ -45,12 +45,20 @@ function statusLabel(status: string): string {
 }
 
 function JournalSubList({ installId }: { installId: string }) {
-  const { data: entries, isPending } = useJournalEntries(installId);
+  const { data: entries, isPending, isError } = useJournalEntries(installId);
 
   if (isPending) {
     return (
       <div className="pl-spacing-6 py-spacing-2 text-label-sm text-foreground-muted">
         Loading journal...
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="pl-spacing-6 py-spacing-2 text-label-sm text-destructive" data-testid="journal-error">
+        Failed to load journal entries
       </div>
     );
   }
@@ -153,7 +161,7 @@ export function PackageDetail() {
   const { packageId } = useParams({ strict: false }) as { packageId: string };
   const navigate = useNavigate();
   const { data: pkg, isPending: pkgPending, error: pkgError } = usePackageInfo(packageId);
-  const { data: installs, isPending: installsPending } = useInstallHistory(packageId);
+  const { data: installs, isPending: installsPending, error: installsError } = useInstallHistory(packageId);
   const rollbackMutation = useRollbackInstall(packageId);
 
   const [rollbackTargetId, setRollbackTargetId] = useState<string | null>(null);
@@ -166,10 +174,13 @@ export function PackageDetail() {
 
   const handleRollbackConfirm = () => {
     if (rollbackTargetId) {
-      rollbackMutation.mutate(rollbackTargetId);
+      rollbackMutation.mutate(rollbackTargetId, {
+        onSuccess: () => {
+          setDialogOpen(false);
+          setRollbackTargetId(null);
+        },
+      });
     }
-    setDialogOpen(false);
-    setRollbackTargetId(null);
   };
 
   // Loading
@@ -190,6 +201,14 @@ export function PackageDetail() {
     return (
       <div className="p-spacing-6" data-testid="detail-error">
         <p className="text-destructive">{pkgError.message}</p>
+      </div>
+    );
+  }
+
+  if (installsError) {
+    return (
+      <div className="p-spacing-6" data-testid="installs-error">
+        <p className="text-destructive">Failed to load install history</p>
       </div>
     );
   }
@@ -249,8 +268,8 @@ export function PackageDetail() {
       )}
 
       {/* Rollback confirmation dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent data-testid="rollback-dialog">
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!rollbackMutation.isPending) { setDialogOpen(open); if (!open) rollbackMutation.reset(); } }}>
+        <DialogContent data-testid="rollback-dialog" onPointerDownOutside={(e) => { if (rollbackMutation.isPending) e.preventDefault(); }} onEscapeKeyDown={(e) => { if (rollbackMutation.isPending) e.preventDefault(); }} hideCloseButton={rollbackMutation.isPending}>
           <DialogHeader>
             <DialogTitle className="text-headline-md uppercase">CONFIRM ROLLBACK</DialogTitle>
             <DialogDescription>
@@ -258,11 +277,17 @@ export function PackageDetail() {
               be undone.
             </DialogDescription>
           </DialogHeader>
+          {rollbackMutation.isError && (
+            <p className="text-destructive text-label-sm" data-testid="rollback-error">
+              Rollback failed: {rollbackMutation.error?.message ?? "Unknown error"}
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="ghost"
-              onClick={() => setDialogOpen(false)}
+              onClick={() => { rollbackMutation.reset(); setDialogOpen(false); }}
               data-testid="rollback-cancel"
+              disabled={rollbackMutation.isPending}
             >
               CANCEL
             </Button>
@@ -270,8 +295,9 @@ export function PackageDetail() {
               variant="destructive"
               onClick={handleRollbackConfirm}
               data-testid="rollback-confirm"
+              disabled={rollbackMutation.isPending}
             >
-              ROLLBACK
+              {rollbackMutation.isPending ? "ROLLING BACK..." : "ROLLBACK"}
             </Button>
           </DialogFooter>
         </DialogContent>

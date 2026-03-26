@@ -183,10 +183,15 @@ packagesRoutes.post("/plan", async (c) => {
     return c.json({ error: result.error }, 400);
   }
 
-  const planner = new InstallPlanner(fsOps);
-  const plan = planner.plan(result.resolved, targetRoot, runtime, { roleName });
-  const refined = detectConflicts(plan, fsOps);
-  const policyResult = applyPolicy(refined, { allowMerge });
+  let plan, refined, policyResult;
+  try {
+    const planner = new InstallPlanner(fsOps);
+    plan = planner.plan(result.resolved, targetRoot, runtime, { roleName });
+    refined = detectConflicts(plan, fsOps);
+    policyResult = applyPolicy(refined, { allowMerge });
+  } catch (err) {
+    return c.json({ error: (err as Error).message, code: "plan_error" }, 400);
+  }
 
   // Build a set of approved entry keys for annotation
   const approvedKeys = new Set(policyResult.approved.map((e) => `${e.exportType}:${e.exportName}`));
@@ -210,7 +215,7 @@ packagesRoutes.post("/plan", async (c) => {
   eventBus.emit({
     type: "package.planned",
     packageName: refined.packageName,
-    actionable: refined.actionable.length,
+    actionable: policyResult.approved.length,
     deferred: refined.deferred.length,
     conflicts: refined.conflicts.length,
   });
@@ -258,9 +263,14 @@ packagesRoutes.post("/install", async (c) => {
   const resolved = resolveResult.resolved;
 
   // Plan + detect conflicts
-  const planner = new InstallPlanner(fsOps);
-  const plan = planner.plan(resolved, targetRoot, runtime, { roleName });
-  const refined = detectConflicts(plan, fsOps);
+  let plan, refined;
+  try {
+    const planner = new InstallPlanner(fsOps);
+    plan = planner.plan(resolved, targetRoot, runtime, { roleName });
+    refined = detectConflicts(plan, fsOps);
+  } catch (err) {
+    return c.json({ error: (err as Error).message, code: "plan_error" }, 400);
+  }
 
   const { eventBus } = getDeps(c);
 
@@ -357,6 +367,10 @@ packagesRoutes.post("/:installId/rollback", async (c) => {
   const install = installRepo.getInstall(installId);
   if (!install) {
     return c.json({ error: "Install not found" }, 404);
+  }
+
+  if (install.status !== "applied") {
+    return c.json({ error: "Install is not in applied state", code: "not_applied", status: install.status }, 409);
   }
 
   try {

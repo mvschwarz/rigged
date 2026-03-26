@@ -280,4 +280,258 @@ describe("PackageDetail", () => {
     const deferredPlaceholder = screen.getByTestId("deferred-placeholder");
     expect(deferredPlaceholder.textContent).toContain("deferred");
   });
+
+  // Test 9: Failed install history fetch shows error, not empty state (R2-M5)
+  it("failed install history fetch shows error state, not false empty state", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("/installs")) {
+        return { ok: false, status: 500, json: async () => ({}) };
+      }
+      if (typeof url === "string" && url.match(/\/api\/packages\/[^/]+$/)) {
+        return { ok: true, status: 200, json: async () => MOCK_PACKAGE };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("installs-error")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("installs-error").textContent).toContain("Failed to load install history");
+    expect(screen.queryByTestId("empty-installs")).toBeNull();
+  });
+
+  // Test 10: Failed journal fetch shows error, not empty state (R2-M5)
+  it("failed journal fetch shows error state, not false empty state", async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (typeof url === "string" && url.includes("/journal")) {
+        return { ok: false, status: 500, json: async () => ({}) };
+      }
+      if (typeof url === "string" && url.includes("/installs")) {
+        return { ok: true, status: 200, json: async () => MOCK_INSTALLS };
+      }
+      if (typeof url === "string" && url.match(/\/api\/packages\/[^/]+$/)) {
+        return { ok: true, status: 200, json: async () => MOCK_PACKAGE };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(2);
+    });
+
+    // Expand the second row (inst-1, applied) to trigger journal fetch
+    const expandBtns = screen.getAllByTestId("expand-btn");
+    act(() => { fireEvent.click(expandBtns[1]!); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("journal-error")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("journal-error").textContent).toContain("Failed to load journal");
+  });
+
+  // Test 11: Rollback failure shows error in dialog (R2-M6)
+  it("rollback failure shows error in dialog, dialog stays open", async () => {
+    const appliedOnly: InstallSummary[] = [
+      { ...MOCK_INSTALLS[0]!, status: "applied" },
+    ];
+    mockFetch({ pkg: MOCK_PACKAGE, installs: appliedOnly, rollbackOk: false });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(1);
+    });
+
+    // Open rollback dialog
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+
+    // Confirm rollback (will fail with 500)
+    act(() => { fireEvent.click(screen.getByTestId("rollback-confirm")); });
+
+    // Dialog should stay open and show error
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-error")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("rollback-error").textContent).toContain("Rollback failed");
+    // Dialog is still open
+    expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+  });
+
+  // Test 12: Rollback confirm button disabled during pending (R2-M6)
+  it("rollback confirm button disabled during pending state", async () => {
+    const appliedOnly: InstallSummary[] = [
+      { ...MOCK_INSTALLS[0]!, status: "applied" },
+    ];
+    // Return a never-resolving promise so the mutation stays pending
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && typeof url === "string" && url.includes("/rollback")) {
+        return new Promise(() => {}); // Never resolves
+      }
+      if (typeof url === "string" && url.includes("/installs")) {
+        return { ok: true, status: 200, json: async () => appliedOnly };
+      }
+      if (typeof url === "string" && url.match(/\/api\/packages\/[^/]+$/)) {
+        return { ok: true, status: 200, json: async () => MOCK_PACKAGE };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(1);
+    });
+
+    // Open rollback dialog
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+
+    // Confirm — enters pending state
+    act(() => { fireEvent.click(screen.getByTestId("rollback-confirm")); });
+
+    await waitFor(() => {
+      const btn = screen.getByTestId("rollback-confirm");
+      expect(btn.hasAttribute("disabled")).toBe(true);
+      expect(btn.textContent).toContain("ROLLING BACK");
+    });
+  });
+
+  // Test 13: Dialog non-dismissible during pending rollback (R2-M6 regression)
+  it("dialog cannot be dismissed via Escape or overlay during pending rollback", async () => {
+    const appliedOnly: InstallSummary[] = [
+      { ...MOCK_INSTALLS[0]!, status: "applied" },
+    ];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && typeof url === "string" && url.includes("/rollback")) {
+        return new Promise(() => {}); // Never resolves — stays pending
+      }
+      if (typeof url === "string" && url.includes("/installs")) {
+        return { ok: true, status: 200, json: async () => appliedOnly };
+      }
+      if (typeof url === "string" && url.match(/\/api\/packages\/[^/]+$/)) {
+        return { ok: true, status: 200, json: async () => MOCK_PACKAGE };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(1);
+    });
+
+    // Open dialog and confirm rollback to enter pending state
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+    act(() => { fireEvent.click(screen.getByTestId("rollback-confirm")); });
+
+    // Wait for pending state
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-confirm").hasAttribute("disabled")).toBe(true);
+    });
+
+    // Try Escape — dialog should remain open
+    act(() => { fireEvent.keyDown(screen.getByTestId("rollback-dialog"), { key: "Escape" }); });
+    expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+
+    // Cancel button should be disabled during pending
+    expect(screen.getByTestId("rollback-cancel").hasAttribute("disabled")).toBe(true);
+  });
+
+  // Test 14: Close-after-error clears stale error on reopen (R2-M6 regression)
+  it("cancel after rollback error clears error on dialog reopen", async () => {
+    const appliedOnly: InstallSummary[] = [
+      { ...MOCK_INSTALLS[0]!, status: "applied" },
+    ];
+    mockFetch({ pkg: MOCK_PACKAGE, installs: appliedOnly, rollbackOk: false });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(1);
+    });
+
+    // Open dialog and trigger failed rollback
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+    act(() => { fireEvent.click(screen.getByTestId("rollback-confirm")); });
+
+    // Wait for error
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-error")).toBeTruthy();
+    });
+
+    // Cancel to close
+    act(() => { fireEvent.click(screen.getByTestId("rollback-cancel")); });
+    await waitFor(() => {
+      expect(screen.queryByTestId("rollback-dialog")).toBeNull();
+    });
+
+    // Reopen dialog — error should be cleared
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+
+    expect(screen.queryByTestId("rollback-error")).toBeNull();
+  });
+
+  // Test 15: Rollback mutation invalidates journal cache (R2-M4)
+  it("rollback mutation invalidates journal queries on success", async () => {
+    const appliedOnly: InstallSummary[] = [
+      { ...MOCK_INSTALLS[0]!, status: "applied" },
+    ];
+    // Track fetch calls to detect journal refetch
+    let journalFetchCount = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && typeof url === "string" && url.includes("/rollback")) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      if (typeof url === "string" && url.includes("/journal")) {
+        journalFetchCount++;
+        return { ok: true, status: 200, json: async () => MOCK_JOURNAL };
+      }
+      if (typeof url === "string" && url.includes("/installs")) {
+        return { ok: true, status: 200, json: async () => appliedOnly };
+      }
+      if (typeof url === "string" && url.match(/\/api\/packages\/[^/]+$/)) {
+        return { ok: true, status: 200, json: async () => MOCK_PACKAGE };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("install-row")).toHaveLength(1);
+    });
+
+    // Expand to trigger initial journal fetch
+    act(() => { fireEvent.click(screen.getByTestId("expand-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("journal-entries")).toBeTruthy();
+    });
+    const countBeforeRollback = journalFetchCount;
+
+    // Rollback
+    act(() => { fireEvent.click(screen.getByTestId("rollback-btn")); });
+    await waitFor(() => {
+      expect(screen.getByTestId("rollback-dialog")).toBeTruthy();
+    });
+    act(() => { fireEvent.click(screen.getByTestId("rollback-confirm")); });
+
+    // Wait for mutation to complete and invalidation to trigger refetch
+    await waitFor(() => {
+      expect(journalFetchCount).toBeGreaterThan(countBeforeRollback);
+    });
+  });
 });

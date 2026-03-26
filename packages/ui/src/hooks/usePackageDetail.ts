@@ -85,6 +85,7 @@ export function useRollbackInstall(packageId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["packages", packageId, "installs"] });
+      queryClient.invalidateQueries({ queryKey: ["installs"] });
     },
   });
 }

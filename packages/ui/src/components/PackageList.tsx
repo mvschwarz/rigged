@@ -66,6 +66,9 @@ function PackageCard({ pkg, onSelect }: { pkg: PackageSummary; onSelect: (id: st
 export function PackageList() {
   const navigate = useNavigate();
   const { data: packages, isPending, error } = usePackages();
+  const sortedPackages = packages
+    ? [...packages].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    : [];
 
   // Loading state
   if (isPending) {
@@ -98,7 +101,7 @@ export function PackageList() {
   }
 
   // Empty state
-  if (!packages || packages.length === 0) {
+  if (sortedPackages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]" data-testid="packages-empty">
         <h2 className="text-display-lg text-foreground mb-spacing-4">NO PACKAGES</h2>
@@ -122,7 +125,7 @@ export function PackageList() {
         <div>
           <h2 className="text-headline-lg uppercase">PACKAGES</h2>
           <p className="text-label-md text-foreground-muted font-grotesk mt-spacing-1">
-            {packages.length} installed package{packages.length !== 1 ? "s" : ""}
+            {sortedPackages.length} installed package{sortedPackages.length !== 1 ? "s" : ""}
           </p>
         </div>
         <Button
@@ -135,7 +138,7 @@ export function PackageList() {
         </Button>
       </div>
 
-      {packages.map((pkg) => (
+      {sortedPackages.map((pkg) => (
         <PackageCard
           key={pkg.id}
           pkg={pkg}

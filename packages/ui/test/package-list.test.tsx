@@ -73,6 +73,19 @@ function renderPackageList() {
 }
 
 describe("PackageList", () => {
+  it("renders newest packages first so fresh installs are visible", async () => {
+    mockFetchPackages(MOCK_PACKAGES);
+    renderPackageList();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("package-card")).toHaveLength(2);
+    });
+
+    const cards = screen.getAllByTestId("package-card");
+    expect(cards[0]!.textContent).toContain("test-tools");
+    expect(cards[1]!.textContent).toContain("acme-standards");
+  });
+
   // Test 1: Renders package cards with name, version, source
   it("renders package cards with name, version, and source", async () => {
     mockFetchPackages(MOCK_PACKAGES);
@@ -98,13 +111,13 @@ describe("PackageList", () => {
     await waitFor(() => {
       const counts = screen.getAllByTestId("install-count");
       expect(counts).toHaveLength(2);
-      expect(counts[0]!.textContent).toBe("3");
-      expect(counts[1]!.textContent).toBe("1");
+      expect(counts[0]!.textContent).toBe("1");
+      expect(counts[1]!.textContent).toBe("3");
     });
 
     const statuses = screen.getAllByTestId("install-status");
-    expect(statuses[0]!.textContent).toBe("APPLIED");
-    expect(statuses[1]!.textContent).toBe("ROLLED BACK");
+    expect(statuses[0]!.textContent).toBe("ROLLED BACK");
+    expect(statuses[1]!.textContent).toBe("APPLIED");
   });
 
   // Test 3: Empty state CTA navigates to /packages/install

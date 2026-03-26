@@ -12,6 +12,14 @@ import { nodeSpecFieldsSchema } from "../../src/db/migrations/007_node_spec_fiel
 import { packagesSchema } from "../../src/db/migrations/008_packages.js";
 import { installJournalSchema } from "../../src/db/migrations/009_install_journal.js";
 import { journalSeqSchema } from "../../src/db/migrations/010_journal_seq.js";
+import { bootstrapSchema } from "../../src/db/migrations/011_bootstrap.js";
+import { BootstrapRepository } from "../../src/domain/bootstrap-repository.js";
+import { RuntimeVerifier } from "../../src/domain/runtime-verifier.js";
+import { RequirementsProbeRegistry } from "../../src/domain/requirements-probe.js";
+import { ExternalInstallPlanner } from "../../src/domain/external-install-planner.js";
+import { ExternalInstallExecutor } from "../../src/domain/external-install-executor.js";
+import { PackageInstallService } from "../../src/domain/package-install-service.js";
+import { BootstrapOrchestrator } from "../../src/domain/bootstrap-orchestrator.js";
 import { RigRepository } from "../../src/domain/rig-repository.js";
 import { SessionRegistry } from "../../src/domain/session-registry.js";
 import { EventBus } from "../../src/domain/event-bus.js";
@@ -38,7 +46,7 @@ import fs from "node:fs";
 
 export function createFullTestDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema]);
   return db;
 }
 
@@ -101,16 +109,35 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
   };
   const installVerifier = new InstallVerifier(installRepo, packageRepo, realVerifierFsOps);
 
+  // Phase 5: Bootstrap services
+  const bootstrapRepo = new BootstrapRepository(db);
+  const runtimeVerifier = new RuntimeVerifier({ exec, db });
+  const probeRegistry = new RequirementsProbeRegistry(exec);
+  const externalInstallPlanner = new ExternalInstallPlanner();
+  const externalInstallExecutor = new ExternalInstallExecutor({ exec, db });
+  const packageInstallService = new PackageInstallService({ packageRepo, installRepo, installEngine, installVerifier });
+  const bootstrapOrchestrator = new BootstrapOrchestrator({
+    db, bootstrapRepo, runtimeVerifier, probeRegistry,
+    installPlanner: externalInstallPlanner, installExecutor: externalInstallExecutor,
+    packageInstallService, rigInstantiator, fsOps: {
+      readFile: (p: string) => fs.readFileSync(p, "utf-8"),
+      exists: (p: string) => fs.existsSync(p),
+      listFiles: () => [],
+    },
+  });
+
   const app = createApp({
     rigRepo, sessionRegistry, eventBus, nodeLauncher, tmuxAdapter: tmux, cmuxAdapter: cmux,
     snapshotCapture, snapshotRepo, restoreOrchestrator,
     rigSpecExporter, rigSpecPreflight, rigInstantiator,
     packageRepo, installRepo, installEngine, installVerifier,
+    bootstrapOrchestrator, bootstrapRepo,
   });
   return {
     app, rigRepo, sessionRegistry, eventBus, nodeLauncher, snapshotRepo,
     snapshotCapture, checkpointStore, restoreOrchestrator,
     rigSpecExporter, rigSpecPreflight, rigInstantiator,
-    packageRepo, installRepo, installEngine, installVerifier, db,
+    packageRepo, installRepo, installEngine, installVerifier,
+    bootstrapOrchestrator, bootstrapRepo, db,
   };
 }

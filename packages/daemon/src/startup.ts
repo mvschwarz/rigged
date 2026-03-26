@@ -29,8 +29,16 @@ import { PackageRepository } from "./domain/package-repository.js";
 import { InstallRepository } from "./domain/install-repository.js";
 import { InstallEngine } from "./domain/install-engine.js";
 import { InstallVerifier } from "./domain/install-verifier.js";
+import { BootstrapRepository } from "./domain/bootstrap-repository.js";
+import { RuntimeVerifier } from "./domain/runtime-verifier.js";
+import { RequirementsProbeRegistry } from "./domain/requirements-probe.js";
+import { ExternalInstallPlanner } from "./domain/external-install-planner.js";
+import { ExternalInstallExecutor } from "./domain/external-install-executor.js";
+import { PackageInstallService } from "./domain/package-install-service.js";
+import { BootstrapOrchestrator } from "./domain/bootstrap-orchestrator.js";
 import { createApp, type AppDeps } from "./server.js";
 import fs from "node:fs";
+import nodePath from "node:path";
 import { snapshotsSchema } from "./db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "./db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "./db/migrations/006_resume_metadata.js";
@@ -126,6 +134,35 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
   };
   const installVerifier = new InstallVerifier(installRepo, packageRepo, verifierFsOps);
 
+  // Phase 5: Bootstrap services
+  const bootstrapRepo = new BootstrapRepository(db);
+  const exec = opts?.tmuxExec ?? execCommand;
+  const runtimeVerifier = new RuntimeVerifier({ exec, db });
+  const probeRegistry = new RequirementsProbeRegistry(exec);
+  const externalInstallPlanner = new ExternalInstallPlanner();
+  const externalInstallExecutor = new ExternalInstallExecutor({ exec, db });
+  const packageInstallService = new PackageInstallService({ packageRepo, installRepo, installEngine, installVerifier });
+  const resolverFsOps = {
+    readFile: (p: string) => fs.readFileSync(p, "utf-8"),
+    exists: (p: string) => fs.existsSync(p),
+    listFiles: (dirPath: string) => {
+      const results: string[] = [];
+      function walk(dir: string, prefix: string) {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) walk(nodePath.join(dir, entry.name), nodePath.join(prefix, entry.name));
+          else results.push(prefix ? nodePath.join(prefix, entry.name) : entry.name);
+        }
+      }
+      walk(dirPath, "");
+      return results;
+    },
+  };
+  const bootstrapOrchestrator = new BootstrapOrchestrator({
+    db, bootstrapRepo, runtimeVerifier, probeRegistry,
+    installPlanner: externalInstallPlanner, installExecutor: externalInstallExecutor,
+    packageInstallService, rigInstantiator, fsOps: resolverFsOps,
+  });
+
   const deps: AppDeps = {
     rigRepo,
     sessionRegistry,
@@ -143,6 +180,8 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     installRepo,
     installEngine,
     installVerifier,
+    bootstrapOrchestrator,
+    bootstrapRepo,
   };
 
   const app = createApp(deps);

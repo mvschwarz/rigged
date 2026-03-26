@@ -72,7 +72,13 @@ export type RigEvent =
   | { type: "package.planned"; packageName: string; actionable: number; deferred: number; conflicts: number }
   | { type: "package.installed"; packageName: string; packageVersion: string; installId: string; applied: number; deferred: number }
   | { type: "package.rolledback"; installId: string; restored: number }
-  | { type: "package.install_failed"; packageName: string; code: string; message: string };
+  | { type: "package.install_failed"; packageName: string; code: string; message: string }
+  // Bootstrap events (cross-rig, no rigId)
+  | { type: "bootstrap.planned"; runId: string; sourceRef: string; stages: number }
+  | { type: "bootstrap.started"; runId: string; sourceRef: string }
+  | { type: "bootstrap.completed"; runId: string; rigId: string; sourceRef: string }
+  | { type: "bootstrap.partial"; runId: string; sourceRef: string; rigId?: string; completed: number; failed: number }
+  | { type: "bootstrap.failed"; runId: string; sourceRef: string; error: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;

@@ -24,6 +24,8 @@ export interface BootstrapOptions {
   sourceKind?: string;
   autoApprove?: boolean;
   approvedActionKeys?: string[];
+  /** Pre-created run ID (route creates run for real-time started event) */
+  runId?: string;
 }
 
 /** Stage result */
@@ -85,8 +87,10 @@ export class BootstrapOrchestrator {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Create bootstrap run
-    const run = this.deps.bootstrapRepo.createRun(sourceKind, sourceRef);
+    // Use pre-created run or create new one
+    const run = opts.runId
+      ? this.deps.bootstrapRepo.getRun(opts.runId)!
+      : this.deps.bootstrapRepo.createRun(sourceKind, sourceRef);
     let seqCounter = 1;
 
     // --- Stage 1: RESOLVE_SPEC ---

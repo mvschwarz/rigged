@@ -15,6 +15,8 @@ import type { PackageRepository } from "./domain/package-repository.js";
 import type { InstallRepository } from "./domain/install-repository.js";
 import type { InstallEngine } from "./domain/install-engine.js";
 import type { InstallVerifier } from "./domain/install-verifier.js";
+import type { BootstrapOrchestrator } from "./domain/bootstrap-orchestrator.js";
+import type { BootstrapRepository } from "./domain/bootstrap-repository.js";
 import { rigsRoutes } from "./routes/rigs.js";
 import { sessionsRoutes, nodesRoutes } from "./routes/sessions.js";
 import { adaptersRoutes } from "./routes/adapters.js";
@@ -22,6 +24,7 @@ import { eventsRoute } from "./routes/events.js";
 import { snapshotsRoutes, restoreRoutes } from "./routes/snapshots.js";
 import { handleExportYaml, handleExportJson, rigspecImportRoutes } from "./routes/rigspec.js";
 import { packagesRoutes } from "./routes/packages.js";
+import { bootstrapRoutes } from "./routes/bootstrap.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -40,6 +43,8 @@ export interface AppDeps {
   installRepo: InstallRepository;
   installEngine: InstallEngine;
   installVerifier: InstallVerifier;
+  bootstrapOrchestrator: BootstrapOrchestrator;
+  bootstrapRepo: BootstrapRepository;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -74,6 +79,9 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.rigRepo.db !== deps.installRepo.db) {
     throw new Error("createApp: installRepo must share the same db handle");
   }
+  if (deps.rigRepo.db !== deps.bootstrapRepo.db) {
+    throw new Error("createApp: bootstrapRepo must share the same db handle");
+  }
 
   const app = new Hono();
 
@@ -95,6 +103,8 @@ export function createApp(deps: AppDeps): Hono {
     c.set("installRepo" as never, deps.installRepo);
     c.set("installEngine" as never, deps.installEngine);
     c.set("installVerifier" as never, deps.installVerifier);
+    c.set("bootstrapOrchestrator" as never, deps.bootstrapOrchestrator);
+    c.set("bootstrapRepo" as never, deps.bootstrapRepo);
     await next();
   });
 
@@ -113,6 +123,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/rigs/:rigId/spec", handleExportYaml);
   app.get("/api/rigs/:rigId/spec.json", handleExportJson);
   app.route("/api/packages", packagesRoutes);
+  app.route("/api/bootstrap", bootstrapRoutes);
 
   return app;
 }

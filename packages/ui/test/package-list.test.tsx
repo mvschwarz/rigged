@@ -65,6 +65,7 @@ function renderPackageList() {
     createAppTestRouter({
       routes: [
         { path: "/packages", component: PackageList },
+        { path: "/packages/install", component: () => <div data-testid="install-flow-page">Install Flow</div> },
       ],
       initialPath: "/packages",
     })
@@ -106,8 +107,8 @@ describe("PackageList", () => {
     expect(statuses[1]!.textContent).toBe("ROLLED BACK");
   });
 
-  // Test 3: Empty state with disabled CTA
-  it("empty state shows 'Install your first package' with disabled CTA", async () => {
+  // Test 3: Empty state CTA navigates to /packages/install
+  it("empty state CTA navigates to install flow", async () => {
     mockFetchPackages([]);
     renderPackageList();
 
@@ -117,7 +118,13 @@ describe("PackageList", () => {
 
     const btn = screen.getByTestId("empty-install-btn");
     expect(btn.textContent).toContain("INSTALL YOUR FIRST PACKAGE");
-    expect(btn).toHaveProperty("disabled", true);
+    expect(btn).toHaveProperty("disabled", false);
+
+    act(() => { fireEvent.click(btn); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("install-flow-page")).toBeTruthy();
+    });
   });
 
   // Test 4: Loading skeleton
@@ -165,14 +172,20 @@ describe("PackageList", () => {
     });
   });
 
-  // Test 7: Header install button is disabled
-  it("header install button is disabled (deferred to PUX-T03)", async () => {
+  // Test 7: Header install button navigates to /packages/install
+  it("header install button navigates to install flow", async () => {
     mockFetchPackages(MOCK_PACKAGES);
     renderPackageList();
 
     await waitFor(() => {
       const btn = screen.getByTestId("header-install-btn");
-      expect(btn).toHaveProperty("disabled", true);
+      expect(btn).toHaveProperty("disabled", false);
+    });
+
+    act(() => { fireEvent.click(screen.getByTestId("header-install-btn")); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("install-flow-page")).toBeTruthy();
     });
   });
 

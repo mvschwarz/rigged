@@ -625,6 +625,119 @@ describe("Package API routes", () => {
     expect(summary[0].latestInstallStatus).toBe("applied");
   });
 
+  // === PUX-T03: Widened API endpoint tests ===
+
+  // --- Test: POST /validate returns roles + requirements ---
+  it("POST /api/packages/validate returns roles and requirements", async () => {
+    const richManifest = `
+schema_version: 1
+name: rich-pkg
+version: "1.0.0"
+summary: Package with roles and requirements
+compatibility:
+  runtimes:
+    - claude-code
+exports:
+  skills:
+    - source: skills/tool
+      name: tool
+      supported_scopes:
+        - project_shared
+      default_scope: project_shared
+roles:
+  - name: dev
+    description: Developer role
+    skills:
+      - tool
+requirements:
+  cli_tools:
+    - name: jq
+  system_packages:
+    - name: git
+`.trim();
+
+    writePkg(pkgDir, richManifest, {
+      "skills/tool/SKILL.md": "# Tool\nDo things.",
+    });
+
+    const res = await app.request("/api/packages/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.valid).toBe(true);
+
+    // Roles
+    expect(Array.isArray(body.manifest.roles)).toBe(true);
+    expect(body.manifest.roles.length).toBe(1);
+    expect(body.manifest.roles[0].name).toBe("dev");
+    expect(body.manifest.roles[0].description).toBe("Developer role");
+
+    // Requirements
+    expect(Array.isArray(body.manifest.requirements.cliTools)).toBe(true);
+    expect(body.manifest.requirements.cliTools.length).toBe(1);
+    expect(body.manifest.requirements.cliTools[0].name).toBe("jq");
+
+    expect(Array.isArray(body.manifest.requirements.systemPackages)).toBe(true);
+    expect(body.manifest.requirements.systemPackages.length).toBe(1);
+    expect(body.manifest.requirements.systemPackages[0].name).toBe("git");
+  });
+
+  // --- Test: POST /plan with allowMerge returns policy-annotated entries ---
+  it("POST /api/packages/plan with allowMerge returns policy-annotated entries", async () => {
+    writePkg(pkgDir, GUIDANCE_MANIFEST_YAML, {
+      "guidance/rules.md": "Follow these rules.",
+    });
+
+    // Pre-create CLAUDE.md so guidance is classified as managed_merge
+    fs.writeFileSync(path.join(targetDir, "CLAUDE.md"), "# Existing content\n");
+
+    // Without allowMerge — guidance should be rejected
+    const resRejected = await app.request("/api/packages/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceRef: pkgDir,
+        targetRoot: targetDir,
+        runtime: "claude-code",
+        allowMerge: false,
+      }),
+    });
+
+    expect(resRejected.status).toBe(200);
+    const bodyRejected = await resRejected.json();
+    const rejectedEntry = bodyRejected.entries.find(
+      (e: { exportType: string }) => e.exportType === "guidance",
+    );
+    expect(rejectedEntry).toBeTruthy();
+    expect(rejectedEntry.policyStatus).toBe("rejected");
+    expect(bodyRejected.rejected).toBeGreaterThan(0);
+
+    // With allowMerge — guidance should be approved
+    const resApproved = await app.request("/api/packages/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceRef: pkgDir,
+        targetRoot: targetDir,
+        runtime: "claude-code",
+        allowMerge: true,
+      }),
+    });
+
+    expect(resApproved.status).toBe(200);
+    const bodyApproved = await resApproved.json();
+    const approvedEntry = bodyApproved.entries.find(
+      (e: { exportType: string }) => e.exportType === "guidance",
+    );
+    expect(approvedEntry).toBeTruthy();
+    expect(approvedEntry.policyStatus).toBe("approved");
+    expect(bodyApproved.actionable).toBeGreaterThan(0);
+  });
+
   // === PUX-T00: Event emission tests ===
 
   function getEvents(database: Database.Database): Array<{ type: string; payload: string }> {

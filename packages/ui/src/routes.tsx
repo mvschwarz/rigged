@@ -13,6 +13,7 @@ import { RigGraph } from "./components/RigGraph.js";
 import { SnapshotPanel } from "./components/SnapshotPanel.js";
 import { ImportFlow } from "./components/ImportFlow.js";
 import { PackageList } from "./components/PackageList.js";
+import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -89,8 +90,15 @@ const packagesRoute = createRoute({
   component: PackageList,
 });
 
+// Package install route
+const packageInstallRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/packages/install",
+  component: PackageInstallFlow,
+});
+
 // Route tree
-const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute]);
 
 // Router
 export const router = createRouter({ routeTree });

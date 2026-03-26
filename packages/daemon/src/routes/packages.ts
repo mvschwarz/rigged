@@ -147,6 +147,11 @@ packagesRoutes.post("/validate", async (c) => {
         hooks: m.exports.hooks?.length ?? 0,
         mcp: m.exports.mcp?.length ?? 0,
       },
+      roles: m.roles?.map((r) => ({ name: r.name, description: r.description })) ?? [],
+      requirements: m.requirements ? {
+        cliTools: m.requirements.cliTools?.map((t) => ({ name: t.name })) ?? [],
+        systemPackages: m.requirements.systemPackages?.map((p) => ({ name: p.name })) ?? [],
+      } : { cliTools: [], systemPackages: [] },
     },
   });
 });
@@ -163,6 +168,7 @@ packagesRoutes.post("/plan", async (c) => {
   }
   const runtime = runtimeInput as "claude-code" | "codex";
   const roleName = typeof body["roleName"] === "string" ? body["roleName"] : undefined;
+  const allowMerge = body["allowMerge"] === true;
 
   if (!sourceRef || !targetRoot) {
     return c.json({ error: "sourceRef and targetRoot are required" }, 400);
@@ -180,6 +186,25 @@ packagesRoutes.post("/plan", async (c) => {
   const planner = new InstallPlanner(fsOps);
   const plan = planner.plan(result.resolved, targetRoot, runtime, { roleName });
   const refined = detectConflicts(plan, fsOps);
+  const policyResult = applyPolicy(refined, { allowMerge });
+
+  // Build a set of approved entry keys for annotation
+  const approvedKeys = new Set(policyResult.approved.map((e) => `${e.exportType}:${e.exportName}`));
+  const rejectedKeys = new Set(policyResult.rejected.map((r) => `${r.entry.exportType}:${r.entry.exportName}`));
+  const noOpKeys = new Set(refined.noOps.map((e) => `${e.exportType}:${e.exportName}`));
+  const conflictKeys = new Set(refined.conflicts.map((e) => `${e.exportType}:${e.exportName}`));
+
+  const annotatedEntries = refined.entries.map((e) => {
+    const key = `${e.exportType}:${e.exportName}`;
+    let policyStatus: string;
+    if (noOpKeys.has(key)) policyStatus = "noop";
+    else if (conflictKeys.has(key)) policyStatus = "conflict";
+    else if (e.deferred) policyStatus = "deferred";
+    else if (approvedKeys.has(key)) policyStatus = "approved";
+    else if (rejectedKeys.has(key)) policyStatus = "rejected";
+    else policyStatus = "unknown";
+    return { ...e, policyStatus };
+  });
 
   const { eventBus } = getDeps(c);
   eventBus.emit({
@@ -193,11 +218,12 @@ packagesRoutes.post("/plan", async (c) => {
   return c.json({
     packageName: refined.packageName,
     packageVersion: refined.packageVersion,
-    entries: refined.entries,
-    actionable: refined.actionable.length,
+    entries: annotatedEntries,
+    actionable: policyResult.approved.length,
     deferred: refined.deferred.length,
     conflicts: refined.conflicts.length,
     noOps: refined.noOps.length,
+    rejected: policyResult.rejected.length,
   });
 });
 

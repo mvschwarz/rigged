@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { usePackages, type PackageSummary } from "../hooks/usePackages.js";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -59,6 +60,7 @@ function PackageCard({ pkg }: { pkg: PackageSummary }) {
 }
 
 export function PackageList() {
+  const navigate = useNavigate();
   const { data: packages, isPending, error } = usePackages();
 
   // Loading state
@@ -100,9 +102,8 @@ export function PackageList() {
         <Button
           variant="default"
           size="lg"
-          disabled
-          title="Available in next update"
           data-testid="empty-install-btn"
+          onClick={() => navigate({ to: "/packages/install" })}
         >
           INSTALL YOUR FIRST PACKAGE
         </Button>
@@ -123,9 +124,8 @@ export function PackageList() {
         <Button
           variant="default"
           size="sm"
-          disabled
-          title="Available in next update"
           data-testid="header-install-btn"
+          onClick={() => navigate({ to: "/packages/install" })}
         >
           INSTALL
         </Button>

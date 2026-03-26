@@ -62,7 +62,13 @@ function renderFeedWithRouter(props: {
     component: () => <div data-testid="rig-page">Rig Detail</div>,
   });
 
-  const routeTree = rootRoute.addChildren([indexRoute, rigRoute]);
+  const packagesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/packages",
+    component: () => <div data-testid="packages-page">Packages</div>,
+  });
+
+  const routeTree = rootRoute.addChildren([indexRoute, rigRoute, packagesRoute]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -316,8 +322,8 @@ describe("Activity Feed", () => {
     });
   });
 
-  // Test 10: Package entries are non-interactive — click is a no-op
-  it("package.installed entry is non-interactive (deferred to PUX-T02)", async () => {
+  // Test 10: Package entries navigate to /packages (wired in PUX-T02)
+  it("package.installed entry navigates to /packages on click", async () => {
     const events = [
       makeEvent({ type: "package.installed", payload: { packageName: "p", packageVersion: "1", applied: 1, deferred: 0 } }),
     ];
@@ -326,29 +332,25 @@ describe("Activity Feed", () => {
 
     await waitFor(() => {
       const entry = screen.getByTestId("feed-entry");
-      // No link role
-      expect(entry.getAttribute("role")).toBeNull();
-      // No cursor-pointer
-      expect(entry.className).not.toContain("cursor-pointer");
+      expect(entry.getAttribute("role")).toBe("link");
+      expect(entry.className).toContain("cursor-pointer");
     });
 
-    // Click the entry — should NOT navigate away from index
     act(() => {
       fireEvent.click(screen.getByTestId("feed-entry"));
     });
 
-    // Index page still visible — no navigation occurred
     await waitFor(() => {
-      expect(screen.getByTestId("index-page")).toBeTruthy();
+      expect(screen.getByTestId("packages-page")).toBeTruthy();
     });
-    expect(screen.queryByTestId("rig-page")).toBeNull();
   });
 });
 
 describe("eventRoute", () => {
-  it("returns null for package events", () => {
-    expect(eventRoute(makeEvent({ type: "package.installed", payload: {} }))).toBeNull();
-    expect(eventRoute(makeEvent({ type: "package.install_failed", payload: {} }))).toBeNull();
+  it("returns /packages for package events", () => {
+    expect(eventRoute(makeEvent({ type: "package.installed", payload: {} }))).toBe("/packages");
+    expect(eventRoute(makeEvent({ type: "package.install_failed", payload: {} }))).toBe("/packages");
+    expect(eventRoute(makeEvent({ type: "package.rolledback", payload: {} }))).toBe("/packages");
   });
 
   it("returns /rigs/{rigId} for rig-scoped events", () => {

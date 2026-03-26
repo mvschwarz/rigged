@@ -12,6 +12,11 @@ export interface Package {
   createdAt: string;
 }
 
+export interface PackageSummary extends Package {
+  installCount: number;
+  latestInstallStatus: string | null;
+}
+
 interface PackageRow {
   id: string;
   name: string;
@@ -67,6 +72,25 @@ export class PackageRepository {
       .prepare("SELECT * FROM packages ORDER BY created_at")
       .all() as PackageRow[];
     return rows.map((r) => this.rowToPackage(r));
+  }
+
+  listPackageSummaries(): PackageSummary[] {
+    const rows = this.db
+      .prepare(`
+        SELECT p.*,
+          COUNT(pi.id) AS install_count,
+          (SELECT status FROM package_installs WHERE package_id = p.id ORDER BY created_at DESC, rowid DESC LIMIT 1) AS latest_install_status
+        FROM packages p
+        LEFT JOIN package_installs pi ON pi.package_id = p.id
+        GROUP BY p.id
+        ORDER BY p.created_at
+      `)
+      .all() as (PackageRow & { install_count: number; latest_install_status: string | null })[];
+    return rows.map((r) => ({
+      ...this.rowToPackage(r),
+      installCount: r.install_count,
+      latestInstallStatus: r.latest_install_status,
+    }));
   }
 
   private rowToPackage(row: PackageRow): Package {

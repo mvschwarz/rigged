@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { to: "/", label: "RIGS" },
+  { to: "/packages", label: "PACKAGES" },
   { to: "/import", label: "IMPORT" },
 ] as const;
 

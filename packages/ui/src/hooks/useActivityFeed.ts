@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const MAX_EVENTS = 30;
 const TICK_INTERVAL_MS = 15_000;
@@ -19,6 +20,7 @@ export interface UseActivityFeedResult {
 }
 
 export function useActivityFeed(): UseActivityFeedResult {
+  const queryClient = useQueryClient();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
@@ -42,10 +44,15 @@ export function useActivityFeed(): UseActivityFeedResult {
         receivedAt: Date.now(),
       };
       setEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
+
+      // Invalidate package queries on package mutation events
+      if (event.type === "package.installed" || event.type === "package.rolledback") {
+        queryClient.invalidateQueries({ queryKey: ["packages"] });
+      }
     } catch {
       // Ignore unparseable messages
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     hasErroredRef.current = false;
@@ -138,8 +145,8 @@ export function eventRoute(event: ActivityEvent): string | null {
   const p = event.payload;
   const rigId = p["rigId"] as string | undefined;
 
-  // Package events — deferred to PUX-T02 (no /packages route yet)
-  if (event.type.startsWith("package.")) return null;
+  // Package events navigate to /packages
+  if (event.type.startsWith("package.")) return "/packages";
 
   // Rig-scoped events
   if (rigId) {

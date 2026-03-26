@@ -343,6 +343,13 @@ packagesRoutes.post("/:installId/rollback", async (c) => {
   }
 });
 
+// GET /api/packages/summary — packages with install count + latest status
+// NOTE: Must be registered before GET / to avoid route collision
+packagesRoutes.get("/summary", (c) => {
+  const { packageRepo } = getDeps(c);
+  return c.json(packageRepo.listPackageSummaries());
+});
+
 // GET /api/packages
 packagesRoutes.get("/", (c) => {
   const { packageRepo } = getDeps(c);

@@ -569,6 +569,62 @@ describe("Package API routes", () => {
     vi.restoreAllMocks();
   });
 
+  // === PUX-T02: Summary endpoint ===
+
+  // --- Test: GET /api/packages/summary returns install count + latest status ---
+  it("GET /api/packages/summary returns packages with installCount and latestInstallStatus", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // Install a package
+    const installRes = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    expect(installRes.status).toBe(201);
+
+    const res = await app.request("/api/packages/summary");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBe(1);
+    expect(body[0].name).toBe("test-pkg");
+    expect(body[0].installCount).toBe(1);
+    expect(body[0].latestInstallStatus).toBe("applied");
+  });
+
+  // --- Test: GET /api/packages/summary latestInstallStatus follows actual latest install ---
+  it("GET /api/packages/summary latestInstallStatus reflects latest install deterministically", async () => {
+    writePkg(pkgDir, VALID_MANIFEST_YAML, { "skills/helper/SKILL.md": SKILL_CONTENT });
+
+    // First install — succeeds (applied)
+    const res1 = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    expect(res1.status).toBe(201);
+    const { installId } = await res1.json();
+
+    // Rollback first install (status -> rolled_back)
+    await app.request(`/api/packages/${installId}/rollback`, { method: "POST" });
+
+    // Second install — succeeds (applied)
+    const res2 = await app.request("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceRef: pkgDir, targetRoot: targetDir, runtime: "claude-code" }),
+    });
+    expect(res2.status).toBe(201);
+
+    // Summary should show 2 installs and latest status = applied (not rolled_back)
+    const summaryRes = await app.request("/api/packages/summary");
+    const summary = await summaryRes.json();
+    expect(summary.length).toBe(1);
+    expect(summary[0].installCount).toBe(2);
+    expect(summary[0].latestInstallStatus).toBe("applied");
+  });
+
   // === PUX-T00: Event emission tests ===
 
   function getEvents(database: Database.Database): Array<{ type: string; payload: string }> {

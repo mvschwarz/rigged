@@ -181,6 +181,41 @@ describe("BootstrapWizard", () => {
     });
   });
 
+  it("shows structured plan failure detail instead of raw HTTP status", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        runId: "run-bad",
+        status: "failed",
+        stages: [
+          {
+            stage: "resolve_spec",
+            status: "failed",
+            detail: {
+              code: "validation_failed",
+              errors: ["node broken: unknown runtime 'unknown-runtime'"],
+            },
+          },
+        ],
+        errors: ["node broken: unknown runtime 'unknown-runtime'"],
+        warnings: [],
+      }),
+    });
+
+    renderWizard();
+    await waitFor(() => expect(screen.getByTestId("spec-input")).toBeTruthy());
+    act(() => { fireEvent.change(screen.getByTestId("spec-input"), { target: { value: "/tmp/bad-rig.yaml" } }); });
+    act(() => { fireEvent.click(screen.getByTestId("plan-btn")); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("step-error")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("step-error").textContent).toContain("node broken: unknown runtime 'unknown-runtime'");
+    expect(screen.getByTestId("step-error").textContent).not.toContain("HTTP 400");
+  });
+
   // T8b: applying step shows stage checklist from plan
   it("applying step renders stage checklist from plan", async () => {
     fetchMock

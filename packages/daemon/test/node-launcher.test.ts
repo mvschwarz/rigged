@@ -144,18 +144,17 @@ describe("NodeLauncher", () => {
     expect(createSpy.mock.calls[1]![0]).toBe("r01-worker");
   });
 
-  it("invalid derived session name (no rNN prefix) -> error", async () => {
-    // Rig name without rNN- prefix produces an invalid session name
+  it("non-managed rig name is normalized to a managed session name", async () => {
     const rig = rigRepo.createRig("badname");
     rigRepo.addNode(rig.id, "worker");
-    const launcher = createLauncher();
+    const createSpy = vi.fn<(name: string, cwd?: string) => Promise<TmuxResult>>()
+      .mockResolvedValue({ ok: true });
+    const launcher = createLauncher(mockTmuxAdapter({ createSession: createSpy }));
 
     const result = await launcher.launchNode(rig.id, "worker");
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe("invalid_session_name");
-    }
+    expect(result.ok).toBe(true);
+    expect(createSpy.mock.calls[0]![0]).toBe("r00-badname-worker");
   });
 
   it("node not found -> error", async () => {
@@ -261,9 +260,10 @@ describe("NodeLauncher", () => {
     const payload = JSON.parse(events[0]!.payload);
     expect(payload.type).toBe("node.launched");
     expect(payload.rigId).toBe(rig.id);
+    expect(payload.logicalId).toBe("dev1-impl");
   });
 
-  it("emitted event has correct rigId, nodeId, sessionName", async () => {
+  it("emitted event has correct rigId, nodeId, logicalId, sessionName", async () => {
     const { rig, node } = seedRigWithNode();
     const notifications: PersistedEvent[] = [];
     eventBus.subscribe((e) => notifications.push(e));
@@ -277,6 +277,7 @@ describe("NodeLauncher", () => {
     if (event.type === "node.launched") {
       expect(event.rigId).toBe(rig.id);
       expect(event.nodeId).toBe(node.id);
+      expect(event.logicalId).toBe("dev1-impl");
       expect(event.sessionName).toBe("r01-dev1-impl");
     }
   });

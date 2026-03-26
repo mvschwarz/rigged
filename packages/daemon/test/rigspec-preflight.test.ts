@@ -90,13 +90,11 @@ describe("RigSpecPreflight", () => {
     expect(result.errors.some((e) => e.includes("r99-worker"))).toBe(true);
   });
 
-  it("derived session name invalid -> error", async () => {
-    // Spec name that produces invalid session name
+  it("derived session name is normalized for ordinary rig names", async () => {
     const spec = validSpec({ name: "badname" });
     const pf = createPreflight();
     const result = await pf.check(spec);
-    expect(result.ready).toBe(false);
-    expect(result.errors.some((e) => e.includes("session name"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("session name"))).toBe(false);
   });
 
   it("node cwd doesn't exist -> error", async () => {

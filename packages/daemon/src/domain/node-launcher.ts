@@ -98,6 +98,7 @@ export class NodeLauncher {
           type: "node.launched",
           rigId,
           nodeId: node.id,
+          logicalId: node.logicalId,
           sessionName,
         });
       });

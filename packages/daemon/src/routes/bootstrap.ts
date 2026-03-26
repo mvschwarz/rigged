@@ -15,7 +15,7 @@ function getDeps(c: { get: (key: string) => unknown }) {
 }
 
 /** Map failed plan result to HTTP status using structured stage codes */
-function planFailureStatus(result: { stages: Array<{ stage: string; status: string; detail: unknown }> }): number {
+function planFailureStatus(result: { stages: Array<{ stage: string; status: string; detail: unknown }> }): 400 | 409 | 500 {
   const failedStage = result.stages.find((s) => s.status === "failed" || s.status === "blocked");
   if (!failedStage) return 500;
 

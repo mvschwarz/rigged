@@ -451,4 +451,15 @@ describe("eventRoute", () => {
     expect(eventRoute(makeEvent({ type: "bootstrap.partial", payload: {} }))).toBe("/bootstrap");
     expect(eventRoute(makeEvent({ type: "bootstrap.failed", payload: {} }))).toBe("/bootstrap");
   });
+
+  it("uses nodeId when node.launched payload does not include logicalId", () => {
+    expect(
+      eventSummary(
+        makeEvent({
+          type: "node.launched",
+          payload: { nodeId: "dev", sessionName: "r00-dogfood-dev" },
+        })
+      )
+    ).toBe("dev \u2192 launched in r00-dogfood-dev");
+  });
 });

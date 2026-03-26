@@ -62,7 +62,7 @@ export type RigEvent =
   | { type: "binding.updated"; rigId: string; nodeId: string }
   | { type: "session.status_changed"; rigId: string; nodeId: string; status: string }
   | { type: "session.detached"; rigId: string; nodeId: string; sessionName: string }
-  | { type: "node.launched"; rigId: string; nodeId: string; sessionName: string }
+  | { type: "node.launched"; rigId: string; nodeId: string; logicalId: string; sessionName: string }
   | { type: "snapshot.created"; rigId: string; snapshotId: string; kind: string }
   | { type: "restore.started"; rigId: string; snapshotId: string }
   | { type: "restore.completed"; rigId: string; snapshotId: string; result: RestoreResult }

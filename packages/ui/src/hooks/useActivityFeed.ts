@@ -147,7 +147,7 @@ export function eventSummary(event: ActivityEvent): string {
       return `${p["rigId"]} \u2192 ${nodes.length} nodes restored`;
     }
     case "node.launched":
-      return `${p["logicalId"]} \u2192 launched in ${p["sessionName"]}`;
+      return `${String(p["logicalId"] ?? p["nodeId"] ?? "unknown")} \u2192 launched in ${p["sessionName"]}`;
     case "session.detached":
       return `${p["sessionName"]} \u2192 session lost`;
     default:

@@ -4,6 +4,22 @@ import { getDaemonStatus } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
+function logStageDetailErrors(data: Record<string, unknown>) {
+  const stages = (data["stages"] as Array<{ stage: string; status: string; detail?: unknown }>) ?? [];
+  for (const stage of stages) {
+    if (stage.status !== "failed" && stage.status !== "blocked") continue;
+    if (!stage.detail || typeof stage.detail !== "object") continue;
+    const detail = stage.detail as Record<string, unknown>;
+    const nestedErrors = Array.isArray(detail["errors"]) ? detail["errors"] as string[] : [];
+    for (const err of nestedErrors) {
+      console.error(`  DETAIL: ${err}`);
+    }
+    if (nestedErrors.length === 0 && typeof detail["error"] === "string") {
+      console.error(`  DETAIL: ${detail["error"]}`);
+    }
+  }
+}
+
 export function bootstrapCommand(depsOverride?: StatusDeps): Command {
   const cmd = new Command("bootstrap").description("Bootstrap a rig from a spec file");
   const getDeps = () => depsOverride ?? { lifecycleDeps: realDeps(), clientFactory: (url: string) => new DaemonClient(url) };
@@ -31,16 +47,9 @@ export function bootstrapCommand(depsOverride?: StatusDeps): Command {
         // Plan mode
         const res = await client.post<Record<string, unknown>>("/api/bootstrap/plan", { sourceRef: spec });
 
-        if (res.status >= 500) {
-          if (opts.json) { console.log(JSON.stringify(res.data)); }
-          else { console.error(res.data["errors"] ?? res.data["error"] ?? "Plan failed"); }
-          process.exitCode = 2;
-          return;
-        }
-
         if (opts.json) {
           console.log(JSON.stringify(res.data));
-        } else {
+        } else if (res.status === 200) {
           const stages = (res.data["stages"] as Array<{ stage: string; status: string }>) ?? [];
           console.log("BOOTSTRAP PLAN");
           for (const s of stages) {
@@ -50,7 +59,23 @@ export function bootstrapCommand(depsOverride?: StatusDeps): Command {
           if (actionKeys.length > 0) {
             console.log(`\n  ${actionKeys.length} action(s) pending approval`);
           }
+        } else {
+          const stages = (res.data["stages"] as Array<{ stage: string; status: string }>) ?? [];
+          for (const s of stages) {
+            console.log(`  ${s.stage}: ${s.status}`);
+          }
+          const errors = (res.data["errors"] as string[]) ?? [];
+          if (errors.length > 0) {
+            for (const e of errors) {
+              console.error(`  ERROR: ${e}`);
+            }
+          } else if (typeof res.data["error"] === "string") {
+            console.error(`  ERROR: ${res.data["error"]}`);
+          }
+          logStageDetailErrors(res.data);
         }
+        if (res.status === 409) process.exitCode = 1;
+        else if (res.status >= 400) process.exitCode = 2;
         return;
       }
 
@@ -78,6 +103,7 @@ export function bootstrapCommand(depsOverride?: StatusDeps): Command {
             console.error(`  ERROR: ${e}`);
           }
         }
+        logStageDetailErrors(res.data);
       }
 
       const resultStatus = (res.data["status"] as string) ?? "";

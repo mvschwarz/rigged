@@ -229,4 +229,66 @@ describe("Bootstrap CLI", () => {
     expect(exitCode).toBe(1);
     partialServer.close();
   });
+
+  it("bootstrap --plan invalid response exits 2 and does not print success header", async () => {
+    const invalidPlanServer = http.createServer((_, res) => {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        runId: "run-bad",
+        status: "failed",
+        stages: [{ stage: "resolve_spec", status: "failed", detail: { code: "validation_failed", errors: ["bad runtime"] } }],
+        errors: ["bad runtime"],
+        warnings: [],
+      }));
+    });
+    await new Promise<void>((resolve) => { invalidPlanServer.listen(0, resolve); });
+    const invalidPort = (invalidPlanServer.address() as { port: number }).port;
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(bootstrapCommand(runningDeps(invalidPort)));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rigged", "bootstrap", "/tmp/bad.yaml", "--plan"]);
+    });
+
+    expect(exitCode).toBe(2);
+    expect(logs.some((l) => l.includes("BOOTSTRAP PLAN"))).toBe(false);
+    expect(logs.some((l) => l.includes("bad runtime"))).toBe(true);
+    invalidPlanServer.close();
+  });
+
+  it("bootstrap apply surfaces nested stage-detail errors", async () => {
+    const failedApplyServer = http.createServer((_, res) => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        runId: "run-fail",
+        status: "failed",
+        stages: [
+          {
+            stage: "import_rig",
+            status: "failed",
+            detail: { ok: false, code: "preflight_failed", errors: ["Rig name already exists", "tmux session already exists"] },
+          },
+        ],
+        errors: ["Rig import failed: preflight_failed"],
+        warnings: [],
+      }));
+    });
+    await new Promise<void>((resolve) => { failedApplyServer.listen(0, resolve); });
+    const failedPort = (failedApplyServer.address() as { port: number }).port;
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(bootstrapCommand(runningDeps(failedPort)));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rigged", "bootstrap", "/tmp/rig.yaml", "--yes"]);
+    });
+
+    expect(exitCode).toBe(2);
+    expect(logs.some((l) => l.includes("Rig name already exists"))).toBe(true);
+    expect(logs.some((l) => l.includes("tmux session already exists"))).toBe(true);
+    failedApplyServer.close();
+  });
 });

@@ -49,6 +49,10 @@ export function useActivityFeed(): UseActivityFeedResult {
       if (event.type === "package.installed" || event.type === "package.rolledback") {
         queryClient.invalidateQueries({ queryKey: ["packages"] });
       }
+      // Invalidate rig summary on bootstrap completion (new rig may have been created)
+      if (event.type === "bootstrap.completed" || event.type === "bootstrap.partial") {
+        queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
+      }
     } catch {
       // Ignore unparseable messages
     }
@@ -94,6 +98,7 @@ export function formatRelativeTime(receivedAt: number, now?: number): string {
 
 /** Maps event type to a CSS color class for the status dot */
 export function eventColor(type: string): string {
+  if (type.startsWith("bootstrap.")) return "bg-accent";
   if (type.startsWith("package.")) return "bg-primary";
   if (type.startsWith("rig.")) return "bg-accent";
   if (type.startsWith("snapshot.")) return "bg-primary";
@@ -107,6 +112,16 @@ export function eventColor(type: string): string {
 export function eventSummary(event: ActivityEvent): string {
   const p = event.payload;
   switch (event.type) {
+    case "bootstrap.planned":
+      return `bootstrap planned: ${p["sourceRef"]}`;
+    case "bootstrap.started":
+      return `bootstrap started: ${p["sourceRef"]}`;
+    case "bootstrap.completed":
+      return `bootstrap completed \u2192 rig ${p["rigId"]}`;
+    case "bootstrap.partial":
+      return `bootstrap partial: ${p["completed"]} ok, ${p["failed"]} failed`;
+    case "bootstrap.failed":
+      return `bootstrap failed: ${p["error"]}`;
     case "package.validated":
       return `${p["packageName"]} validated`;
     case "package.planned":
@@ -144,6 +159,9 @@ export function eventSummary(event: ActivityEvent): string {
 export function eventRoute(event: ActivityEvent): string | null {
   const p = event.payload;
   const rigId = p["rigId"] as string | undefined;
+
+  // Bootstrap events navigate to /bootstrap
+  if (event.type.startsWith("bootstrap.")) return "/bootstrap";
 
   // Package events navigate to /packages
   if (event.type.startsWith("package.")) return "/packages";

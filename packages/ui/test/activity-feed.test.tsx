@@ -434,4 +434,21 @@ describe("eventRoute", () => {
     expect(eventRoute(makeEvent({ type: "rig.created", payload: { rigId: "r1" } }))).toBe("/rigs/r1");
     expect(eventRoute(makeEvent({ type: "snapshot.created", payload: { rigId: "r2", kind: "manual" } }))).toBe("/rigs/r2");
   });
+
+  // T11: bootstrap event color = bg-accent
+  it("returns bg-accent for bootstrap events", () => {
+    expect(eventColor("bootstrap.planned")).toBe("bg-accent");
+    expect(eventColor("bootstrap.started")).toBe("bg-accent");
+    expect(eventColor("bootstrap.completed")).toBe("bg-accent");
+    expect(eventColor("bootstrap.partial")).toBe("bg-accent");
+    expect(eventColor("bootstrap.failed")).toBe("bg-accent");
+  });
+
+  // T12: bootstrap event route -> /bootstrap
+  it("returns /bootstrap for bootstrap events", () => {
+    expect(eventRoute(makeEvent({ type: "bootstrap.planned", payload: {} }))).toBe("/bootstrap");
+    expect(eventRoute(makeEvent({ type: "bootstrap.completed", payload: {} }))).toBe("/bootstrap");
+    expect(eventRoute(makeEvent({ type: "bootstrap.partial", payload: {} }))).toBe("/bootstrap");
+    expect(eventRoute(makeEvent({ type: "bootstrap.failed", payload: {} }))).toBe("/bootstrap");
+  });
 });

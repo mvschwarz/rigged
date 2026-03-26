@@ -15,6 +15,7 @@ import { ImportFlow } from "./components/ImportFlow.js";
 import { PackageList } from "./components/PackageList.js";
 import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
 import { PackageDetail } from "./components/PackageDetail.js";
+import { BootstrapWizard } from "./components/BootstrapWizard.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -98,6 +99,13 @@ const packageInstallRoute = createRoute({
   component: PackageInstallFlow,
 });
 
+// Bootstrap route
+const bootstrapRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bootstrap",
+  component: BootstrapWizard,
+});
+
 // Package detail route
 const packageDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -106,7 +114,7 @@ const packageDetailRoute = createRoute({
 });
 
 // Route tree
-const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute]);
 
 // Router
 export const router = createRouter({ routeTree });

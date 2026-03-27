@@ -21,7 +21,7 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
       let status = await getDaemonStatus(deps.lifecycleDeps);
       if (status.state !== "running") {
         try {
-          await startDaemon(deps.lifecycleDeps);
+          await startDaemon({}, deps.lifecycleDeps);
           status = await getDaemonStatus(deps.lifecycleDeps);
         } catch {
           console.error("Failed to auto-start daemon");

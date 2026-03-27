@@ -16,6 +16,7 @@ import { bundleCommand } from "./commands/bundle.js";
 import { upCommand } from "./commands/up.js";
 import { downCommand } from "./commands/down.js";
 import { psCommand } from "./commands/ps.js";
+import { mcpCommand } from "./commands/mcp.js";
 import type { LifecycleDeps } from "./daemon-lifecycle.js";
 
 export interface ProgramDeps {
@@ -35,6 +36,7 @@ export interface ProgramDeps {
   upDeps?: StatusDeps;
   downDeps?: StatusDeps;
   psDeps?: StatusDeps;
+  mcpDeps?: StatusDeps;
 }
 
 export function createProgram(depsOverride?: ProgramDeps): Command {
@@ -61,6 +63,7 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(upCommand(depsOverride?.upDeps));
   program.addCommand(downCommand(depsOverride?.downDeps));
   program.addCommand(psCommand(depsOverride?.psDeps));
+  program.addCommand(mcpCommand(depsOverride?.mcpDeps));
 
   return program;
 }

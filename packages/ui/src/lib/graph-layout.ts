@@ -97,7 +97,7 @@ export function applyTreeLayout(
 
     for (let i = 0; i < layerNodes.length; i++) {
       result.push({
-        ...layerNodes[i],
+        ...layerNodes[i]!,
         position: {
           x: startX + i * H_SPACING,
           y: l * V_SPACING,

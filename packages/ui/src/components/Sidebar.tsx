@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: "/", label: "RIGS" },
   { to: "/packages", label: "PACKAGES" },
   { to: "/bootstrap", label: "BOOTSTRAP" },
+  { to: "/discovery", label: "DISCOVERY" },
   { to: "/import", label: "IMPORT" },
 ] as const;
 

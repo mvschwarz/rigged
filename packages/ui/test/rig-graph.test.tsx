@@ -101,7 +101,7 @@ describe("RigGraph", () => {
   it("renders nodes from mock graph data", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       // React Flow renders nodes with data-testid="rf__node-{id}"
@@ -113,7 +113,7 @@ describe("RigGraph", () => {
   it("passes edges to ReactFlow (edge container rendered)", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       // React Flow renders nodes successfully (proves graph data was accepted)
@@ -134,14 +134,14 @@ describe("RigGraph", () => {
     // Never resolves — stays in loading
     mockFetch.mockReturnValueOnce(new Promise(() => {}));
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
     expect(screen.getByTestId("graph-loading")).toBeDefined();
   });
 
   it("empty state rendered when nodes array is empty", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse([], []));
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getByTestId("empty-topology")).toBeDefined();
@@ -151,7 +151,7 @@ describe("RigGraph", () => {
   it("error state rendered on fetch failure", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getByText(/error/i)).toBeDefined();
@@ -159,7 +159,7 @@ describe("RigGraph", () => {
   });
 
   it("rigId=null shows 'No rig selected' placeholder, no fetch", () => {
-    render(<QueryWrapper><RigGraph rigId={null} /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId={null} /></QueryWrapper>);
 
     expect(screen.getByText(/no rig selected/i)).toBeDefined();
     expect(mockFetch).not.toHaveBeenCalled();
@@ -168,7 +168,7 @@ describe("RigGraph", () => {
   it("rigId='abc' fetches /api/rigs/abc/graph", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse([], []));
 
-    render(<QueryWrapper><RigGraph rigId="abc" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="abc" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith("/api/rigs/abc/graph");
@@ -178,7 +178,7 @@ describe("RigGraph", () => {
   it("renders custom RigNode content via nodeTypes registration", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       // React Flow uses our custom node type — nodes have class react-flow__node-rigNode
@@ -300,7 +300,7 @@ describe("Edge styles", () => {
 describe("Graph entrance animation", () => {
   it("initial navigation sets data-animated='true'", async () => {
     mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       const view = screen.getByTestId("graph-view");
@@ -315,13 +315,13 @@ describe("Graph entrance animation", () => {
       return Promise.resolve(mockGraphResponse(sampleNodes(), sampleEdges()));
     });
 
-    const { rerender } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { rerender } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     // Wait for first render with data
     await waitFor(() => expect(screen.getByTestId("graph-view")).toBeDefined());
 
     // Force a rerender (simulating data refresh)
-    rerender(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    rerender(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     // After the useEffect has set animatedRigRef, shouldAnimate should be false
     await waitFor(() => {
@@ -332,7 +332,7 @@ describe("Graph entrance animation", () => {
 
   it("empty topology state renders wireframe ghost", async () => {
     mockFetch.mockResolvedValue(mockGraphResponse([], []));
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getByTestId("empty-topology")).toBeDefined();
@@ -342,7 +342,7 @@ describe("Graph entrance animation", () => {
 
   it("loading state shows skeleton", async () => {
     mockFetch.mockReturnValue(new Promise(() => {}));
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getByTestId("graph-loading")).toBeDefined();
@@ -354,7 +354,7 @@ describe("RigGraph SSE integration", () => {
   it("SSE message triggers second fetch to /api/rigs/:id/graph", async () => {
     mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     // Wait for initial fetch
     await waitFor(() => {
@@ -383,7 +383,7 @@ describe("RigGraph SSE integration", () => {
       ))
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     // Wait for initial render with 1 node
     await waitFor(() => {
@@ -407,7 +407,7 @@ describe("RigGraph SSE integration", () => {
   it("reconnecting indicator visible on EventSource error", async () => {
     mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => expect(instances.length).toBeGreaterThan(0));
 
@@ -423,7 +423,7 @@ describe("RigGraph SSE integration", () => {
   it("reconnect open event clears indicator and triggers refetch", async () => {
     mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => expect(instances.length).toBeGreaterThan(0));
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
@@ -460,7 +460,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -487,7 +487,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -506,7 +506,7 @@ describe("RigGraph click-through to focus", () => {
   it("click node without binding -> 'not bound' message, no focus fetch", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n2']")).not.toBeNull();
@@ -536,7 +536,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: false, code: "unavailable" }) });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -557,7 +557,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
       .mockResolvedValueOnce({ ok: false, status: 500 });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -578,7 +578,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="my-rig-id" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="my-rig-id" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -601,7 +601,7 @@ describe("RigGraph click-through to focus", () => {
     const nodes = [...sampleNodes(), nodeWithBindingNoSurface()];
     mockFetch.mockResolvedValueOnce(mockGraphResponse(nodes, sampleEdges()));
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n3']")).not.toBeNull();
@@ -633,7 +633,7 @@ describe("RigGraph click-through to focus", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: false, code: "unavailable" }) });
 
-    const { container } = render(<QueryWrapper><RigGraph rigId="rig-1" /></QueryWrapper>);
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
@@ -685,7 +685,7 @@ describe("RigGraph click-through to focus", () => {
     ];
 
     mockFetch.mockResolvedValue(mockGraphResponse(nodesWithPkgs, []));
-    render(<QueryWrapper><RigGraph rigId="rig-badge-1" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-badge-1" /></QueryWrapper>);
 
     await waitFor(() => {
       const badge = screen.getByTestId("package-badge");
@@ -698,7 +698,7 @@ describe("RigGraph click-through to focus", () => {
   it("node without packageRefs has no badge", async () => {
     // sampleNodes() have no packageRefs
     mockFetch.mockResolvedValue(mockGraphResponse(sampleNodes(), sampleEdges()));
-    render(<QueryWrapper><RigGraph rigId="rig-badge-2" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-badge-2" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getAllByTestId("rig-node").length).toBeGreaterThan(0);
@@ -726,7 +726,7 @@ describe("RigGraph click-through to focus", () => {
     ];
 
     mockFetch.mockResolvedValue(mockGraphResponse(nodesWithPkgs, []));
-    render(<QueryWrapper><RigGraph rigId="rig-badge-3" /></QueryWrapper>);
+    render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-badge-3" /></QueryWrapper>);
 
     await waitFor(() => {
       expect(screen.getByTestId("package-badge")).toBeDefined();
@@ -747,5 +747,45 @@ describe("RigGraph click-through to focus", () => {
       (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("/focus")
     );
     expect(focusCalls.length).toBe(0);
+  });
+});
+
+describe("RigGraph discovery integration", () => {
+  it("discovered sessions appear as dashed nodes when showDiscovered=true", async () => {
+    // Mock both graph and discovery endpoints
+    mockFetch.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("/api/discovery")) {
+        return {
+          ok: true,
+          json: async () => [
+            { id: "ds-1", tmuxSession: "organic", tmuxPane: "%0", runtimeHint: "claude-code", confidence: "high", cwd: "/tmp", status: "active" },
+          ],
+        };
+      }
+      // Graph endpoint
+      return {
+        ok: true,
+        json: async () => ({ nodes: sampleNodes(), edges: sampleEdges() }),
+      };
+    });
+
+    render(
+      <QueryWrapper>
+        <RigGraph showDiscovered={true} rigId="rig-1" />
+      </QueryWrapper>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("graph-view")).toBeTruthy();
+    });
+
+    // Wait for discovered node to appear
+    await waitFor(() => {
+      expect(screen.getByTestId("discovered-graph-node")).toBeTruthy();
+    });
+
+    // Discovered node should have dashed border
+    const discoveredNode = screen.getByTestId("discovered-graph-node");
+    expect(discoveredNode.className).toContain("border-dashed");
   });
 });

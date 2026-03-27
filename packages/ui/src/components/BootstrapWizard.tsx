@@ -268,7 +268,7 @@ export function BootstrapWizard() {
             <Button
               variant="tactical"
               data-testid="view-rig-btn"
-              onClick={() => navigate({ to: "/rigs/$rigId", params: { rigId: (planResult as { rigId: string }).rigId } })}
+              onClick={() => navigate({ to: "/rigs/$rigId", params: { rigId: (planResult as unknown as { rigId: string }).rigId } })}
             >
               VIEW RIG
             </Button>

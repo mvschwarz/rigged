@@ -53,6 +53,16 @@ export function useActivityFeed(): UseActivityFeedResult {
       if (event.type === "bootstrap.completed" || event.type === "bootstrap.partial") {
         queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
       }
+      // Invalidate discovery queries on discovery events
+      if (event.type === "session.discovered" || event.type === "session.vanished") {
+        queryClient.invalidateQueries({ queryKey: ["discovery"] });
+      }
+      // node.claimed: invalidate discovery + target rig graph
+      if (event.type === "node.claimed") {
+        queryClient.invalidateQueries({ queryKey: ["discovery"] });
+        const rigId = event.payload["rigId"] as string | undefined;
+        if (rigId) queryClient.invalidateQueries({ queryKey: ["rig", rigId, "graph"] });
+      }
     } catch {
       // Ignore unparseable messages
     }
@@ -104,6 +114,9 @@ export function eventColor(type: string): string {
   if (type.startsWith("snapshot.")) return "bg-primary";
   if (type.startsWith("restore.")) return "bg-warning";
   if (type === "session.detached") return "bg-destructive";
+  if (type === "session.discovered") return "bg-accent";
+  if (type === "session.vanished") return "bg-destructive";
+  if (type === "node.claimed") return "bg-primary";
   if (type === "node.launched") return "bg-primary";
   return "bg-foreground-muted-on-dark";
 }
@@ -150,6 +163,12 @@ export function eventSummary(event: ActivityEvent): string {
       return `${String(p["logicalId"] ?? p["nodeId"] ?? "unknown")} \u2192 launched in ${p["sessionName"]}`;
     case "session.detached":
       return `${p["sessionName"]} \u2192 session lost`;
+    case "session.discovered":
+      return `${p["tmuxSession"]}:${p["tmuxPane"]} \u2192 discovered (${p["runtimeHint"]})`;
+    case "session.vanished":
+      return `${p["tmuxSession"]}:${p["tmuxPane"]} \u2192 vanished`;
+    case "node.claimed":
+      return `${p["logicalId"]} \u2192 claimed into rig`;
     default:
       return event.type;
   }
@@ -159,6 +178,13 @@ export function eventSummary(event: ActivityEvent): string {
 export function eventRoute(event: ActivityEvent): string | null {
   const p = event.payload;
   const rigId = p["rigId"] as string | undefined;
+
+  // Discovery events
+  if (event.type === "session.discovered" || event.type === "session.vanished") return "/discovery";
+  if (event.type === "node.claimed") {
+    const claimRigId = event.payload["rigId"] as string | undefined;
+    return claimRigId ? `/rigs/${claimRigId}` : "/discovery";
+  }
 
   // Bootstrap events navigate to /bootstrap
   if (event.type.startsWith("bootstrap.")) return "/bootstrap";

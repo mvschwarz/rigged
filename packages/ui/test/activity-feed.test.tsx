@@ -462,4 +462,20 @@ describe("eventRoute", () => {
       )
     ).toBe("dev \u2192 launched in r00-dogfood-dev");
   });
+
+  // Discovery event feed tests
+  it("session.discovered uses bg-accent color and /discovery route", () => {
+    expect(eventColor("session.discovered")).toBe("bg-accent");
+    expect(eventRoute(makeEvent({ type: "session.discovered", payload: {} }))).toBe("/discovery");
+  });
+
+  it("session.vanished uses bg-destructive color and /discovery route", () => {
+    expect(eventColor("session.vanished")).toBe("bg-destructive");
+    expect(eventRoute(makeEvent({ type: "session.vanished", payload: {} }))).toBe("/discovery");
+  });
+
+  it("node.claimed uses bg-primary color and routes to rig", () => {
+    expect(eventColor("node.claimed")).toBe("bg-primary");
+    expect(eventRoute(makeEvent({ type: "node.claimed", payload: { rigId: "rig-1" } }))).toBe("/rigs/rig-1");
+  });
 });

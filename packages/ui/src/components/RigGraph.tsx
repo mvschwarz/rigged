@@ -1,15 +1,34 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from "react";
-import { ReactFlow, Controls, type NodeTypes, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
+import { ReactFlow, Controls, Handle, Position, type NodeTypes, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
 import { useRigEvents } from "../hooks/useRigEvents.js";
+import { useDiscoveredSessionsConditional, type DiscoveredSession } from "../hooks/useDiscovery.js";
 import { getEdgeStyle } from "@/lib/edge-styles";
 import { applyTreeLayout } from "@/lib/graph-layout";
 import { RigNode } from "./RigNode.js";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+/** Discovered (unmanaged) node rendered with dashed border */
+function DiscoveredNode({ data }: { data: { session: DiscoveredSession } }) {
+  const s = data.session;
+  return (
+    <div data-testid="discovered-graph-node" className="border-dashed border-2 border-foreground/30 bg-surface-low/50 p-spacing-3 min-w-[180px]">
+      <Handle type="target" position={Position.Top} className="opacity-0" />
+      <div className="text-label-sm font-mono uppercase mb-spacing-1">{s.tmuxSession}:{s.tmuxPane}</div>
+      <div className="flex gap-spacing-2 items-center mb-spacing-1">
+        <span className="text-label-sm uppercase text-foreground-muted">{s.runtimeHint}</span>
+        <span className="text-label-sm text-foreground-muted">{s.confidence}</span>
+      </div>
+      {s.cwd && <div className="text-label-sm font-mono text-foreground-muted truncate">{s.cwd}</div>}
+      <Handle type="source" position={Position.Bottom} className="opacity-0" />
+    </div>
+  );
+}
+
 const nodeTypes: NodeTypes = {
   rigNode: RigNode,
+  discoveredNode: DiscoveredNode,
 };
 
 /** Wireframe ghost for empty topology */
@@ -35,8 +54,9 @@ interface FocusMessage {
   type: "success" | "error" | "info";
 }
 
-export function RigGraph({ rigId }: { rigId: string | null }) {
+export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | null; showDiscovered?: boolean }) {
   const { data, isPending: loading, error: queryError } = useRigGraph(rigId ?? "");
+  const discoveredSessions = useDiscoveredSessionsConditional(showDiscovered);
   const rawNodes = data?.nodes ?? [];
   const rawEdges = data?.edges ?? [];
   const error = queryError?.message ?? null;
@@ -90,8 +110,8 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
 
   // Apply tree layout + entrance animation to nodes
   const rfNodes = useMemo(() => {
-    const layoutNodes = applyTreeLayout(rawNodes as Node[], rawEdges as Edge[]);
-    return layoutNodes.map((node, index) => ({
+    const layoutNodes = applyTreeLayout(rawNodes as Node[], rawEdges as unknown as Parameters<typeof applyTreeLayout>[1]);
+    const managed = layoutNodes.map((node, index) => ({
       ...node,
       className: shouldAnimate ? "node-enter" : undefined,
       style: {
@@ -99,7 +119,18 @@ export function RigGraph({ rigId }: { rigId: string | null }) {
         animationDelay: shouldAnimate ? `${Math.min(index * 50, 2000)}ms` : undefined,
       },
     }));
-  }, [rawNodes, rawEdges, shouldAnimate]);
+
+    // Add discovered sessions as dashed nodes below managed ones
+    const maxY = managed.reduce((max, n) => Math.max(max, (n.position?.y ?? 0)), 0);
+    const discovered = discoveredSessions.map((s, i) => ({
+      id: `discovered-${s.id}`,
+      type: "discoveredNode" as const,
+      position: { x: 300, y: maxY + 200 + i * 150 },
+      data: { session: s } as Record<string, unknown>,
+    }));
+
+    return [...managed, ...discovered] as Node[];
+  }, [rawNodes, rawEdges, shouldAnimate, discoveredSessions]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_event, node) => {

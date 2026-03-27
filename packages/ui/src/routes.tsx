@@ -16,6 +16,7 @@ import { PackageList } from "./components/PackageList.js";
 import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
 import { PackageDetail } from "./components/PackageDetail.js";
 import { BootstrapWizard } from "./components/BootstrapWizard.js";
+import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -106,6 +107,13 @@ const bootstrapRoute = createRoute({
   component: BootstrapWizard,
 });
 
+// Discovery route
+const discoveryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/discovery",
+  component: DiscoveryOverlay,
+});
+
 // Package detail route
 const packageDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -114,7 +122,7 @@ const packageDetailRoute = createRoute({
 });
 
 // Route tree
-const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute, discoveryRoute]);
 
 // Router
 export const router = createRouter({ routeTree });

@@ -108,6 +108,7 @@ export function formatRelativeTime(receivedAt: number, now?: number): string {
 
 /** Maps event type to a CSS color class for the status dot */
 export function eventColor(type: string): string {
+  if (type === "bundle.created") return "bg-accent";
   if (type.startsWith("bootstrap.")) return "bg-accent";
   if (type.startsWith("package.")) return "bg-primary";
   if (type.startsWith("rig.")) return "bg-accent";
@@ -163,6 +164,8 @@ export function eventSummary(event: ActivityEvent): string {
       return `${String(p["logicalId"] ?? p["nodeId"] ?? "unknown")} \u2192 launched in ${p["sessionName"]}`;
     case "session.detached":
       return `${p["sessionName"]} \u2192 session lost`;
+    case "bundle.created":
+      return `${p["bundleName"]} v${p["bundleVersion"]} bundled`;
     case "session.discovered":
       return `${p["tmuxSession"]}:${p["tmuxPane"]} \u2192 discovered (${p["runtimeHint"]})`;
     case "session.vanished":

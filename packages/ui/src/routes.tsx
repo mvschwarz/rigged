@@ -17,6 +17,8 @@ import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
 import { PackageDetail } from "./components/PackageDetail.js";
 import { BootstrapWizard } from "./components/BootstrapWizard.js";
 import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
+import { BundleInspector } from "./components/BundleInspector.js";
+import { BundleInstallFlow } from "./components/BundleInstallFlow.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -114,6 +116,19 @@ const discoveryRoute = createRoute({
   component: DiscoveryOverlay,
 });
 
+// Bundle routes
+const bundleInspectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bundles/inspect",
+  component: BundleInspector,
+});
+
+const bundleInstallRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bundles/install",
+  component: BundleInstallFlow,
+});
+
 // Package detail route
 const packageDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -122,7 +137,7 @@ const packageDetailRoute = createRoute({
 });
 
 // Route tree
-const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute, discoveryRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute, discoveryRoute, bundleInspectRoute, bundleInstallRoute]);
 
 // Router
 export const router = createRouter({ routeTree });

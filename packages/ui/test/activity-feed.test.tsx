@@ -463,6 +463,16 @@ describe("eventRoute", () => {
     ).toBe("dev \u2192 launched in r00-dogfood-dev");
   });
 
+  // Bundle event
+  it("bundle.created uses bg-accent color, correct summary, and null route", () => {
+    expect(eventColor("bundle.created")).toBe("bg-accent");
+    const evt = makeEvent({ type: "bundle.created", payload: { bundleName: "my-bundle", bundleVersion: "2.0" } });
+    expect(eventSummary(evt)).toContain("my-bundle");
+    expect(eventSummary(evt)).toContain("v2.0");
+    expect(eventSummary(evt)).toContain("bundled");
+    expect(eventRoute(evt)).toBeNull();
+  });
+
   // Discovery event feed tests
   it("session.discovered uses bg-accent color and /discovery route", () => {
     expect(eventColor("session.discovered")).toBe("bg-accent");

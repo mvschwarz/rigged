@@ -26,6 +26,7 @@ import { TmuxDiscoveryScanner } from "../../src/domain/tmux-discovery-scanner.js
 import { SessionFingerprinter } from "../../src/domain/session-fingerprinter.js";
 import { SessionEnricher } from "../../src/domain/session-enricher.js";
 import { DiscoveryRepository } from "../../src/domain/discovery-repository.js";
+import { PsProjectionService } from "../../src/domain/ps-projection.js";
 import { DiscoveryCoordinator } from "../../src/domain/discovery-coordinator.js";
 import { ClaimService } from "../../src/domain/claim-service.js";
 import { RigRepository } from "../../src/domain/rig-repository.js";
@@ -154,6 +155,7 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
     discoveryCoordinator, discoveryRepo, claimService,
+    psProjectionService: new PsProjectionService({ db }),
   });
   return {
     app, rigRepo, sessionRegistry, eventBus, nodeLauncher, snapshotRepo,
@@ -161,6 +163,7 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
     rigSpecExporter, rigSpecPreflight, rigInstantiator,
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
-    discoveryCoordinator, discoveryRepo, claimService, tmuxScanner, db,
+    discoveryCoordinator, discoveryRepo, claimService, tmuxScanner,
+    psProjectionService: new PsProjectionService({ db }), db,
   };
 }

@@ -43,6 +43,7 @@ import { DiscoveryRepository } from "./domain/discovery-repository.js";
 import { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
 import { ClaimService } from "./domain/claim-service.js";
 import { BundleSourceResolver } from "./domain/bundle-source-resolver.js";
+import { PsProjectionService } from "./domain/ps-projection.js";
 import { createApp, type AppDeps } from "./server.js";
 import fs from "node:fs";
 import nodePath from "node:path";
@@ -212,6 +213,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     discoveryCoordinator,
     discoveryRepo,
     claimService,
+    psProjectionService: new PsProjectionService({ db }),
   };
 
   const app = createApp(deps);

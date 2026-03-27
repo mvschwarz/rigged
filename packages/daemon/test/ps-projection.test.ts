@@ -1,0 +1,190 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type Database from "better-sqlite3";
+import { createDb } from "../src/db/connection.js";
+import { migrate } from "../src/db/migrate.js";
+import { coreSchema } from "../src/db/migrations/001_core_schema.js";
+import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
+import { eventsSchema } from "../src/db/migrations/003_events.js";
+import { snapshotsSchema } from "../src/db/migrations/004_snapshots.js";
+import { checkpointsSchema } from "../src/db/migrations/005_checkpoints.js";
+import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
+import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
+import { packagesSchema } from "../src/db/migrations/008_packages.js";
+import { installJournalSchema } from "../src/db/migrations/009_install_journal.js";
+import { journalSeqSchema } from "../src/db/migrations/010_journal_seq.js";
+import { bootstrapSchema } from "../src/db/migrations/011_bootstrap.js";
+import { discoverySchema } from "../src/db/migrations/012_discovery.js";
+import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
+import { PsProjectionService } from "../src/domain/ps-projection.js";
+
+const ALL_MIGRATIONS = [
+  coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema,
+  checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema,
+  packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema,
+  discoverySchema, discoveryFkFix,
+];
+
+describe("PsProjectionService", () => {
+  let db: Database.Database;
+  let ps: PsProjectionService;
+
+  beforeEach(() => {
+    db = createDb();
+    migrate(db, ALL_MIGRATIONS);
+    ps = new PsProjectionService({ db });
+  });
+
+  afterEach(() => { db.close(); });
+
+  function seedRig(name: string): string {
+    const id = `rig-${name}`;
+    db.prepare("INSERT INTO rigs (id, name) VALUES (?, ?)").run(id, name);
+    return id;
+  }
+
+  function seedNode(rigId: string, logicalId: string): string {
+    const id = `node-${rigId}-${logicalId}`;
+    db.prepare("INSERT INTO nodes (id, rig_id, logical_id) VALUES (?, ?, ?)").run(id, rigId, logicalId);
+    return id;
+  }
+
+  function seedSession(nodeId: string, status: string, createdAt?: string): string {
+    const id = `sess-${nodeId}-${Date.now()}-${Math.random()}`;
+    db.prepare("INSERT INTO sessions (id, node_id, session_name, status, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, nodeId, `tmux-${nodeId}`, status, createdAt ?? new Date().toISOString().replace("T", " ").slice(0, 19));
+    return id;
+  }
+
+  function seedSnapshot(rigId: string, createdAt?: string): void {
+    const id = `snap-${Date.now()}-${Math.random()}`;
+    db.prepare("INSERT INTO snapshots (id, rig_id, kind, status, data, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, rigId, "manual", "complete", "{}", createdAt ?? new Date().toISOString().replace("T", " ").slice(0, 19));
+  }
+
+  // T1: All nodes running -> status: running
+  it("all nodes running -> status: running", () => {
+    const rigId = seedRig("full-run");
+    const n1 = seedNode(rigId, "dev");
+    const n2 = seedNode(rigId, "qa");
+    seedSession(n1, "running");
+    seedSession(n2, "running");
+
+    const entries = ps.getEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.status).toBe("running");
+    expect(entries[0]!.runningCount).toBe(2);
+    expect(entries[0]!.nodeCount).toBe(2);
+  });
+
+  // T2: Some nodes exited -> status: partial
+  it("some nodes exited -> status: partial", () => {
+    const rigId = seedRig("partial");
+    const n1 = seedNode(rigId, "dev");
+    const n2 = seedNode(rigId, "qa");
+    seedSession(n1, "running");
+    seedSession(n2, "exited");
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.status).toBe("partial");
+    expect(entries[0]!.runningCount).toBe(1);
+  });
+
+  // T3: No running nodes -> status: stopped
+  it("no running nodes -> status: stopped", () => {
+    const rigId = seedRig("stopped");
+    const n1 = seedNode(rigId, "dev");
+    seedSession(n1, "exited");
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.status).toBe("stopped");
+    expect(entries[0]!.runningCount).toBe(0);
+  });
+
+  // T4: Uptime from earliest running session
+  it("uptime computed from earliest running session", () => {
+    const rigId = seedRig("uptime-test");
+    const n1 = seedNode(rigId, "dev");
+    seedSession(n1, "running", "2026-03-26 10:00:00");
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.uptime).toBeTruthy();
+    // Should be a duration string like "Xh Ym"
+    expect(entries[0]!.uptime).toMatch(/\d+[smhd]/);
+  });
+
+  // T5: Latest snapshot age included
+  it("latest snapshot age included", () => {
+    const rigId = seedRig("snap-test");
+    seedNode(rigId, "dev");
+    seedSnapshot(rigId, "2026-03-26 10:00:00");
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.latestSnapshot).toBeTruthy();
+    expect(entries[0]!.latestSnapshot).toContain("ago");
+  });
+
+  // T6: Empty DB -> empty array
+  it("empty DB returns empty array", () => {
+    const entries = ps.getEntries();
+    expect(entries).toEqual([]);
+  });
+
+  // T7: Node with multiple sessions, only newest counts
+  it("multiple session rows per node — only newest counts", () => {
+    const rigId = seedRig("multi-sess");
+    const n1 = seedNode(rigId, "dev");
+    seedSession(n1, "exited", "2026-03-26 09:00:00");
+    seedSession(n1, "running", "2026-03-26 10:00:00"); // newest
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.runningCount).toBe(1);
+    expect(entries[0]!.status).toBe("running");
+  });
+
+  // T8: Multiple snapshots + sessions -> correct aggregation
+  it("multiple snapshots + sessions aggregate correctly", () => {
+    const rigId = seedRig("aggregate");
+    const n1 = seedNode(rigId, "dev");
+    const n2 = seedNode(rigId, "qa");
+    seedSession(n1, "running");
+    seedSession(n2, "running");
+    seedSnapshot(rigId, "2026-03-26 08:00:00");
+    seedSnapshot(rigId, "2026-03-26 09:00:00"); // latest
+
+    const entries = ps.getEntries();
+    expect(entries[0]!.nodeCount).toBe(2);
+    expect(entries[0]!.runningCount).toBe(2);
+    expect(entries[0]!.latestSnapshot).toBeTruthy();
+  });
+
+  // T9: Same-second session tiebreak by id
+  it("same-second sessions resolved by id DESC", () => {
+    const rigId = seedRig("tiebreak");
+    const n1 = seedNode(rigId, "dev");
+    // Insert with same timestamp, different IDs
+    db.prepare("INSERT INTO sessions (id, node_id, session_name, status, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run("sess-aaa", n1, "tmux-old", "exited", "2026-03-26 10:00:00");
+    db.prepare("INSERT INTO sessions (id, node_id, session_name, status, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run("sess-zzz", n1, "tmux-new", "running", "2026-03-26 10:00:00");
+
+    const entries = ps.getEntries();
+    // sess-zzz has later id -> it wins -> running
+    expect(entries[0]!.runningCount).toBe(1);
+    expect(entries[0]!.status).toBe("running");
+  });
+
+  // T10: createDaemon wires /api/ps route
+  it("createDaemon wires /api/ps route", async () => {
+    db.close();
+    const { createDaemon } = await import("../src/startup.js");
+    const { app, db: daemonDb } = await createDaemon({ dbPath: ":memory:" });
+    try {
+      const res = await app.request("/api/ps");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(Array.isArray(body)).toBe(true);
+    } finally {
+      daemonDb.close();
+    }
+  });
+});

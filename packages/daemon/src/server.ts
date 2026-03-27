@@ -30,6 +30,8 @@ import { packagesRoutes } from "./routes/packages.js";
 import { bootstrapRoutes } from "./routes/bootstrap.js";
 import { discoveryRoutes } from "./routes/discovery.js";
 import { bundleRoutes } from "./routes/bundles.js";
+import { psRoutes } from "./routes/ps.js";
+import type { PsProjectionService } from "./domain/ps-projection.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -53,6 +55,7 @@ export interface AppDeps {
   discoveryCoordinator: DiscoveryCoordinator;
   discoveryRepo: DiscoveryRepository;
   claimService: ClaimService;
+  psProjectionService: PsProjectionService;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -96,6 +99,9 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.rigRepo.db !== deps.claimService.db) {
     throw new Error("createApp: claimService must share the same db handle");
   }
+  if (deps.rigRepo.db !== deps.psProjectionService.db) {
+    throw new Error("createApp: psProjectionService must share the same db handle");
+  }
 
   const app = new Hono();
 
@@ -122,6 +128,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("discoveryCoordinator" as never, deps.discoveryCoordinator);
     c.set("discoveryRepo" as never, deps.discoveryRepo);
     c.set("claimService" as never, deps.claimService);
+    c.set("psProjectionService" as never, deps.psProjectionService);
     await next();
   });
 
@@ -143,6 +150,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/bootstrap", bootstrapRoutes);
   app.route("/api/discovery", discoveryRoutes);
   app.route("/api/bundles", bundleRoutes);
+  app.route("/api/ps", psRoutes);
 
   return app;
 }

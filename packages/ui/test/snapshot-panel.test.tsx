@@ -44,6 +44,20 @@ function mockRestoreError(status: number, error: string) {
   return { ok: false, status, json: async () => ({ error }) };
 }
 
+function stoppedPsEntries() {
+  return [
+    {
+      rigId: "r1",
+      name: "alpha",
+      nodeCount: 1,
+      runningCount: 0,
+      status: "stopped",
+      uptime: null,
+      latestSnapshot: null,
+    },
+  ];
+}
+
 describe("SnapshotPanel", () => {
   // Test 1: Snapshot list with mono IDs
   it("renders snapshot list with monospaced IDs", async () => {
@@ -162,9 +176,12 @@ describe("SnapshotPanel", () => {
   // Test 5: Per-node status uses restore-specific color class
   it("per-node status uses correct restore color class", async () => {
     mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (url === "/api/ps") {
+        return Promise.resolve({ ok: true, json: async () => stoppedPsEntries() });
+      }
       if (typeof url === "string" && url.includes("/restore/") && opts?.method === "POST") {
         return Promise.resolve(mockRestoreResult([
-          { nodeId: "n1", logicalId: "orchestrator", status: "launched" },
+          { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
           { nodeId: "n2", logicalId: "worker", status: "failed" },
         ]));
       }
@@ -188,6 +205,43 @@ describe("SnapshotPanel", () => {
       const failed = screen.getByTestId("restore-status-worker");
       expect(failed.className).toContain("text-destructive");
     });
+  });
+
+  it("restore stays disabled while the rig is still running", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url === "/api/ps") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              rigId: "r1",
+              name: "alpha",
+              nodeCount: 2,
+              runningCount: 1,
+              status: "partial",
+              uptime: "1m",
+              latestSnapshot: null,
+            },
+          ],
+        });
+      }
+      if (typeof url === "string" && url.includes("/snapshots")) {
+        return Promise.resolve(mockSnapshotList([
+          { id: "snap-1", kind: "manual", status: "complete", createdAt: "2026-03-24 01:00:00" },
+        ]));
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QueryWrapper><SnapshotPanel rigId="r1" /></QueryWrapper>);
+    await waitFor(() => expect(screen.getByTestId("restore-btn-snap-1")).toBeDefined());
+
+    const restoreBtn = screen.getByTestId("restore-btn-snap-1") as HTMLButtonElement;
+    expect(restoreBtn.disabled).toBe(true);
+    expect(screen.getByTestId("restore-blocked-message").textContent).toMatch(/stop the rig before restoring/i);
+
+    fireEvent.click(restoreBtn);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   // Test 6: Fetch error uses Alert

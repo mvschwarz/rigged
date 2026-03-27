@@ -226,6 +226,21 @@ describe("RestoreOrchestrator", () => {
     if (!result.ok) expect(result.code).toBe("snapshot_not_found");
   });
 
+  it("running rig -> { ok: false, code: 'rig_not_stopped' }", async () => {
+    const rig = rigRepo.createRig("r99");
+    const node = rigRepo.addNode(rig.id, "worker", { role: "worker", runtime: "claude-code" });
+    const session = sessionRegistry.registerSession(node.id, "r99-worker");
+    sessionRegistry.updateStatus(session.id, "running");
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const orch = createOrchestrator();
+    const result = await orch.restore(snap.id);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("rig_not_stopped");
+    expect(snapshotRepo.listSnapshots(rig.id)).toHaveLength(1);
+  });
+
   it("topological order: delegates_to (exact order)", async () => {
     const snap = seedRigAndSnapshot();
     const tmux = mockTmux();
@@ -326,7 +341,7 @@ describe("RestoreOrchestrator", () => {
 
     // Add a session with known status
     const sess = sessionRegistry.registerSession(nodeId, "r99-worker");
-    sessionRegistry.updateStatus(sess.id, "running");
+    sessionRegistry.updateStatus(sess.id, "detached");
 
     const tmux = mockTmux();
     (tmux.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -349,7 +364,7 @@ describe("RestoreOrchestrator", () => {
       // Session status restored to exact prior value
       const sessions = sessionRegistry.getSessionsForRig(snap.data.rig.id);
       const originalSess = sessions.find((s) => s.id === sess.id);
-      expect(originalSess!.status).toBe("running");
+      expect(originalSess!.status).toBe("detached");
     }
   });
 

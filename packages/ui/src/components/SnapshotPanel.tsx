@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useSnapshots } from "../hooks/useSnapshots.js";
 import { useCreateSnapshot, useRestoreSnapshot } from "../hooks/mutations.js";
+import { usePsEntries } from "../hooks/usePsEntries.js";
+import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,19 +37,14 @@ function formatAge(timestamp: string): string {
   return `${diffDay}d ago`;
 }
 
-function getRestoreStatusColor(status: string): string {
-  switch (status) {
-    case "launched": return "text-success";
-    case "skipped": return "text-foreground-muted-on-dark";
-    case "failed": return "text-destructive";
-    default: return "text-foreground-muted-on-dark";
-  }
-}
-
 export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
   const { data: snapshots = [], isPending: loading, error: fetchError } = useSnapshots(rigId);
+  const { data: psEntriesData } = usePsEntries();
   const createSnapshot = useCreateSnapshot(rigId);
   const restoreSnapshot = useRestoreSnapshot(rigId);
+  const psEntries = Array.isArray(psEntriesData) ? psEntriesData : [];
+  const rigPsEntry = psEntries.find((entry) => entry.rigId === rigId);
+  const restoreBlocked = rigPsEntry?.status === "running" || rigPsEntry?.status === "partial";
 
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [restoreResult, setRestoreResult] = useState<RestoreNodeResult[] | null>(null);
@@ -76,7 +73,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
   };
 
   return (
-    <div data-testid="snapshot-panel" className="card-dark bg-noise-dark p-spacing-4 lg:min-w-[260px] lg:max-w-[300px] overflow-y-auto">
+    <div data-testid="snapshot-panel" className="card-dark bg-noise-dark p-spacing-4 max-h-[40vh] lg:max-h-none lg:min-w-[260px] lg:max-w-[300px] overflow-y-auto shrink-0">
       {/* Header */}
       <div className="flex justify-between items-center mb-spacing-4">
         <h3 className="text-headline-md uppercase text-foreground-on-dark tracking-[0.02em]">SNAPSHOTS</h3>
@@ -96,6 +93,12 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
         </div>
       )}
 
+      {restoreBlocked && (
+        <div data-testid="restore-blocked-message" className="mb-spacing-3 text-label-sm text-foreground-muted-on-dark/70">
+          Stop the rig before restoring a snapshot.
+        </div>
+      )}
+
       {/* Restore result */}
       {restoreResult && (
         <div data-testid="restore-result" className="mb-spacing-4 p-spacing-3 inset-dark">
@@ -104,7 +107,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
             {restoreResult.map((n) => (
               <div key={n.nodeId} className="flex items-center justify-between text-label-md">
                 <span className="font-mono text-foreground-on-dark">{n.logicalId}</span>
-                <span className={`font-mono ${getRestoreStatusColor(n.status)}`} data-testid={`restore-status-${n.logicalId}`}>
+                <span className={`font-mono ${getRestoreStatusColorClass(n.status)}`} data-testid={`restore-status-${n.logicalId}`}>
                   {n.status}
                 </span>
               </div>
@@ -148,8 +151,9 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
                   </div>
                 </div>
                 <button
-                  className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark bg-white/6 border border-white/10 hover:bg-white/12 hover:text-foreground-on-dark transition-all"
+                  className="px-spacing-3 py-spacing-1 text-label-md uppercase tracking-[0.04em] text-foreground-muted-on-dark bg-white/6 border border-white/10 hover:bg-white/12 hover:text-foreground-on-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/6 disabled:hover:text-foreground-muted-on-dark"
                   data-testid={`restore-btn-${snap.id}`}
+                  disabled={restoreBlocked || restoreSnapshot.isPending}
                   onClick={() => setConfirmRestore(snap.id)}
                 >
                   RESTORE
@@ -166,7 +170,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
           <DialogHeader>
             <DialogTitle className="text-headline-md">Restore Snapshot</DialogTitle>
             <DialogDescription className="text-body-sm text-foreground-muted">
-              This will restore the rig from snapshot {confirmRestore?.slice(0, 12)}. Existing sessions will be restarted.
+              This will restore the rig from snapshot {confirmRestore?.slice(0, 12)} after any running sessions have been stopped.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -180,6 +184,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
             <Button
               variant="default"
               data-testid={confirmRestore ? `confirm-restore-${confirmRestore}` : undefined}
+              disabled={restoreBlocked || restoreSnapshot.isPending}
               onClick={() => confirmRestore && handleRestore(confirmRestore)}
             >
               Confirm Restore

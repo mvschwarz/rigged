@@ -100,6 +100,10 @@ export class RestoreOrchestrator {
       return { ok: false, code: "rig_not_found", message: `Rig ${rigId} not found` };
     }
 
+    if (this.hasRunningSessions(rigId)) {
+      return { ok: false, code: "rig_not_stopped", message: `Rig ${rigId} must be stopped before restore` };
+    }
+
     // Per-rig concurrency lock
     if (this.activeRestores.has(rigId)) {
       return { ok: false, code: "restore_in_progress", message: `Restore already in progress for rig ${rigId}` };
@@ -150,6 +154,14 @@ export class RestoreOrchestrator {
       .filter((s) => s.nodeId === nodeId && s.status !== "superseded" && s.status !== "exited")
       .map((s) => ({ id: s.id, status: s.status }));
     return { binding, sessions };
+  }
+
+  private hasRunningSessions(rigId: string): boolean {
+    const latestByNode = new Map<string, Session>();
+    for (const session of this.sessionRegistry.getSessionsForRig(rigId)) {
+      latestByNode.set(session.nodeId, session);
+    }
+    return Array.from(latestByNode.values()).some((session) => session.status === "running");
   }
 
   private clearStaleState(nodeId: string, rigId: string): void {

@@ -71,7 +71,7 @@ restoreRoutes.post("/:snapshotId", async (c) => {
   if (!outcome.ok) {
     const status = outcome.code === "snapshot_not_found" || outcome.code === "rig_not_found"
       ? 404
-      : outcome.code === "restore_in_progress"
+      : outcome.code === "restore_in_progress" || outcome.code === "rig_not_stopped"
       ? 409
       : 500;
     return c.json({ error: outcome.message, code: outcome.code }, status);

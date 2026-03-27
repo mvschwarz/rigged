@@ -5,6 +5,7 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import type { Hono } from "hono";
 import type { RigRepository } from "../src/domain/rig-repository.js";
+import type { SessionRegistry } from "../src/domain/session-registry.js";
 import type { SnapshotCapture } from "../src/domain/snapshot-capture.js";
 import type { SnapshotRepository } from "../src/domain/snapshot-repository.js";
 import { createFullTestDb, createTestApp } from "./helpers/test-app.js";
@@ -133,6 +134,7 @@ describe("Restore routes", () => {
   let db: Database.Database;
   let app: Hono;
   let rigRepo: RigRepository;
+  let sessionRegistry: SessionRegistry;
   let snapshotCapture: SnapshotCapture;
 
   beforeEach(() => {
@@ -140,6 +142,7 @@ describe("Restore routes", () => {
     const setup = createTestApp(db);
     app = setup.app;
     rigRepo = setup.rigRepo;
+    sessionRegistry = setup.sessionRegistry;
     snapshotCapture = setup.snapshotCapture;
   });
 
@@ -203,6 +206,19 @@ describe("Restore routes", () => {
 
     const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
     expect(res.status).toBe(500);
+  });
+
+  it("POST running rig restore -> 409", async () => {
+    const rig = rigRepo.createRig("r99");
+    const node = rigRepo.addNode(rig.id, "worker", { role: "worker", runtime: "claude-code" });
+    const session = sessionRegistry.registerSession(node.id, "r99-worker");
+    sessionRegistry.updateStatus(session.id, "running");
+    const snap = snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    const res = await app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("rig_not_stopped");
   });
 
   it("restore response includes nodes array with status per node", async () => {

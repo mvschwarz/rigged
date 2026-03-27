@@ -25,7 +25,7 @@ export function restoreCommand(depsOverride?: StatusDeps): Command {
         return;
       }
 
-      const client = deps.clientFactory(`http://localhost:${status.port}`);
+      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
       const rigId = opts.rig;
 
       const res = await client.post<{ nodes?: Array<{ nodeId: string; logicalId: string; status: string }> }>(`/api/rigs/${encodeURIComponent(rigId)}/restore/${encodeURIComponent(snapshotId)}`);
@@ -34,7 +34,7 @@ export function restoreCommand(depsOverride?: StatusDeps): Command {
         console.error("Snapshot or rig not found");
         process.exitCode = 1;
       } else if (res.status === 409) {
-        console.error("Restore already in progress");
+        console.error((res.data as { error?: string }).error ?? "Restore conflict");
         process.exitCode = 1;
       } else if (res.status >= 400) {
         console.error(`Restore failed: ${(res.data as { error?: string }).error ?? "unknown error"}`);
@@ -44,6 +44,9 @@ export function restoreCommand(depsOverride?: StatusDeps): Command {
         const nodes = res.data.nodes ?? [];
         for (const node of nodes) {
           console.log(`  ${node.logicalId}: ${node.status}`);
+        }
+        if (nodes.some((node) => node.status === "failed")) {
+          process.exitCode = 1;
         }
       }
     });

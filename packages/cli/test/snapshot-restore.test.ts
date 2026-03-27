@@ -125,6 +125,21 @@ function createMockDaemon() {
         res.end(JSON.stringify({ error: "restore in progress" }));
         return;
       }
+      if (snapshotId === "running") {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Rig rig-1 must be stopped before restore" }));
+        return;
+      }
+      if (snapshotId === "failed-node") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          nodes: [
+            { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
+            { nodeId: "n2", logicalId: "worker", status: "failed" },
+          ],
+        }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         nodes: [
@@ -208,7 +223,23 @@ describe("rigged snapshot + restore", () => {
     expect(output).toContain("checkpoint_written");
   });
 
-  // Test 5: restore snapshot not found (404)
+  // Test 5: restore with failed node -> non-zero exit
+  it("restore: node failure sets exit code 1", async () => {
+    const savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+
+    const program = new Command();
+    program.addCommand(restoreCommand(runningDeps(port)));
+    const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "restore", "failed-node", "--rig", "rig-1"]));
+
+    expect(logs.join("\n")).toContain("worker");
+    expect(logs.join("\n")).toContain("failed");
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = savedExitCode;
+  });
+
+  // Test 6: restore snapshot not found (404)
   it("restore: snapshot not found (404) -> error", async () => {
     const program = new Command();
     program.addCommand(restoreCommand(runningDeps(port)));
@@ -216,7 +247,7 @@ describe("rigged snapshot + restore", () => {
     expect(logs.join("\n")).toMatch(/not found/i);
   });
 
-  // Test 6: restore in progress (409)
+  // Test 7: restore in progress (409)
   it("restore: in progress (409) -> error", async () => {
     const program = new Command();
     program.addCommand(restoreCommand(runningDeps(port)));
@@ -224,7 +255,14 @@ describe("rigged snapshot + restore", () => {
     expect(logs.join("\n")).toMatch(/in progress/i);
   });
 
-  // Test 7: snapshot with daemon stopped -> no HTTP
+  it("restore: running rig conflict (409) -> prints server message", async () => {
+    const program = new Command();
+    program.addCommand(restoreCommand(runningDeps(port)));
+    const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "restore", "running", "--rig", "rig-1"]));
+    expect(logs.join("\n")).toMatch(/stopped before restore/i);
+  });
+
+  // Test 8: snapshot with daemon stopped -> no HTTP
   it("snapshot: daemon stopped -> 'not running', no HTTP", async () => {
     const deps = stoppedDeps();
     const program = new Command();
@@ -234,7 +272,7 @@ describe("rigged snapshot + restore", () => {
     expect(deps.clientFactory).not.toHaveBeenCalled();
   });
 
-  // Test 8: restore with unhealthy daemon -> no HTTP
+  // Test 9: restore with unhealthy daemon -> no HTTP
   it("restore: unhealthy daemon -> error, no HTTP", async () => {
     const deps = unhealthyDeps();
     const program = new Command();
@@ -244,7 +282,7 @@ describe("rigged snapshot + restore", () => {
     expect(deps.clientFactory).not.toHaveBeenCalled();
   });
 
-  // Test 9: snapshot uses stored port from daemon.json
+  // Test 10: snapshot uses stored port from daemon.json
   it("snapshot: uses stored custom port from daemon.json", async () => {
     const usedUrls: string[] = [];
     const deps: StatusDeps = {
@@ -266,10 +304,10 @@ describe("rigged snapshot + restore", () => {
     program.addCommand(snapshotCommand(deps));
     await captureLogs(() => program.parseAsync(["node", "rigged", "snapshot", "rig-1"]));
 
-    expect(usedUrls[0]).toBe(`http://localhost:${port}`);
+    expect(usedUrls[0]).toBe(`http://127.0.0.1:${port}`);
   });
 
-  // Test 10: createProgram: both snapshot AND restore mounted
+  // Test 11: createProgram: both snapshot AND restore mounted
   it("createProgram mounts both snapshot and restore commands", async () => {
     const { createProgram } = await import("../src/index.js");
     const deps = stoppedDeps();
@@ -285,7 +323,7 @@ describe("rigged snapshot + restore", () => {
     expect(restoreLogs.join("\n")).toMatch(/not running/i);
   });
 
-  // Test 11: snapshot 500 -> generic error
+  // Test 12: snapshot 500 -> generic error
   it("snapshot: 500 -> generic error message", async () => {
     const program = new Command();
     program.addCommand(snapshotCommand(runningDeps(port)));
@@ -293,7 +331,7 @@ describe("rigged snapshot + restore", () => {
     expect(logs.join("\n")).toMatch(/failed|error/i);
   });
 
-  // Test 12: restore with daemon stopped -> no HTTP (symmetric with test 7)
+  // Test 13: restore with daemon stopped -> no HTTP (symmetric with test 8)
   it("restore: daemon stopped -> 'not running', no HTTP", async () => {
     const deps = stoppedDeps();
     const program = new Command();

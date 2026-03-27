@@ -152,6 +152,7 @@ export type RestoreOutcome =
   | { ok: true; result: RestoreResult }
   | { ok: false; code: "snapshot_not_found"; message: string }
   | { ok: false; code: "rig_not_found"; message: string }
+  | { ok: false; code: "rig_not_stopped"; message: string }
   | { ok: false; code: "restore_error"; message: string }
   | { ok: false; code: "restore_in_progress"; message: string };
 

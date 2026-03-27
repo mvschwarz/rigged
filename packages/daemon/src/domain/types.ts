@@ -85,7 +85,9 @@ export type RigEvent =
   | { type: "session.vanished"; tmuxSession: string; tmuxPane: string }
   | { type: "node.claimed"; rigId: string; nodeId: string; logicalId: string; discoveredId: string }
   // Bundle events (cross-rig)
-  | { type: "bundle.created"; bundleName: string; bundleVersion: string; archiveHash: string };
+  | { type: "bundle.created"; bundleName: string; bundleVersion: string; archiveHash: string }
+  // Teardown events
+  | { type: "rig.stopped"; rigId: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;

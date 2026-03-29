@@ -219,4 +219,80 @@ describe("PodRigInstantiator", () => {
     }
     db.close();
   });
+
+  // CP2-R1: Two pods with same member name create distinct nodes (qualified logical_id)
+  it("two pods with same member name create distinct nodes", async () => {
+    const files = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: agentYaml("impl"),
+    };
+    const { db, rigRepo, inst } = setup(files);
+    const spec = makeRigSpec({
+      pods: [
+        { id: "dev", label: "Dev", members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." }], edges: [] },
+        { id: "arch", label: "Arch", members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." }], edges: [] },
+      ],
+    });
+    const yaml = RigSpecCodec.serialize(spec);
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const rig = rigRepo.getRig(result.result.rigId);
+      expect(rig!.nodes).toHaveLength(2);
+      const logicalIds = rig!.nodes.map((n) => n.logicalId).sort();
+      expect(logicalIds).toEqual(["arch.impl", "dev.impl"]);
+    }
+    db.close();
+  });
+
+  // CP2-R2: Narrowed restore-policy persisted to both node and session
+  it("persists narrowed restore-policy to node and session", async () => {
+    // Agent spec has checkpoint_only default, member requests resume_if_possible (broadening — should fail)
+    // Instead: spec has resume_if_possible, member narrows to relaunch_fresh
+    const narrowingAgent = `name: impl\nversion: "1.0.0"\ndefaults:\n  lifecycle:\n    compaction_strategy: harness_native\n    restore_policy: resume_if_possible\nresources:\n  skills: []\nprofiles:\n  default:\n    uses:\n      skills: []`;
+    const files = { [`${RIG_ROOT}/agents/impl/agent.yaml`]: narrowingAgent };
+    const { db, rigRepo, sessionRegistry, inst } = setup(files);
+    const spec = makeRigSpec({
+      pods: [{ id: "dev", label: "Dev", members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: ".", restorePolicy: "relaunch_fresh" }], edges: [] }],
+    });
+    const yaml = RigSpecCodec.serialize(spec);
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const rig = rigRepo.getRig(result.result.rigId);
+      expect(rig!.nodes[0]!.restorePolicy).toBe("relaunch_fresh");
+      // Check session too
+      const sessions = sessionRegistry.getSessionsForRig(result.result.rigId);
+      expect(sessions[0]!.restorePolicy).toBe("relaunch_fresh");
+    }
+    db.close();
+  });
+
+  // CP2-R3: Topological ordering enforced (delegates_to edge)
+  it("launches nodes in topological order based on edges", async () => {
+    const files = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: agentYaml("impl"),
+      [`${RIG_ROOT}/agents/orch/agent.yaml`]: agentYaml("orch"),
+    };
+    const { db, inst } = setup(files);
+    const spec = makeRigSpec({
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [
+          { id: "worker", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." },
+          { id: "lead", agentRef: "local:agents/orch", profile: "default", runtime: "claude-code", cwd: "." },
+        ],
+        edges: [{ kind: "delegates_to", from: "lead", to: "worker" }],
+      }],
+    });
+    const yaml = RigSpecCodec.serialize(spec);
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // lead should be launched before worker (delegates_to: lead -> worker means lead first)
+      const leadIdx = result.result.nodes.findIndex((n) => n.logicalId === "dev.lead");
+      const workerIdx = result.result.nodes.findIndex((n) => n.logicalId === "dev.worker");
+      expect(leadIdx).toBeLessThan(workerIdx);
+    }
+    db.close();
+  });
 });

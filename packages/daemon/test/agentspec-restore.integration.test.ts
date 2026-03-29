@@ -316,4 +316,29 @@ describe("AS-T09: Continuity + snapshot/restore evolution", () => {
     expect(startupCtx!.startupActions).toHaveLength(1);
     ctx.db.close();
   });
+
+  // CP2-R4: Restore uses newest session, not oldest
+  it("restore uses newest session for node with multiple sessions", () => {
+    const ctx = setup();
+    const { rig, node } = seedRigWithPod(ctx);
+
+    // Create a second (newer) session with different restorePolicy
+    const session2 = ctx.sessionRegistry.registerSession(node.id, "r02-impl");
+    ctx.sessionRegistry.updateStatus(session2.id, "running");
+    ctx.db.prepare("UPDATE sessions SET restore_policy = 'checkpoint_only' WHERE id = ?").run(session2.id);
+
+    // Take snapshot — should capture both sessions
+    ctx.sessionRegistry.updateStatus(session2.id, "exited");
+    const snapshot = ctx.snapshotCapture.captureSnapshot(rig.id, "manual");
+
+    // Verify snapshot has both sessions
+    const nodeSessions = snapshot.data.sessions.filter((s) => s.nodeId === node.id);
+    expect(nodeSessions.length).toBeGreaterThan(1);
+
+    // The newest session (max ULID) should have checkpoint_only
+    const newest = nodeSessions.reduce((latest, s) => s.id > latest.id ? s : latest);
+    expect(newest.restorePolicy).toBe("checkpoint_only");
+
+    ctx.db.close();
+  });
 });

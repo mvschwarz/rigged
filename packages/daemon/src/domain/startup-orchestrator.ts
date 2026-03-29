@@ -111,6 +111,8 @@ export class StartupOrchestrator {
     }
 
     // 5. Poll readiness
+    // TODO: checkReady is currently a single poll, not a retry loop with timeout.
+    // A real readiness gate should poll with backoff until the harness responds or times out.
     try {
       const readiness = await input.adapter.checkReady(input.binding);
       if (!readiness.ready) {

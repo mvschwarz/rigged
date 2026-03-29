@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
-import { ulid } from "ulid";
+import { monotonicFactory } from "ulid";
+
+const ulid = monotonicFactory();
 import type { Session, Binding } from "./types.js";
 import { validateSessionName } from "./session-name.js";
 

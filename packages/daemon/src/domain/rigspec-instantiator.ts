@@ -327,12 +327,20 @@ export class PodRigInstantiator {
       return { ok: false, code: "instantiate_error", message: (err as Error).message };
     }
 
-    // 4. Create pods + nodes + edges
+    // 4. Compute launch order from edges
+    const launchOrder = this.computePodLaunchOrder(rigSpec);
+
+    // 5. Create pods + nodes + edges, then launch in topological order
     const nodeResults: { logicalId: string; status: "launched" | "failed"; error?: string }[] = [];
     const nodeIdMap: Record<string, string> = {}; // "pod.member" -> node DB id
+    // Store per-member context for deferred launch
+    const memberContext = new Map<string, { pod: typeof rigSpec.pods[0]; member: typeof rigSpec.pods[0]["members"][0]; podId: string; nodeId: string; resolveResult: any; configResult: any }>();
+
+    // Phase 1: Create all pods and collect member entries
+    const podIdMap: Record<string, string> = {}; // pod.id -> DB pod id
+    const memberEntries: Array<{ pod: typeof rigSpec.pods[0]; member: typeof rigSpec.pods[0]["members"][0]; podId: string; qualifiedId: string }> = [];
 
     for (const pod of rigSpec.pods) {
-      // Create pod
       let podId: string;
       try {
         const podRecord = this.deps.podRepo.createPod(rigId, pod.label, {
@@ -340,13 +348,22 @@ export class PodRigInstantiator {
           continuityPolicyJson: pod.continuityPolicy ? JSON.stringify(pod.continuityPolicy) : undefined,
         });
         podId = podRecord.id;
+        podIdMap[pod.id] = podId;
       } catch (err) {
         nodeResults.push(...pod.members.map((m) => ({ logicalId: `${pod.id}.${m.id}`, status: "failed" as const, error: `Pod creation failed: ${(err as Error).message}` })));
         continue;
       }
-
       for (const member of pod.members) {
-        const qualifiedId = `${pod.id}.${member.id}`;
+        memberEntries.push({ pod, member, podId, qualifiedId: `${pod.id}.${member.id}` });
+      }
+    }
+
+    // Sort members by topological launch order
+    const orderMap = new Map(launchOrder.map((id, i) => [id, i]));
+    memberEntries.sort((a, b) => (orderMap.get(a.qualifiedId) ?? 999) - (orderMap.get(b.qualifiedId) ?? 999));
+
+    // Phase 2: Process members in launch order
+    for (const { pod, member, podId, qualifiedId } of memberEntries) {
 
         // Resolve agent ref
         const resolveResult = resolveAgentRef(member.agentRef, rigRoot, this.deps.fsOps);
@@ -376,11 +393,11 @@ export class PodRigInstantiator {
         // Create node
         let nodeId: string;
         try {
-          const node = this.deps.rigRepo.addNode(rigId, member.id, {
+          const node = this.deps.rigRepo.addNode(rigId, qualifiedId, {
             runtime: member.runtime,
             model: member.model,
             cwd: member.cwd,
-            restorePolicy: member.restorePolicy,
+            restorePolicy: configResult.config.restorePolicy,
             podId,
             agentRef: member.agentRef,
             profile: member.profile,
@@ -397,11 +414,17 @@ export class PodRigInstantiator {
         }
 
         // Launch session
-        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, member.id);
+        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, qualifiedId);
         if (!launchResult.ok) {
           nodeResults.push({ logicalId: qualifiedId, status: "failed", error: launchResult.message });
           continue;
         }
+
+        // Propagate narrowed restorePolicy to session row (restore-orchestrator reads it)
+        try {
+          this.db.prepare("UPDATE sessions SET restore_policy = ? WHERE id = ?")
+            .run(configResult.config.restorePolicy, launchResult.session.id);
+        } catch { /* best-effort */ }
 
         // Select adapter
         const adapter = this.deps.adapters[member.runtime];
@@ -462,7 +485,8 @@ export class PodRigInstantiator {
         });
       }
 
-      // Create pod-local edges
+    // Create pod-local edges (after all members created)
+    for (const pod of rigSpec.pods) {
       for (const edge of pod.edges) {
         const fromId = nodeIdMap[`${pod.id}.${edge.from}`];
         const toId = nodeIdMap[`${pod.id}.${edge.to}`];
@@ -501,6 +525,58 @@ export class PodRigInstantiator {
       ok: true,
       result: { rigId, specName: rigSpec.name, specVersion: rigSpec.version, nodes: nodeResults },
     };
+  }
+
+  private computePodLaunchOrder(rigSpec: PodRigSpec): string[] {
+    const LAUNCH_DEP_KINDS = new Set(["delegates_to", "spawned_by"]);
+    const allIds: string[] = [];
+    const inDegree: Record<string, number> = {};
+    const adjacency: Record<string, string[]> = {};
+
+    // Collect all qualified member ids
+    for (const pod of rigSpec.pods) {
+      for (const member of pod.members) {
+        const qid = `${pod.id}.${member.id}`;
+        allIds.push(qid);
+        inDegree[qid] = 0;
+        adjacency[qid] = [];
+      }
+    }
+
+    // Build adjacency from pod-local edges (qualify them) and cross-pod edges (already qualified)
+    for (const pod of rigSpec.pods) {
+      for (const edge of pod.edges) {
+        if (!LAUNCH_DEP_KINDS.has(edge.kind)) continue;
+        const from = `${pod.id}.${edge.kind === "delegates_to" ? edge.from : edge.to}`;
+        const to = `${pod.id}.${edge.kind === "delegates_to" ? edge.to : edge.from}`;
+        if (adjacency[from]) { adjacency[from]!.push(to); inDegree[to] = (inDegree[to] ?? 0) + 1; }
+      }
+    }
+    for (const edge of rigSpec.edges) {
+      if (!LAUNCH_DEP_KINDS.has(edge.kind)) continue;
+      const from = edge.kind === "delegates_to" ? edge.from : edge.to;
+      const to = edge.kind === "delegates_to" ? edge.to : edge.from;
+      if (adjacency[from]) { adjacency[from]!.push(to); inDegree[to] = (inDegree[to] ?? 0) + 1; }
+    }
+
+    // Topological sort with alphabetical tiebreaker
+    const queue = allIds.filter((id) => inDegree[id] === 0).sort();
+    const order: string[] = [];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      order.push(current);
+      for (const neighbor of (adjacency[current] ?? []).sort()) {
+        inDegree[neighbor]! -= 1;
+        if (inDegree[neighbor] === 0) {
+          let inserted = false;
+          for (let i = 0; i < queue.length; i++) {
+            if (queue[i]!.localeCompare(neighbor) > 0) { queue.splice(i, 0, neighbor); inserted = true; break; }
+          }
+          if (!inserted) queue.push(neighbor);
+        }
+      }
+    }
+    return order;
   }
 
   private buildResolvedStartupFiles(

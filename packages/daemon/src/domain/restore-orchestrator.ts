@@ -337,7 +337,11 @@ export class RestoreOrchestrator {
     warnings?: string[],
   ): Promise<RestoreNodeResult> {
     const node = entry.node;
-    const session = data.sessions.find((s) => s.nodeId === node.id) ?? null;
+    // Find the NEWEST session for this node. ULIDs are monotonic, so latest = max id.
+    const nodeSessions = data.sessions.filter((s) => s.nodeId === node.id);
+    const session = nodeSessions.length > 0
+      ? nodeSessions.reduce((latest, s) => s.id > latest.id ? s : latest)
+      : null;
     const checkpoint = data.checkpoints[node.id] ?? null;
 
     // Check restore policy

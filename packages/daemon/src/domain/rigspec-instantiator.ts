@@ -327,8 +327,13 @@ export class PodRigInstantiator {
       return { ok: false, code: "instantiate_error", message: (err as Error).message };
     }
 
-    // 4. Compute launch order from edges
-    const launchOrder = this.computePodLaunchOrder(rigSpec);
+    // 4. Compute launch order from edges (rejects cycles)
+    let launchOrder: string[];
+    try {
+      launchOrder = this.computePodLaunchOrder(rigSpec);
+    } catch (err) {
+      return { ok: false, code: "cycle_error", message: (err as Error).message };
+    }
 
     // 5. Create pods + nodes + edges, then launch in topological order
     const nodeResults: { logicalId: string; status: "launched" | "failed"; error?: string }[] = [];
@@ -576,6 +581,13 @@ export class PodRigInstantiator {
         }
       }
     }
+
+    // Cycle detection: if any nodes remain unvisited, the graph has a cycle
+    if (order.length < allIds.length) {
+      const cycled = allIds.filter((id) => !order.includes(id));
+      throw new Error(`Dependency cycle detected among nodes: ${cycled.join(", ")}`);
+    }
+
     return order;
   }
 

@@ -295,4 +295,34 @@ describe("PodRigInstantiator", () => {
     }
     db.close();
   });
+
+  // CP2-R5: Two-node cycle must fail instantiation
+  it("rejects dependency cycle between two nodes", async () => {
+    const files = {
+      [`${RIG_ROOT}/agents/a/agent.yaml`]: agentYaml("a"),
+      [`${RIG_ROOT}/agents/b/agent.yaml`]: agentYaml("b"),
+    };
+    const { db, inst } = setup(files);
+    const spec = makeRigSpec({
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [
+          { id: "a", agentRef: "local:agents/a", profile: "default", runtime: "claude-code", cwd: "." },
+          { id: "b", agentRef: "local:agents/b", profile: "default", runtime: "claude-code", cwd: "." },
+        ],
+        edges: [
+          { kind: "delegates_to", from: "a", to: "b" },
+          { kind: "delegates_to", from: "b", to: "a" },
+        ],
+      }],
+    });
+    const yaml = RigSpecCodec.serialize(spec);
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(false);
+    if (!result.ok && "code" in result) {
+      expect(result.code).toBe("cycle_error");
+      expect(result.message).toMatch(/cycle/i);
+    }
+    db.close();
+  });
 });

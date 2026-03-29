@@ -255,3 +255,306 @@ export class RigInstantiator {
     return order;
   }
 }
+
+// -- Pod-aware instantiator (AgentSpec reboot) --
+
+import { RigSpecCodec as PodRigSpecCodec } from "./rigspec-codec.js";
+import { RigSpecSchema as PodRigSpecSchema } from "./rigspec-schema.js";
+import { rigPreflight } from "./rigspec-preflight.js";
+import { resolveAgentRef, type AgentResolverFsOps } from "./agent-resolver.js";
+import { resolveNodeConfig } from "./profile-resolver.js";
+import { planProjection } from "./projection-planner.js";
+import { StartupOrchestrator } from "./startup-orchestrator.js";
+import { PodRepository } from "./pod-repository.js";
+import type { RigSpec as PodRigSpec, RigSpecPod, RigSpecPodMember, StartupFile } from "./types.js";
+import type { RuntimeAdapter, NodeBinding, ResolvedStartupFile } from "./runtime-adapter.js";
+
+interface PodInstantiatorDeps {
+  db: Database.Database;
+  rigRepo: RigRepository;
+  podRepo: PodRepository;
+  sessionRegistry: SessionRegistry;
+  eventBus: EventBus;
+  nodeLauncher: NodeLauncher;
+  startupOrchestrator: StartupOrchestrator;
+  fsOps: AgentResolverFsOps;
+  adapters: Record<string, RuntimeAdapter>;
+}
+
+/**
+ * Pod-aware rig instantiator. Creates pods, nodes, edges, and runs
+ * startup orchestration per node with resolved agent specs.
+ */
+export class PodRigInstantiator {
+  readonly db: Database.Database;
+  private deps: PodInstantiatorDeps;
+
+  constructor(deps: PodInstantiatorDeps) {
+    if (deps.db !== deps.rigRepo.db) throw new Error("PodRigInstantiator: rigRepo must share the same db handle");
+    if (deps.db !== deps.sessionRegistry.db) throw new Error("PodRigInstantiator: sessionRegistry must share the same db handle");
+    if (deps.db !== deps.eventBus.db) throw new Error("PodRigInstantiator: eventBus must share the same db handle");
+    if (deps.db !== deps.nodeLauncher.db) throw new Error("PodRigInstantiator: nodeLauncher must share the same db handle");
+    this.db = deps.db;
+    this.deps = deps;
+  }
+
+  async instantiate(rigSpecYaml: string, rigRoot: string): Promise<InstantiateOutcome> {
+    // 1. Parse + validate
+    let rigSpec: PodRigSpec;
+    try {
+      const raw = PodRigSpecCodec.parse(rigSpecYaml);
+      const validation = PodRigSpecSchema.validate(raw);
+      if (!validation.valid) {
+        return { ok: false, code: "validation_failed", errors: validation.errors };
+      }
+      rigSpec = PodRigSpecSchema.normalize(raw as Record<string, unknown>);
+    } catch (err) {
+      return { ok: false, code: "validation_failed", errors: [(err as Error).message] };
+    }
+
+    // 2. Preflight
+    const preflight = rigPreflight({ rigSpecYaml, rigRoot, fsOps: this.deps.fsOps });
+    if (!preflight.ready) {
+      return { ok: false, code: "preflight_failed", errors: preflight.errors, warnings: preflight.warnings };
+    }
+
+    // 3. Create rig
+    let rigId: string;
+    try {
+      const rig = this.deps.rigRepo.createRig(rigSpec.name);
+      rigId = rig.id;
+    } catch (err) {
+      return { ok: false, code: "instantiate_error", message: (err as Error).message };
+    }
+
+    // 4. Create pods + nodes + edges
+    const nodeResults: { logicalId: string; status: "launched" | "failed"; error?: string }[] = [];
+    const nodeIdMap: Record<string, string> = {}; // "pod.member" -> node DB id
+
+    for (const pod of rigSpec.pods) {
+      // Create pod
+      let podId: string;
+      try {
+        const podRecord = this.deps.podRepo.createPod(rigId, pod.label, {
+          summary: pod.summary,
+          continuityPolicyJson: pod.continuityPolicy ? JSON.stringify(pod.continuityPolicy) : undefined,
+        });
+        podId = podRecord.id;
+      } catch (err) {
+        nodeResults.push(...pod.members.map((m) => ({ logicalId: `${pod.id}.${m.id}`, status: "failed" as const, error: `Pod creation failed: ${(err as Error).message}` })));
+        continue;
+      }
+
+      for (const member of pod.members) {
+        const qualifiedId = `${pod.id}.${member.id}`;
+
+        // Resolve agent ref
+        const resolveResult = resolveAgentRef(member.agentRef, rigRoot, this.deps.fsOps);
+        if (!resolveResult.ok) {
+          const msg = resolveResult.code === "validation_failed"
+            ? (resolveResult as { errors: string[] }).errors.join("; ")
+            : (resolveResult as { error: string }).error;
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: msg });
+          continue;
+        }
+
+        // Resolve node config (profile + precedence)
+        const configResult = resolveNodeConfig({
+          baseSpec: resolveResult.resolved,
+          importedSpecs: resolveResult.imports,
+          collisions: resolveResult.collisions,
+          profileName: member.profile,
+          member,
+          pod,
+          rig: rigSpec,
+        });
+        if (!configResult.ok) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: configResult.errors.join("; ") });
+          continue;
+        }
+
+        // Create node
+        let nodeId: string;
+        try {
+          const node = this.deps.rigRepo.addNode(rigId, member.id, {
+            runtime: member.runtime,
+            model: member.model,
+            cwd: member.cwd,
+            restorePolicy: member.restorePolicy,
+            podId,
+            agentRef: member.agentRef,
+            profile: member.profile,
+            label: member.label,
+            resolvedSpecName: configResult.config.resolvedSpecName,
+            resolvedSpecVersion: configResult.config.resolvedSpecVersion,
+            resolvedSpecHash: configResult.config.resolvedSpecHash,
+          });
+          nodeId = node.id;
+          nodeIdMap[qualifiedId] = nodeId;
+        } catch (err) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: (err as Error).message });
+          continue;
+        }
+
+        // Launch session
+        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, member.id);
+        if (!launchResult.ok) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: launchResult.message });
+          continue;
+        }
+
+        // Select adapter
+        const adapter = this.deps.adapters[member.runtime];
+        if (!adapter) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: `No adapter for runtime "${member.runtime}"` });
+          continue;
+        }
+
+        // Plan projection
+        const planResult = planProjection({
+          config: configResult.config,
+          collisions: resolveResult.collisions,
+          fsOps: this.deps.fsOps,
+        });
+        if (!planResult.ok) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: planResult.errors.join("; ") });
+          continue;
+        }
+
+        // Build resolved startup files with correct owner roots
+        const resolvedFiles = this.buildResolvedStartupFiles(
+          resolveResult.resolved.spec,
+          resolveResult.resolved.sourcePath,
+          resolveResult.resolved.spec.profiles[member.profile],
+          rigSpec, rigRoot, pod, member,
+        );
+
+        // Build binding
+        const binding: NodeBinding = {
+          id: launchResult.ok ? launchResult.binding.id : "",
+          nodeId,
+          tmuxSession: launchResult.ok ? launchResult.binding.tmuxSession : null,
+          tmuxWindow: null,
+          tmuxPane: null,
+          cmuxWorkspace: null,
+          cmuxSurface: null,
+          updatedAt: "",
+          cwd: member.cwd,
+        };
+
+        // Run startup
+        const startupResult = await this.deps.startupOrchestrator.startNode({
+          rigId,
+          nodeId,
+          sessionId: launchResult.ok ? launchResult.session.id : "",
+          binding,
+          adapter,
+          plan: planResult.plan,
+          resolvedStartupFiles: resolvedFiles,
+          startupActions: configResult.config.startup.actions,
+          isRestore: false,
+        });
+
+        nodeResults.push({
+          logicalId: qualifiedId,
+          status: startupResult.ok ? "launched" : "failed",
+          error: startupResult.ok ? undefined : startupResult.errors.join("; "),
+        });
+      }
+
+      // Create pod-local edges
+      for (const edge of pod.edges) {
+        const fromId = nodeIdMap[`${pod.id}.${edge.from}`];
+        const toId = nodeIdMap[`${pod.id}.${edge.to}`];
+        if (fromId && toId) {
+          try {
+            this.deps.rigRepo.addEdge(rigId, fromId, toId, edge.kind);
+          } catch { /* best-effort */ }
+        }
+      }
+    }
+
+    // Create cross-pod edges
+    for (const edge of rigSpec.edges) {
+      const fromId = nodeIdMap[edge.from];
+      const toId = nodeIdMap[edge.to];
+      if (fromId && toId) {
+        try {
+          this.deps.rigRepo.addEdge(rigId, fromId, toId, edge.kind);
+        } catch { /* best-effort */ }
+      }
+    }
+
+    // Check for total failure
+    const allFailed = nodeResults.length > 0 && nodeResults.every((n) => n.status === "failed");
+    if (allFailed) {
+      try { this.deps.rigRepo.deleteRig(rigId); } catch { /* best-effort */ }
+      return { ok: false, code: "instantiate_error", message: "all node launches/startups failed" };
+    }
+
+    // Emit rig.imported
+    try {
+      this.deps.eventBus.emit({ type: "rig.imported", rigId, specName: rigSpec.name, specVersion: rigSpec.version });
+    } catch { /* best-effort */ }
+
+    return {
+      ok: true,
+      result: { rigId, specName: rigSpec.name, specVersion: rigSpec.version, nodes: nodeResults },
+    };
+  }
+
+  private buildResolvedStartupFiles(
+    agentSpec: { startup: { files: StartupFile[] } },
+    agentSourcePath: string,
+    profile: { startup?: { files: StartupFile[] } } | undefined,
+    rigSpec: PodRigSpec,
+    rigRoot: string,
+    pod: RigSpecPod,
+    member: RigSpecPodMember,
+  ): ResolvedStartupFile[] {
+    const files: ResolvedStartupFile[] = [];
+    const nodePath = require("node:path") as typeof import("node:path");
+
+    // 1. Agent base startup
+    for (const f of agentSpec.startup.files) {
+      files.push({ ...f, absolutePath: nodePath.resolve(agentSourcePath, f.path), ownerRoot: agentSourcePath });
+    }
+    // 2. Profile startup
+    if (profile?.startup) {
+      for (const f of profile.startup.files) {
+        files.push({ ...f, absolutePath: nodePath.resolve(agentSourcePath, f.path), ownerRoot: agentSourcePath });
+      }
+    }
+    // 3. Rig culture file
+    if (rigSpec.cultureFile) {
+      files.push({
+        path: rigSpec.cultureFile,
+        absolutePath: nodePath.resolve(rigRoot, rigSpec.cultureFile),
+        ownerRoot: rigRoot,
+        deliveryHint: "auto",
+        required: true,
+        appliesOn: ["fresh_start", "restore"],
+      });
+    }
+    // 4. Rig startup
+    if (rigSpec.startup) {
+      for (const f of rigSpec.startup.files) {
+        files.push({ ...f, absolutePath: nodePath.resolve(rigRoot, f.path), ownerRoot: rigRoot });
+      }
+    }
+    // 5. Pod startup
+    if (pod.startup) {
+      for (const f of pod.startup.files) {
+        files.push({ ...f, absolutePath: nodePath.resolve(rigRoot, f.path), ownerRoot: rigRoot });
+      }
+    }
+    // 6. Member startup
+    if (member.startup) {
+      for (const f of member.startup.files) {
+        files.push({ ...f, absolutePath: nodePath.resolve(rigRoot, f.path), ownerRoot: rigRoot });
+      }
+    }
+
+    return files;
+  }
+}

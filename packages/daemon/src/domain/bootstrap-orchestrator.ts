@@ -51,6 +51,8 @@ export interface BootstrapResult {
   actionKeys?: string[];
 }
 
+import type { PodRigInstantiator } from "./rigspec-instantiator.js";
+
 interface BootstrapOrchestratorDeps {
   db: Database.Database;
   bootstrapRepo: BootstrapRepository;
@@ -62,6 +64,7 @@ interface BootstrapOrchestratorDeps {
   rigInstantiator: RigInstantiator;
   fsOps: FsOps;
   bundleSourceResolver: BundleSourceResolver | null;
+  podInstantiator?: PodRigInstantiator;
 }
 
 /** Generates a deterministic action key for plan->apply identity */
@@ -145,11 +148,18 @@ export class BootstrapOrchestrator {
         return { runId: run.id, status: "failed", stages, errors, warnings };
       }
     } else {
-      // Direct rig_spec path
+      // Direct rig_spec path — detect format BEFORE legacy validation
       try {
         specDir = nodePath.dirname(nodePath.resolve(sourceRef));
         const rawYaml = this.deps.fsOps.readFile(nodePath.resolve(sourceRef));
-        const raw = RigSpecCodec.parse(rawYaml);
+        const raw = RigSpecCodec.parse(rawYaml) as Record<string, unknown> | null;
+
+        // Pod-aware format detection: if has pods[], delegate to PodRigInstantiator
+        if (raw && Array.isArray(raw["pods"]) && this.deps.podInstantiator) {
+          return this.handlePodAwareSpec(opts, run, rawYaml, specDir, stages, errors, warnings);
+        }
+
+        // Legacy path: validate as flat-node spec
         const validation = RigSpecSchema.validate(raw);
         if (!validation.valid) {
           stages.push({ stage: "resolve_spec", status: "failed", detail: { code: "validation_failed", errors: validation.errors } });
@@ -170,7 +180,7 @@ export class BootstrapOrchestrator {
       }
     }
 
-    // Wrap remaining stages in try/finally for bundle temp cleanup
+    // Wrap remaining stages in try/finally for bundle temp cleanup (legacy path)
     try { return await this.executeStages(opts, run, spec, specDir, bundleSource, stages, errors, warnings, seqCounter); }
     finally { if (bundleTempDir && this.deps.bundleSourceResolver) this.deps.bundleSourceResolver.cleanup(bundleTempDir); }
   }
@@ -478,6 +488,94 @@ export class BootstrapOrchestrator {
       stages,
       rigId: instantiateOutcome.result.rigId,
       errors,
+      warnings,
+    };
+  }
+
+  // -- Pod-aware bootstrap path --
+
+  private async handlePodAwareSpec(
+    opts: BootstrapOptions,
+    run: { id: string },
+    rigSpecYaml: string,
+    specDir: string,
+    stages: BootstrapStageResult[],
+    errors: string[],
+    warnings: string[],
+  ): Promise<BootstrapResult> {
+    const { mode } = opts;
+    const podInstantiator = this.deps.podInstantiator!;
+    const rigRoot = specDir;
+
+    if (mode === "plan") {
+      // Plan mode: validate + preflight only
+      const { rigPreflight } = await import("./rigspec-preflight.js");
+      const { RigSpecCodec: PodCodec } = await import("./rigspec-codec.js");
+      const { RigSpecSchema: PodSchema } = await import("./rigspec-schema.js");
+
+      try {
+        const raw = PodCodec.parse(rigSpecYaml);
+        const validation = PodSchema.validate(raw);
+        if (!validation.valid) {
+          stages.push({ stage: "resolve_spec", status: "failed", detail: { code: "validation_failed", errors: validation.errors } });
+          this.deps.bootstrapRepo.updateRunStatus(run.id, "failed");
+          return { runId: run.id, status: "failed", stages, errors: validation.errors, warnings };
+        }
+        const spec = PodSchema.normalize(raw as Record<string, unknown>);
+        stages.push({ stage: "resolve_spec", status: "ok", detail: { specName: spec.name, specVersion: spec.version } });
+
+        const preflight = rigPreflight({ rigSpecYaml, rigRoot, fsOps: podInstantiator["deps"].fsOps });
+        stages.push({
+          stage: "preflight",
+          status: preflight.ready ? "ok" : "blocked",
+          detail: { errors: preflight.errors, warnings: preflight.warnings },
+        });
+
+        this.deps.bootstrapRepo.updateRunStatus(run.id, preflight.ready ? "planned" : "failed");
+        return {
+          runId: run.id,
+          status: preflight.ready ? "planned" : "failed",
+          stages,
+          errors: preflight.errors,
+          warnings: preflight.warnings,
+        };
+      } catch (err) {
+        stages.push({ stage: "resolve_spec", status: "failed", detail: { error: (err as Error).message } });
+        this.deps.bootstrapRepo.updateRunStatus(run.id, "failed");
+        return { runId: run.id, status: "failed", stages, errors: [(err as Error).message], warnings };
+      }
+    }
+
+    // Apply mode: full instantiation via PodRigInstantiator
+    const outcome = await podInstantiator.instantiate(rigSpecYaml, rigRoot);
+
+    if (!outcome.ok) {
+      const outErrors = outcome.code === "validation_failed" || outcome.code === "preflight_failed"
+        ? (outcome as { errors: string[] }).errors
+        : [(outcome as { message: string }).message];
+      const outWarnings = (outcome as { warnings?: string[] }).warnings ?? [];
+      stages.push({ stage: "import_rig", status: "failed", detail: { code: outcome.code } });
+      this.deps.bootstrapRepo.updateRunStatus(run.id, "failed");
+      return { runId: run.id, status: "failed", stages, errors: outErrors, warnings: outWarnings };
+    }
+
+    const result = outcome.result;
+    const anyFailed = result.nodes.some((n) => n.status === "failed");
+    const finalStatus: BootstrapStatus = anyFailed ? "partial" : "completed";
+
+    stages.push({
+      stage: "import_rig",
+      status: anyFailed ? "failed" : "ok",
+      detail: { rigId: result.rigId, specName: result.specName, nodes: result.nodes },
+    });
+
+    this.deps.bootstrapRepo.updateRunStatus(run.id, finalStatus);
+    return {
+      runId: run.id,
+      status: finalStatus,
+      stages,
+      rigId: result.rigId,
+      errors: result.nodes.filter((n) => n.error).map((n) => n.error!),
       warnings,
     };
   }

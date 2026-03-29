@@ -163,4 +163,37 @@ describe("UpCommandRouter", () => {
     expect(result).toHaveProperty("sourceRef");
     expect(["rig_spec", "rig_bundle"]).toContain(result.sourceKind);
   });
+
+  // AS-T08b: dual-format acceptance — pod-aware rig spec accepted
+  it("routes pod-aware rig spec as rig_spec", () => {
+    const podSpec = `
+version: "0.2"
+name: pod-rig
+pods:
+  - id: dev
+    label: Dev
+    members:
+      - id: impl
+        agent_ref: "local:agents/impl"
+        profile: default
+        runtime: claude-code
+        cwd: .
+    edges: []
+edges: []
+`.trim();
+    const specPath = path.join(tmpDir, "pod-rig.yaml");
+    fs.writeFileSync(specPath, podSpec);
+    const router = new UpCommandRouter({ fsOps: realFsOps() });
+    const result = router.route(specPath);
+    expect(result.sourceKind).toBe("rig_spec");
+  });
+
+  // AS-T08b: legacy rig spec still accepted
+  it("still routes legacy rig spec as rig_spec", () => {
+    const specPath = path.join(tmpDir, "legacy.yaml");
+    fs.writeFileSync(specPath, VALID_SPEC);
+    const router = new UpCommandRouter({ fsOps: realFsOps() });
+    const result = router.route(specPath);
+    expect(result.sourceKind).toBe("rig_spec");
+  });
 });

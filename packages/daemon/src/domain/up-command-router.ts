@@ -1,5 +1,7 @@
-import { LegacyRigSpecCodec as RigSpecCodec } from "./rigspec-codec.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
-import { LegacyRigSpecSchema as RigSpecSchema } from "./rigspec-schema.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
+import { LegacyRigSpecCodec as LegacyCodec } from "./rigspec-codec.js";
+import { LegacyRigSpecSchema as LegacySchema } from "./rigspec-schema.js";
+import { RigSpecCodec as PodCodec } from "./rigspec-codec.js";
+import { RigSpecSchema as PodSchema } from "./rigspec-schema.js";
 
 export type SourceKind = "rig_spec" | "rig_bundle";
 
@@ -50,8 +52,17 @@ export class UpCommandRouter {
   private validateYamlAsRigSpec(sourceRef: string): RouteResult {
     try {
       const content = this.fs.readFile(sourceRef);
-      const raw = RigSpecCodec.parse(content);
-      const validation = RigSpecSchema.validate(raw);
+
+      // Try canonical pod-aware schema first
+      const podRaw = PodCodec.parse(content);
+      const podValidation = PodSchema.validate(podRaw);
+      if (podValidation.valid) {
+        return { sourceKind: "rig_spec", sourceRef };
+      }
+
+      // Fall back to legacy schema
+      const raw = LegacyCodec.parse(content);
+      const validation = LegacySchema.validate(raw);
       if (validation.valid) {
         return { sourceKind: "rig_spec", sourceRef };
       }
@@ -87,12 +98,20 @@ export class UpCommandRouter {
       // Can't read head — try as text
     }
 
-    // Try parsing as YAML and validating as rig spec
+    // Try parsing as YAML and validating as rig spec (canonical first, then legacy)
     try {
       const content = this.fs.readFile(sourceRef);
-      const raw = RigSpecCodec.parse(content);
-      const validation = RigSpecSchema.validate(raw);
 
+      // Try canonical pod-aware
+      const podRaw = PodCodec.parse(content);
+      const podVal = PodSchema.validate(podRaw);
+      if (podVal.valid) {
+        return { sourceKind: "rig_spec", sourceRef };
+      }
+
+      // Try legacy
+      const raw = LegacyCodec.parse(content);
+      const validation = LegacySchema.validate(raw);
       if (validation.valid) {
         return { sourceKind: "rig_spec", sourceRef };
       }

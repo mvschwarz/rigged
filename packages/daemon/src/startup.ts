@@ -172,11 +172,28 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     },
   };
   const bundleSourceResolver = new BundleSourceResolver({ fsOps: resolverFsOps });
+  // Pod-aware instantiator (AgentSpec reboot)
+  const { PodRigInstantiator } = await import("./domain/rigspec-instantiator.js");
+  const { StartupOrchestrator } = await import("./domain/startup-orchestrator.js");
+  const { ClaudeCodeAdapter } = await import("./adapters/claude-code-adapter.js");
+  const { CodexRuntimeAdapter } = await import("./adapters/codex-runtime-adapter.js");
+
+  const startupOrchestrator = new StartupOrchestrator({ db, sessionRegistry, eventBus, tmuxAdapter });
+  const claudeAdapter = new ClaudeCodeAdapter({ tmux: tmuxAdapter, fsOps: { readFile: (p: string) => fs.readFileSync(p, "utf-8"), writeFile: (p: string, c: string) => fs.writeFileSync(p, c, "utf-8"), exists: (p: string) => fs.existsSync(p), mkdirp: (p: string) => fs.mkdirSync(p, { recursive: true }), copyFile: (src: string, dest: string) => fs.copyFileSync(src, dest), listFiles: (dir: string) => { const r: string[] = []; function w(d: string, pre: string) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.isDirectory()) w(nodePath.join(d, e.name), nodePath.join(pre, e.name)); else r.push(pre ? nodePath.join(pre, e.name) : e.name); } } w(dir, ""); return r; } } });
+  const codexAdapter = new CodexRuntimeAdapter({ tmux: tmuxAdapter, fsOps: { readFile: (p: string) => fs.readFileSync(p, "utf-8"), writeFile: (p: string, c: string) => fs.writeFileSync(p, c, "utf-8"), exists: (p: string) => fs.existsSync(p), mkdirp: (p: string) => fs.mkdirSync(p, { recursive: true }), listFiles: (dir: string) => { const r: string[] = []; function w(d: string, pre: string) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.isDirectory()) w(nodePath.join(d, e.name), nodePath.join(pre, e.name)); else r.push(pre ? nodePath.join(pre, e.name) : e.name); } } w(dir, ""); return r; } } });
+
+  const podInstantiator = new PodRigInstantiator({
+    db, rigRepo, podRepo: new (await import("./domain/pod-repository.js")).PodRepository(db),
+    sessionRegistry, eventBus, nodeLauncher, startupOrchestrator,
+    fsOps: { readFile: (p: string) => fs.readFileSync(p, "utf-8"), exists: (p: string) => fs.existsSync(p) },
+    adapters: { "claude-code": claudeAdapter, "codex": codexAdapter },
+  });
+
   const bootstrapOrchestrator = new BootstrapOrchestrator({
     db, bootstrapRepo, runtimeVerifier, probeRegistry,
     installPlanner: externalInstallPlanner, installExecutor: externalInstallExecutor,
     packageInstallService, rigInstantiator, fsOps: resolverFsOps,
-    bundleSourceResolver,
+    bundleSourceResolver, podInstantiator,
   });
 
   // Discovery services

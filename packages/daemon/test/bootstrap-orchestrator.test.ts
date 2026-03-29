@@ -1096,4 +1096,60 @@ exports:
       .get(result.runId) as { source_kind: string };
     expect(run.source_kind).toBe("rig_spec");
   });
+
+  // AS-T08b: pod-aware rig spec delegates to podInstantiator
+  it("pod-aware rig spec delegates to podInstantiator via bootstrap", async () => {
+    const podSpecYaml = `
+version: "0.2"
+name: pod-test-rig
+pods:
+  - id: dev
+    label: Dev
+    members:
+      - id: impl
+        agent_ref: "local:agents/impl"
+        profile: default
+        runtime: claude-code
+        cwd: .
+    edges: []
+edges: []
+`.trim();
+    const specPath = path.join(tmpDir, "pod-spec.yaml");
+    fs.writeFileSync(specPath, podSpecYaml);
+
+    // Mock podInstantiator
+    const mockPodInstantiator = {
+      db,
+      instantiate: vi.fn(async () => ({
+        ok: true as const,
+        result: { rigId: "rig-pod-1", specName: "pod-test-rig", specVersion: "0.2", nodes: [{ logicalId: "dev.impl", status: "launched" as const }] },
+      })),
+    };
+
+    const orch = new BootstrapOrchestrator({
+      db,
+      bootstrapRepo: new BootstrapRepository(db),
+      runtimeVerifier: new RuntimeVerifier({ exec: createMockExec({}), db }),
+      probeRegistry: new RequirementsProbeRegistry(createMockExec({})),
+      installPlanner: new ExternalInstallPlanner(),
+      installExecutor: new ExternalInstallExecutor({ exec: createMockExec({}), db }),
+      packageInstallService: new PackageInstallService({
+        packageRepo: new PackageRepository(db),
+        installRepo: new InstallRepository(db),
+        installEngine: new InstallEngine(new InstallRepository(db), realEngineFsOps()),
+        installVerifier: new InstallVerifier(new InstallRepository(db), new PackageRepository(db), {
+          readFile: (p) => fs.readFileSync(p, "utf-8"), exists: (p) => fs.existsSync(p),
+        }),
+      }),
+      rigInstantiator: createMockInstantiator(db) as any,
+      fsOps: realFsOps(),
+      bundleSourceResolver: null,
+      podInstantiator: mockPodInstantiator as any,
+    });
+
+    const result = await orch.bootstrap({ mode: "apply", sourceRef: specPath, sourceKind: "rig_spec" });
+    expect(result.status).toBe("completed");
+    expect(result.rigId).toBe("rig-pod-1");
+    expect(mockPodInstantiator.instantiate).toHaveBeenCalledTimes(1);
+  });
 });

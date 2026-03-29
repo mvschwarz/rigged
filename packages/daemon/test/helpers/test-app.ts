@@ -42,7 +42,9 @@ import { SnapshotCapture } from "../../src/domain/snapshot-capture.js";
 import { RestoreOrchestrator } from "../../src/domain/restore-orchestrator.js";
 import { RigSpecExporter } from "../../src/domain/rigspec-exporter.js";
 import { RigSpecPreflight } from "../../src/domain/rigspec-preflight.js";
-import { RigInstantiator } from "../../src/domain/rigspec-instantiator.js";
+import { RigInstantiator, PodRigInstantiator } from "../../src/domain/rigspec-instantiator.js";
+import { PodRepository } from "../../src/domain/pod-repository.js";
+import { StartupOrchestrator } from "../../src/domain/startup-orchestrator.js";
 import { ClaudeResumeAdapter } from "../../src/adapters/claude-resume.js";
 import { CodexResumeAdapter } from "../../src/adapters/codex-resume.js";
 import { CmuxAdapter } from "../../src/adapters/cmux.js";
@@ -128,6 +130,22 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
   const externalInstallPlanner = new ExternalInstallPlanner();
   const externalInstallExecutor = new ExternalInstallExecutor({ exec, db });
   const packageInstallService = new PackageInstallService({ packageRepo, installRepo, installEngine, installVerifier });
+  const podRepo = new PodRepository(db);
+  const startupOrchestrator = new StartupOrchestrator({ db, sessionRegistry, eventBus, tmuxAdapter: tmux });
+  const mockAdapter = {
+    runtime: "claude-code",
+    listInstalled: async () => [],
+    project: async () => ({ projected: [], skipped: [], failed: [] }),
+    deliverStartup: async () => ({ delivered: 0, failed: [] }),
+    checkReady: async () => ({ ready: true }),
+  };
+  const podInstantiator = new PodRigInstantiator({
+    db, rigRepo, podRepo, sessionRegistry, eventBus, nodeLauncher,
+    startupOrchestrator,
+    fsOps: { readFile: () => "", exists: () => false },
+    adapters: { "claude-code": mockAdapter, "codex": { ...mockAdapter, runtime: "codex" } },
+  });
+
   const bootstrapOrchestrator = new BootstrapOrchestrator({
     db, bootstrapRepo, runtimeVerifier, probeRegistry,
     installPlanner: externalInstallPlanner, installExecutor: externalInstallExecutor,
@@ -137,6 +155,7 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
       listFiles: () => [],
     },
     bundleSourceResolver: null,
+    podInstantiator,
   });
 
   // Discovery services

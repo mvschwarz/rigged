@@ -2,10 +2,10 @@
 ## AgentSpec Reboot Snapshot (as of 2026-03-29)
 
 Status:
-- Verified in this branch: `@rigged/daemon` passes 1289 tests.
+- Current audited daemon count: 1135 tests across 90 Vitest files.
 - Daemon footprint: 108 source files total, including 65 domain files, 13 route files, 9 adapters, and 15 migrations.
 - CLI footprint: 21 source files.
-- UI footprint: 52 source files.
+- UI footprint: 53 source files including `globals.css` (`52` TypeScript/TSX files plus `1` CSS entrypoint).
 - Reboot status: engine work through AS-T11 plus Checkpoint 2 fixes is landed. AS-T12 route/app reboot is still pending, so the current HTTP surface is hybrid.
 
 Packages: `@rigged/daemon` + `@rigged/cli` + `@rigged/ui`
@@ -134,6 +134,10 @@ These remain from the pre-reboot system:
 
 This table is the bridge between the startup engine and restore replay.
 
+Migration boundary:
+- `014_agentspec_reboot.ts` adds the reboot schema shape: pods, continuity state, node/session/checkpoint reboot columns.
+- `015_startup_context.ts` adds only `node_startup_context`, the persisted startup replay payload used by restore.
+
 ---
 
 ## 3. Rebooted Core Types
@@ -221,10 +225,12 @@ The reboot introduced a second canonical topology and execution vocabulary.
 - Returns `ready` or `failed`.
 
 **SnapshotData**
-- Now includes reboot-specific state:
-  - `pods`
-  - `continuityStates`
-  - `nodeStartupContext`
+- Has optional reboot-specific extensions:
+  - `pods?`
+  - `continuityStates?`
+  - `nodeStartupContext?`
+
+Those fields are optional because restore/snapshot code must still accept legacy snapshots that predate the rebooted capture payload.
 
 **NodeStartupSnapshot**
 - Persisted restore replay input:
@@ -255,6 +261,10 @@ All rebooted services live under `packages/daemon/src/domain/`. They continue th
   - validates startup actions
   - rejects unsupported shell startup actions in v1
   - enforces restore-safety rules for non-idempotent actions
+
+**path-safety.ts**
+- Shared relative-path validation used by AgentSpec, RigSpec, package manifests, and startup config.
+- Centralizes path traversal rejection for user-authored manifest paths.
 
 **spec-validation-service.ts**
 - Pure YAML validation service for:
@@ -412,8 +422,11 @@ The adapter layer grew from tmux/cmux/resume support into a harness-delivery abs
 **codex-runtime-adapter.ts**
 - Runtime adapter for Codex.
 - Preserves existing Codex-facing target conventions:
-  - `.agents/...`
-  - `AGENTS.md`
+  - skills -> `.agents/skills/{id}/`
+  - guidance -> `AGENTS.md`
+  - subagents -> `.agents/{id}.yaml`
+  - hooks -> `.agents/hooks/`
+  - runtime resources -> `.agents/extensions/{id}/`
 
 Current runtime adapters own file projection, startup file delivery, installed-resource listing, and readiness checks.
 They do not execute startup actions directly.
@@ -473,6 +486,18 @@ The current daemon is engine-ready but surface-incomplete:
 
 That mismatch is deliberate temporary debt, not an accident.
 
+### CLI / UI cross-reference
+
+This document focuses on the daemon architecture because that is where the reboot landed.
+
+For file-by-file CLI and UI structure, use:
+- [codemap.md](/Users/mschwarz/code/rigged/docs/as-built/codemap.md)
+
+That codemap is the companion artifact for:
+- CLI command/module layout
+- UI route tree, shell, hooks, and component inventory
+- exact source-file entrypoints across all three packages
+
 ---
 
 ## 8. Startup / Restore Rules
@@ -531,8 +556,26 @@ Restore replay uses persisted startup context:
 - startup actions
 - runtime
 
+“Classification-free projection intent” is concrete:
+- restore persists only the projection entry identity and source metadata:
+  - category
+  - effective id
+  - source spec
+  - source/resource paths
+  - absolute source path
+  - merge target / strategy
+- restore does **not** persist `classification`, `conflicts`, or `noOps`
+- on replay, every surviving entry is treated as projectable intent and the runtime adapter re-applies its own idempotency checks against the live filesystem
+
 Missing optional artifacts become warnings.
 Missing required startup files fail that node before startup replay begins.
+
+### Session recency rule
+
+Newest-session restore depends on monotonic ULIDs:
+- `session-registry.ts` uses `monotonicFactory()` from `ulid`
+- restore chooses the newest session by max ULID, not by second-resolution `created_at` alone
+- this avoids restore selecting the wrong session when multiple sessions are created within the same timestamp bucket
 
 ---
 
@@ -557,12 +600,14 @@ Missing required startup files fail that node before startup replay begins.
 
 The event union now includes reboot-specific signals in addition to the earlier rig/package/bootstrap/discovery events.
 
-New reboot-era events include:
-- `pod.created`
-- `pod.deleted`
+Reboot-era events currently emitted in production code:
 - `node.startup_pending`
 - `node.startup_ready`
 - `node.startup_failed`
+
+Reboot-era events present in the `RigEvent` union but not yet emitted by production code:
+- `pod.created`
+- `pod.deleted`
 - `continuity.sync`
 - `continuity.degraded`
 
@@ -592,10 +637,10 @@ Important current limitation:
 
 ## 12. Test Infrastructure
 
-### Verified in this branch
+### Audited in this branch
 
 **Daemon**
-- 1289 tests passing.
+- 1135 tests across 90 Vitest files.
 - 90 test files in `packages/daemon/test`.
 
 ### Reboot-heavy test areas now present
@@ -619,7 +664,7 @@ Important current limitation:
 ### Notes
 
 - The daemon test count has materially grown since the pre-reboot as-built.
-- This document refresh re-audited daemon counts only; CLI/UI counts were not re-run as part of this doc-only update.
+- CLI and UI file structure are tracked in [codemap.md](/Users/mschwarz/code/rigged/docs/as-built/codemap.md); this refresh did not re-audit a separate CLI/UI test total.
 
 ---
 

@@ -1,0 +1,239 @@
+# Rigged Source Codemap
+
+Source-driven map of every file under `packages/daemon/src`, `packages/cli/src`, and `packages/ui/src` at current `HEAD`.
+
+How to use this doc:
+- `Exports` lists the public symbols defined by the file.
+- `Related` lists the file's primary local outgoing dependencies so you can follow the code path quickly.
+- The package/area groupings are structural, not ownership metadata.
+
+Fast lookup:
+- Daemon app wiring and mounted HTTP surface: `packages/daemon/src/startup.ts`, `packages/daemon/src/server.ts`, `packages/daemon/src/routes/*`
+- AgentSpec / pod-aware engine: `packages/daemon/src/domain/agent-*`, `profile-resolver.ts`, `projection-planner.ts`, `startup-*`, `rigspec-*`, `pod-repository.ts`
+- Snapshot / restore / continuity: `packages/daemon/src/domain/snapshot-*`, `checkpoint-store.ts`, `restore-orchestrator.ts`
+- Package / bootstrap / bundle flows: `packages/daemon/src/domain/package-*`, `install-*`, `bootstrap-*`, `bundle-*`
+- CLI command surface: `packages/cli/src/index.ts`, `packages/cli/src/commands/*`
+- UI route tree and shell: `packages/ui/src/routes.tsx`, `packages/ui/src/App.tsx`, `packages/ui/src/components/AppShell.tsx`
+- UI data layer: `packages/ui/src/hooks/*`
+
+## Daemon
+
+### Entrypoints And Wiring
+- `packages/daemon/src/index.ts`: CLI entrypoint for starting the daemon HTTP server. Exports: startServer. Related: `packages/daemon/src/startup.js`.
+- `packages/daemon/src/seed.ts`: Development/test seed entrypoint for populating sample daemon state. Exports: none. Related: `packages/daemon/src/db/connection.js`, `packages/daemon/src/db/migrate.js`, `packages/daemon/src/db/migrations/001_core_schema.js`, `packages/daemon/src/db/migrations/002_bindings_sessions.js`, +3 more.
+- `packages/daemon/src/server.ts`: Defines `AppDeps` and mounts the Hono route tree with shared dependency injection. Exports: AppDeps, createApp. Related: `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/bootstrap-orchestrator.js`, `packages/daemon/src/domain/bootstrap-repository.js`, +33 more.
+- `packages/daemon/src/startup.ts`: Constructs the daemon dependency graph, runs migrations, and returns `{ app, db, deps }`. Exports: createDaemon. Related: `packages/daemon/src/adapters/claude-resume.js`, `packages/daemon/src/adapters/cmux-transport.js`, `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/adapters/codex-resume.js`, +53 more.
+
+### Adapters
+- `packages/daemon/src/adapters/claude-code-adapter.ts`: Adapter implementation for claude code integration. Exports: ClaudeAdapterFsOps, ClaudeCodeAdapter. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/projection-planner.js`, `packages/daemon/src/domain/runtime-adapter.js`.
+- `packages/daemon/src/adapters/claude-resume.ts`: Resume adapter for claude sessions. Exports: ClaudeResumeAdapter, ResumeResult. Related: `packages/daemon/src/adapters/shell-quote.js`, `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/adapters/cmux-transport.ts`: Adapter/util module for cmux transport integration. Exports: createCmuxCliTransport. Related: `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/adapters/cmux.ts`: Adapter/util module for cmux integration. Exports: CmuxAdapter, CmuxResult, CmuxStatus, CmuxSurface, CmuxTransport, CmuxTransportFactory, CmuxWorkspace. Related: none.
+- `packages/daemon/src/adapters/codex-resume.ts`: Resume adapter for codex sessions. Exports: CodexResumeAdapter, ResumeResult. Related: `packages/daemon/src/adapters/claude-resume.js`, `packages/daemon/src/adapters/shell-quote.js`, `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/adapters/codex-runtime-adapter.ts`: Adapter implementation for codex runtime integration. Exports: CodexAdapterFsOps, CodexRuntimeAdapter. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/projection-planner.js`, `packages/daemon/src/domain/runtime-adapter.js`.
+- `packages/daemon/src/adapters/shell-quote.ts`: Adapter/util module for shell quote integration. Exports: shellQuote. Related: none.
+- `packages/daemon/src/adapters/tmux-exec.ts`: Adapter/util module for tmux exec integration. Exports: execCommand. Related: `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/adapters/tmux.ts`: Adapter/util module for tmux integration. Exports: ExecFn, TmuxAdapter, TmuxPane, TmuxResult, TmuxSession, TmuxWindow. Related: none.
+
+### DB Core
+- `packages/daemon/src/db/connection.ts`: Creates the SQLite connection with daemon-wide pragmas. Exports: createDb. Related: none.
+- `packages/daemon/src/db/migrate.ts`: Migration runner and `Migration` type shared by all schema files. Exports: Migration, migrate. Related: none.
+
+### DB Migrations
+- `packages/daemon/src/db/migrations/001_core_schema.ts`: Database migration for core schema. Exports: coreSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/002_bindings_sessions.ts`: Database migration for bindings sessions. Exports: bindingsSessionsSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/003_events.ts`: Database migration for events. Exports: eventsSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/004_snapshots.ts`: Database migration for snapshots. Exports: snapshotsSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/005_checkpoints.ts`: Database migration for checkpoints. Exports: checkpointsSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/006_resume_metadata.ts`: Database migration for resume metadata. Exports: resumeMetadataSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/007_node_spec_fields.ts`: Database migration for node spec fields. Exports: nodeSpecFieldsSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/008_packages.ts`: Database migration for packages. Exports: packagesSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/009_install_journal.ts`: Database migration for install journal. Exports: installJournalSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/010_journal_seq.ts`: Database migration for journal seq. Exports: journalSeqSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/011_bootstrap.ts`: Database migration for bootstrap. Exports: bootstrapSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/012_discovery.ts`: Database migration for discovery. Exports: discoverySchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/013_discovery_fk_fix.ts`: Database migration for discovery fk fix. Exports: discoveryFkFix. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/014_agentspec_reboot.ts`: Database migration for agentspec reboot. Exports: agentspecRebootSchema. Related: `packages/daemon/src/db/migrate.js`.
+- `packages/daemon/src/db/migrations/015_startup_context.ts`: Database migration for startup context. Exports: startupContextSchema. Related: `packages/daemon/src/db/migrate.js`.
+
+### Domain: Core Runtime
+- `packages/daemon/src/domain/errors.ts`: Domain-specific error types, currently including `RigNotFoundError`. Exports: RigNotFoundError. Related: none.
+- `packages/daemon/src/domain/event-bus.ts`: Persistent event log plus in-process pub/sub for routes, SSE, and domain emitters. Exports: EventBus. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/graph-projection.ts`: Pure projection from persisted rig/session state to React Flow graph nodes and edges. Exports: ReactFlowGraph, RigGraphInput, projectRigToGraph. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/node-launcher.ts`: Atomic node launch service that creates tmux, session rows, bindings, and launch events together. Exports: LaunchResult, NodeLauncher. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/rig-repository.js`, `packages/daemon/src/domain/session-name.js`, +2 more.
+- `packages/daemon/src/domain/ps-projection.ts`: Builds the `/api/ps` summary view over rigs, nodes, sessions, and latest snapshots. Exports: PsEntry, PsProjectionService. Related: none.
+- `packages/daemon/src/domain/reconciler.ts`: Marks missing tmux sessions as detached and keeps persisted session state aligned with reality. Exports: ReconcileResult, Reconciler. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/session-registry.js`.
+- `packages/daemon/src/domain/rig-repository.ts`: SQLite-backed repository for rig, node, and edge state. Exports: RigRepository. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/rig-teardown.ts`: Graceful rig shutdown/delete orchestrator used by `/api/down`. Exports: RigTeardownOrchestrator, TeardownResult. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/rig-repository.js`, +2 more.
+- `packages/daemon/src/domain/session-name.ts`: Tmux session-name derivation and validation helpers. Exports: deriveSessionName, validateSessionName. Related: none.
+- `packages/daemon/src/domain/session-registry.ts`: Session and binding lifecycle repository, including claimed-session registration and startup-status updates. Exports: SessionRegistry. Related: `packages/daemon/src/domain/session-name.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/types.ts`: Canonical daemon type layer for entities, events, legacy rig specs, rebooted RigSpec/AgentSpec topology, startup, snapshots, and restore. Exports: AgentResources, AgentSpec, Binding, Checkpoint, ContinuityPolicySpec, ContinuityState, Edge, GuidanceResource, HookResource, ImportSpec, InstantiateOutcome, InstantiateResult, LegacyRigSpec, LegacyRigSpecEdge, LegacyRigSpecNode, LifecycleDefaults, Node, NodeStartupSnapshot, NodeWithBinding, PersistedEvent, PersistedProjectionEntry, Pod, PreflightResult, ProfileSpec, RestoreNodeResult, RestoreOutcome, RestoreResult, Rig, RigEvent, RigSpec, RigSpecCrossPodEdge, RigSpecPod, RigSpecPodEdge, RigSpecPodMember, RigWithRelations, RuntimeResource, Session, SkillResource, Snapshot, SnapshotData, StartupAction, StartupBlock, StartupFile, SubagentResource, ValidationResult. Related: none.
+- `packages/daemon/src/domain/up-command-router.ts`: Source router that classifies a path as a rig spec or rig bundle before bootstrap. Exports: RouteResult, SourceKind, UpCommandRouter. Related: `packages/daemon/src/domain/rigspec-codec.js`, `packages/daemon/src/domain/rigspec-schema.js`.
+
+### Domain: Specs, Resolution, Startup
+- `packages/daemon/src/domain/agent-manifest.ts`: Canonical `agent.yaml` parser, validator, and normalizer for AgentSpec files. Exports: normalizeAgentSpec, parseAgentSpec, validateAgentSpec. Related: `packages/daemon/src/domain/path-safety.js`, `packages/daemon/src/domain/startup-validation.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/agent-preflight.ts`: Lightweight preflight for a single `agent_ref`, used before full rig instantiation. Exports: agentPreflight. Related: `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/agent-resolver.ts`: Resolves `agent_ref` roots, imported AgentSpecs, and cross-spec resource-collision metadata. Exports: AgentResolverFsOps, ResolveResult, ResolvedAgentSpec, ResourceCollision, resolveAgentRef, resolveImports. Related: `packages/daemon/src/domain/agent-manifest.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/pod-repository.ts`: SQLite-backed repository for pods and live continuity-state rows. Exports: PodRepository. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/profile-resolver.ts`: Applies AgentSpec defaults, profile uses, startup layering, and restore-policy narrowing to produce a `ResolvedNodeConfig`. Exports: QualifiedResource, ResolutionContext, ResolutionResult, ResolvedNodeConfig, ResolvedResources, resolveNodeConfig. Related: `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/startup-resolver.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/projection-planner.ts`: Converts resolved node config plus collision data into runtime projection entries, diagnostics, conflicts, and no-ops. Exports: PlanResult, ProjectionClassification, ProjectionEntry, ProjectionFsOps, ProjectionInput, ProjectionPlan, planProjection. Related: `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/conflict-detector.js`, `packages/daemon/src/domain/profile-resolver.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/rigspec-codec.ts`: YAML codec layer for both legacy flat-node RigSpec and rebooted pod-aware RigSpec shapes. Exports: LegacyRigSpecCodec, RigSpecCodec. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/rigspec-exporter.ts`: Exports live rigs back into legacy RigSpec YAML/JSON. Exports: RigSpecExporter. Related: `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/rig-repository.js`, `packages/daemon/src/domain/session-registry.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/rigspec-instantiator.ts`: Dual-stack instantiation layer containing both legacy `RigInstantiator` and rebooted `PodRigInstantiator`. Exports: PodRigInstantiator, RigInstantiator. Related: `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/node-launcher.js`, `packages/daemon/src/domain/pod-repository.js`, +10 more.
+- `packages/daemon/src/domain/rigspec-preflight.ts`: Dual-stack preflight layer: legacy `RigSpecPreflight` plus rebooted pure `rigPreflight`. Exports: RigPreflightInput, RigSpecPreflight, rigPreflight. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/profile-resolver.js`, `packages/daemon/src/domain/rig-repository.js`, +4 more.
+- `packages/daemon/src/domain/rigspec-schema.ts`: Validation and normalization for both legacy and rebooted RigSpec schemas. Exports: LegacyRigSpecSchema, RigSpecSchema. Related: `packages/daemon/src/domain/path-safety.js`, `packages/daemon/src/domain/startup-validation.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/runtime-adapter.ts`: Runtime-adapter contract plus bridge types used by startup orchestration and runtime-specific adapters. Exports: InstalledResource, NodeBinding, ProjectionResult, ReadinessResult, ResolvedStartupFile, RuntimeAdapter, StartupDeliveryResult. Related: `packages/daemon/src/domain/projection-planner.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/spec-validation-service.ts`: Pure validation helpers for raw AgentSpec and RigSpec YAML strings. Exports: validateAgentSpecFromYaml, validateRigSpecFromYaml. Related: `packages/daemon/src/domain/agent-manifest.js`, `packages/daemon/src/domain/rigspec-codec.js`, `packages/daemon/src/domain/rigspec-schema.js`.
+- `packages/daemon/src/domain/startup-orchestrator.ts`: Startup execution engine for projection, startup-file delivery, action execution, readiness, and persisted replay context. Exports: StartupInput, StartupOrchestrator, StartupResult. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/projection-planner.js`, `packages/daemon/src/domain/runtime-adapter.js`, +2 more.
+- `packages/daemon/src/domain/startup-resolver.ts`: Pure additive startup-layer merge function across agent, profile, rig, pod, member, and operator layers. Exports: StartupLayerInputs, resolveStartup. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/startup-validation.ts`: Shared validation and normalization for startup files and startup actions. Exports: normalizeStartupBlock, validateStartupAction, validateStartupBlock, validateStartupFile. Related: `packages/daemon/src/domain/path-safety.js`, `packages/daemon/src/domain/types.js`.
+
+### Domain: Snapshots And Restore
+- `packages/daemon/src/domain/checkpoint-store.ts`: Checkpoint persistence, lookup, and rig-wide checkpoint aggregation. Exports: CheckpointStore. Related: `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/domain/restore-orchestrator.ts`: Restore pipeline for relaunch, resume, checkpoint delivery, startup replay, and topology ordering. Exports: RestoreOrchestrator. Related: `packages/daemon/src/adapters/claude-resume.js`, `packages/daemon/src/adapters/codex-resume.js`, `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/checkpoint-store.js`, +7 more.
+- `packages/daemon/src/domain/snapshot-capture.ts`: Captures a consistent snapshot of rig topology, sessions, checkpoints, pods, continuity state, and startup context. Exports: SnapshotCapture. Related: `packages/daemon/src/domain/checkpoint-store.js`, `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/rig-repository.js`, +3 more.
+- `packages/daemon/src/domain/snapshot-repository.ts`: SQLite-backed repository for snapshot CRUD and listing. Exports: SnapshotRepository. Related: `packages/daemon/src/domain/types.js`.
+
+### Domain: Packages And Install Engine
+- `packages/daemon/src/domain/conflict-detector.ts`: Content-aware conflict classification shared by package installs and rebooted projection planning. Exports: GuidanceConflictMeta, RefinedInstallPlan, classifyResourceProjection, detectConflicts. Related: `packages/daemon/src/domain/install-planner.js`, `packages/daemon/src/domain/package-resolver.js`, `packages/daemon/src/domain/projection-planner.js`.
+- `packages/daemon/src/domain/install-engine.ts`: Journaled apply/rollback engine for package installs. Exports: EngineFsOps, InstallEngine, InstallResult, RollbackResult. Related: `packages/daemon/src/domain/conflict-detector.js`, `packages/daemon/src/domain/install-planner.js`, `packages/daemon/src/domain/install-policy.js`, `packages/daemon/src/domain/install-repository.js`.
+- `packages/daemon/src/domain/install-planner.ts`: Computes classified package install entries and target paths. Exports: ActionClassification, ConflictInfo, InstallPlan, InstallPlanEntry, InstallPlanner, PlanOptions. Related: `packages/daemon/src/domain/package-resolver.js`, `packages/daemon/src/domain/role-resolver.js`.
+- `packages/daemon/src/domain/install-policy.ts`: Approval-policy gate for package install plans. Exports: PolicyRejection, PolicyResult, applyPolicy. Related: `packages/daemon/src/domain/conflict-detector.js`, `packages/daemon/src/domain/install-planner.js`.
+- `packages/daemon/src/domain/install-repository.ts`: SQLite-backed repository for package install records and journal entries. Exports: Install, InstallRepository, InstallSummary, JournalEntry. Related: none.
+- `packages/daemon/src/domain/install-verifier.ts`: Post-apply verification for install records and filesystem targets. Exports: Check, EntryVerification, InstallVerifier, VerificationResult, VerifierFsOps. Related: `packages/daemon/src/domain/install-repository.js`, `packages/daemon/src/domain/package-repository.js`.
+- `packages/daemon/src/domain/package-install-service.ts`: Top-level package validate/plan/install/rollback service used by routes and bootstrap. Exports: PackageInstallOutcome, PackageInstallService. Related: `packages/daemon/src/domain/conflict-detector.js`, `packages/daemon/src/domain/install-engine.js`, `packages/daemon/src/domain/install-planner.js`, `packages/daemon/src/domain/install-policy.js`, +4 more.
+- `packages/daemon/src/domain/package-manifest.ts`: Parser and validator for `package.yaml` manifests. Exports: AgentExport, GuidanceExport, HookExport, InstallPolicy, McpExport, PackageExports, PackageManifest, PackageRequirements, RoleDefinition, SkillExport, ValidationResult, VerificationCheck, VerificationConfig, normalizeManifest, parseManifest, serializeManifest, validateManifest. Related: none.
+- `packages/daemon/src/domain/package-repository.ts`: SQLite-backed repository for package metadata and install summaries. Exports: Package, PackageRepository, PackageSummary. Related: none.
+- `packages/daemon/src/domain/package-resolve-helper.ts`: Shared helper that wraps package resolution for routes and orchestrators. Exports: ResolveResult, resolvePackage. Related: `packages/daemon/src/domain/package-manifest.js`, `packages/daemon/src/domain/package-resolver.js`.
+- `packages/daemon/src/domain/package-resolver.ts`: Resolves local package sources and computes manifest hashes. Exports: FsOps, PackageResolver, ResolvedPackage. Related: `packages/daemon/src/domain/package-manifest.js`.
+- `packages/daemon/src/domain/path-safety.ts`: Shared safe-path validator used by manifests and startup config. Exports: validateSafePath. Related: none.
+- `packages/daemon/src/domain/role-resolver.ts`: Filters package exports according to selected roles/runtime scope. Exports: DeferredExport, ResolvedExports, resolveExports. Related: `packages/daemon/src/domain/package-manifest.js`.
+
+### Domain: Bootstrap, Discovery, Bundles
+- `packages/daemon/src/domain/bootstrap-orchestrator.ts`: Staged bootstrap workflow that composes runtime verification, requirement probes, external installs, package installs, and rig instantiation. Exports: BootstrapMode, BootstrapOptions, BootstrapOrchestrator, BootstrapResult, BootstrapStageResult. Related: `packages/daemon/src/domain/bootstrap-repository.js`, `packages/daemon/src/domain/bootstrap-types.js`, `packages/daemon/src/domain/bundle-source-resolver.js`, `packages/daemon/src/domain/external-install-executor.js`, +10 more.
+- `packages/daemon/src/domain/bootstrap-repository.ts`: SQLite-backed repository for bootstrap runs and action journals. Exports: BootstrapRepository. Related: `packages/daemon/src/domain/bootstrap-types.js`.
+- `packages/daemon/src/domain/bootstrap-types.ts`: Shared type definitions for bootstrap data. Exports: ActionKind, ActionStatus, BootstrapAction, BootstrapRun, BootstrapStatus, RuntimeStatus, RuntimeVerification. Related: none.
+- `packages/daemon/src/domain/bundle-archive.ts`: Archive pack/unpack and digest verification for `.rigbundle` files. Exports: pack, unpack, verifyArchiveDigest. Related: `packages/daemon/src/domain/bundle-integrity.js`, `packages/daemon/src/domain/bundle-types.js`.
+- `packages/daemon/src/domain/bundle-assembler.ts`: Legacy rig-bundle assembler for package-based bundles. Exports: AssembleOptions, AssemblerFsOps, LegacyBundleAssembler, PackageInput. Related: `packages/daemon/src/domain/bundle-types.js`, `packages/daemon/src/domain/rigspec-codec.js`, `packages/daemon/src/domain/rigspec-schema.js`.
+- `packages/daemon/src/domain/bundle-integrity.ts`: Per-file integrity manifest generation and verification for bundles. Exports: IntegrityFsOps, VerifyResult, computeIntegrity, verifyIntegrity, writeIntegrity. Related: `packages/daemon/src/domain/bundle-types.js`.
+- `packages/daemon/src/domain/bundle-source-resolver.ts`: Dual-stack bundle resolver containing legacy package-bundle and rebooted pod-bundle extraction flows. Exports: BundleResolvedSource, LegacyBundleSourceResolver, PodBundleResolvedSource, PodBundleSourceResolver. Related: `packages/daemon/src/domain/bundle-archive.js`, `packages/daemon/src/domain/bundle-types.js`, `packages/daemon/src/domain/package-resolve-helper.js`, `packages/daemon/src/domain/package-resolver.js`.
+- `packages/daemon/src/domain/bundle-types.ts`: Bundle manifest types plus parse/validate/serialize helpers for schema v1 and schema v2 bundles. Exports: BundleIntegrity, LegacyBundleManifest, LegacyBundlePackageEntry, PodBundleAgentEntry, PodBundleAgentImportEntry, PodBundleManifest, isRelativeSafePath, normalizeLegacyBundleManifest, parseLegacyBundleManifest, parsePodBundleManifest, serializeLegacyBundleManifest, serializePodBundleManifest, validateLegacyBundleManifest, validatePodBundleManifest. Related: none.
+- `packages/daemon/src/domain/claim-service.ts`: Claims discovered sessions into managed rig/node state. Exports: ClaimResult, ClaimService. Related: `packages/daemon/src/domain/discovery-repository.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/rig-repository.js`, `packages/daemon/src/domain/session-registry.js`.
+- `packages/daemon/src/domain/discovery-coordinator.ts`: Coordinates tmux scans, fingerprinting, enrichment, persistence, and event emission for discovery. Exports: DiscoveryCoordinator. Related: `packages/daemon/src/domain/discovery-repository.js`, `packages/daemon/src/domain/discovery-types.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/session-enricher.js`, +3 more.
+- `packages/daemon/src/domain/discovery-repository.ts`: SQLite-backed repository for discovered session records. Exports: DiscoveryRepository, UpsertData. Related: `packages/daemon/src/domain/discovery-types.js`.
+- `packages/daemon/src/domain/discovery-types.ts`: Shared type definitions for discovery data. Exports: Confidence, DiscoveredSession, DiscoveryStatus, RuntimeHint, SessionOrigin. Related: none.
+- `packages/daemon/src/domain/external-install-executor.ts`: Runs approved external install actions and journals execution results. Exports: ExecutionResult, ExecutionSummary, ExternalInstallExecutor, TaggedAction. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/external-install-planner.js`.
+- `packages/daemon/src/domain/external-install-planner.ts`: Turns requirement-probe results into auto-approvable or manual external install actions. Exports: ApprovalClassification, ExternalInstallAction, ExternalInstallPlan, ExternalInstallPlanner. Related: `packages/daemon/src/adapters/shell-quote.js`, `packages/daemon/src/domain/requirements-probe.js`.
+- `packages/daemon/src/domain/pod-bundle-assembler.ts`: Rebooted bundle assembler that vendors AgentSpecs, imports, rig startup files, and rewritten `agent_ref`s. Exports: PodAssembleOptions, PodAssembleResult, PodAssemblerFsOps, PodBundleAssembler. Related: `packages/daemon/src/domain/agent-resolver.js`, `packages/daemon/src/domain/bundle-types.js`, `packages/daemon/src/domain/rigspec-codec.js`, `packages/daemon/src/domain/rigspec-schema.js`, +1 more.
+- `packages/daemon/src/domain/requirements-probe.ts`: Requirement-probe registry and probe result types used during bootstrap. Exports: ProbeResult, ProbeStatus, RequirementSpec, RequirementsProbeRegistry. Related: `packages/daemon/src/adapters/shell-quote.js`, `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/domain/runtime-verifier.ts`: Verifies runtime/tool availability and persists verification results. Exports: RuntimeVerifier. Related: `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/bootstrap-types.js`.
+- `packages/daemon/src/domain/session-enricher.ts`: Adds repository/config hints to discovered sessions based on filesystem inspection. Exports: EnrichmentResult, SessionEnricher. Related: none.
+- `packages/daemon/src/domain/session-fingerprinter.ts`: Infers runtime/session identity from tmux, cmux, process, and pane evidence. Exports: FingerprintEvidence, FingerprintResult, SessionFingerprinter. Related: `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/adapters/tmux.js`, `packages/daemon/src/domain/discovery-types.js`, `packages/daemon/src/domain/tmux-discovery-scanner.js`.
+- `packages/daemon/src/domain/tmux-discovery-scanner.ts`: Low-level tmux scanner that enumerates panes/sessions for discovery. Exports: ScanResult, ScannedPane, TmuxDiscoveryScanner. Related: `packages/daemon/src/adapters/tmux.js`.
+
+### Routes
+- `packages/daemon/src/routes/adapters.ts`: Hono route module for adapters API endpoints. Exports: adaptersRoutes. Related: `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/adapters/tmux.js`.
+- `packages/daemon/src/routes/bootstrap.ts`: Hono route module for bootstrap API endpoints. Exports: bootstrapRoutes. Related: `packages/daemon/src/domain/bootstrap-orchestrator.js`, `packages/daemon/src/domain/bootstrap-repository.js`, `packages/daemon/src/domain/event-bus.js`.
+- `packages/daemon/src/routes/bundles.ts`: Hono route module for bundles API endpoints. Exports: bundleRoutes. Related: `packages/daemon/src/domain/bootstrap-orchestrator.js`, `packages/daemon/src/domain/bootstrap-repository.js`, `packages/daemon/src/domain/bundle-archive.js`, `packages/daemon/src/domain/bundle-assembler.js`, +7 more.
+- `packages/daemon/src/routes/discovery.ts`: Hono route module for discovery API endpoints. Exports: discoveryRoutes. Related: `packages/daemon/src/domain/claim-service.js`, `packages/daemon/src/domain/discovery-coordinator.js`, `packages/daemon/src/domain/discovery-repository.js`.
+- `packages/daemon/src/routes/down.ts`: Hono route module for down API endpoints. Exports: downRoutes. Related: `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/rig-teardown.js`.
+- `packages/daemon/src/routes/events.ts`: Hono route module for events API endpoints. Exports: eventsRoute. Related: `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/types.js`.
+- `packages/daemon/src/routes/packages.ts`: Hono route module for packages API endpoints. Exports: packagesRoutes. Related: `packages/daemon/src/domain/conflict-detector.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/install-engine.js`, `packages/daemon/src/domain/install-planner.js`, +6 more.
+- `packages/daemon/src/routes/ps.ts`: Hono route module for ps API endpoints. Exports: psRoutes. Related: `packages/daemon/src/domain/ps-projection.js`.
+- `packages/daemon/src/routes/rigs.ts`: Hono route module for rigs API endpoints. Exports: rigsRoutes. Related: `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/graph-projection.js`, `packages/daemon/src/domain/rig-repository.js`, `packages/daemon/src/domain/session-registry.js`.
+- `packages/daemon/src/routes/rigspec.ts`: Hono route module for rigspec API endpoints. Exports: handleExportJson, handleExportYaml, rigspecImportRoutes. Related: `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/rigspec-codec.js`, `packages/daemon/src/domain/rigspec-exporter.js`, `packages/daemon/src/domain/rigspec-instantiator.js`, +2 more.
+- `packages/daemon/src/routes/sessions.ts`: Hono route module for sessions API endpoints. Exports: nodesRoutes, sessionsRoutes. Related: `packages/daemon/src/adapters/cmux.js`, `packages/daemon/src/domain/node-launcher.js`, `packages/daemon/src/domain/rig-repository.js`, `packages/daemon/src/domain/session-registry.js`.
+- `packages/daemon/src/routes/snapshots.ts`: Hono route module for snapshots API endpoints. Exports: restoreRoutes, snapshotsRoutes. Related: `packages/daemon/src/domain/errors.js`, `packages/daemon/src/domain/restore-orchestrator.js`, `packages/daemon/src/domain/snapshot-capture.js`, `packages/daemon/src/domain/snapshot-repository.js`.
+- `packages/daemon/src/routes/up.ts`: Hono route module for up API endpoints. Exports: upRoutes. Related: `packages/daemon/src/domain/bootstrap-orchestrator.js`, `packages/daemon/src/domain/bootstrap-repository.js`, `packages/daemon/src/domain/event-bus.js`, `packages/daemon/src/domain/up-command-router.js`.
+
+## CLI
+
+### Entrypoints And Infrastructure
+- `packages/cli/src/client.ts`: Shared HTTP client for talking to the daemon API. Exports: DaemonClient, DaemonConnectionError, DaemonResponse. Related: none.
+- `packages/cli/src/daemon-lifecycle.ts`: Starts, stops, inspects, and tails the local daemon process. Exports: DaemonState, DaemonStatus, LOG_FILE, LifecycleDeps, RIGGED_DIR, STATE_FILE, StartOptions, getDaemonPath, getDaemonStatus, readLogs, startDaemon, stopDaemon, tailLogs. Related: none.
+- `packages/cli/src/index.ts`: Commander entrypoint that assembles the full `rigged` CLI program. Exports: ProgramDeps, createProgram. Related: `packages/cli/src/commands/bootstrap.js`, `packages/cli/src/commands/bundle.js`, `packages/cli/src/commands/claim.js`, `packages/cli/src/commands/daemon.js`, +14 more.
+- `packages/cli/src/mcp-server.ts`: Implements the CLI-hosted MCP server over stdio. Exports: createMcpServer. Related: `packages/cli/src/client.js`.
+
+### Commands
+- `packages/cli/src/commands/bootstrap.ts`: Commander command module for `bootstrap`. Exports: bootstrapCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/bundle.ts`: Commander command module for `bundle`. Exports: bundleCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/claim.ts`: Commander command module for `claim`. Exports: claimCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/daemon.ts`: Commander command module for `daemon`. Exports: daemonCommand, realDeps. Related: `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/discover.ts`: Commander command module for `discover`. Exports: discoverCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/down.ts`: Commander command module for `down`. Exports: downCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/export.ts`: Commander command module for `export`. Exports: ExportDeps, exportCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/import.ts`: Commander command module for `import`. Exports: ImportDeps, importCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/mcp.ts`: Commander command module for `mcp`. Exports: mcpCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`, +1 more.
+- `packages/cli/src/commands/package.ts`: Commander command module for `package`. Exports: packageCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/ps.ts`: Commander command module for `ps`. Exports: psCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/requirements.ts`: Commander command module for `requirements`. Exports: requirementsCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/restore.ts`: Commander command module for `restore`. Exports: restoreCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/snapshot.ts`: Commander command module for `snapshot`. Exports: snapshotCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/status.ts`: Commander command module for `status`. Exports: StatusDeps, statusCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/ui.ts`: Commander command module for `ui`. Exports: UiDeps, uiCommand. Related: `packages/cli/src/commands/daemon.js`, `packages/cli/src/daemon-lifecycle.js`.
+- `packages/cli/src/commands/up.ts`: Commander command module for `up`. Exports: upCommand. Related: `packages/cli/src/client.js`, `packages/cli/src/commands/daemon.js`, `packages/cli/src/commands/status.js`, `packages/cli/src/daemon-lifecycle.js`.
+
+## UI
+
+### App Entry And Routing
+- `packages/ui/src/App.tsx`: Thin app wrapper that renders the TanStack Router provider. Exports: App. Related: `packages/ui/src/routes.js`.
+- `packages/ui/src/globals.css`: Tailwind/theme tokens and global UI styling. Exports: none. Related: none.
+- `packages/ui/src/main.tsx`: Bootstraps the React app, fonts, and global styles. Exports: none. Related: `packages/ui/src/App.js`, `packages/ui/src/globals.css`.
+- `packages/ui/src/routes.tsx`: Declares the full UI route tree and root shell composition. Exports: router. Related: `packages/ui/src/components/AppShell.js`, `packages/ui/src/components/BootstrapWizard.js`, `packages/ui/src/components/BundleInspector.js`, `packages/ui/src/components/BundleInstallFlow.js`, +9 more.
+
+### Components: Application Surfaces
+- `packages/ui/src/components/ActivityFeed.tsx`: Rolling global activity/event overlay driven by SSE. Exports: ActivityFeed. Related: `packages/ui/src/hooks/useActivityFeed.js`.
+- `packages/ui/src/components/AppShell.tsx`: Persistent UI frame that composes sidebar, status bar, and activity feed around routed content. Exports: AppShell. Related: `packages/ui/src/components/ActivityFeed.js`, `packages/ui/src/components/Sidebar.js`, `packages/ui/src/components/StatusBar.js`, `packages/ui/src/hooks/useActivityFeed.js`.
+- `packages/ui/src/components/BootstrapWizard.tsx`: Multi-step bootstrap planning/apply flow UI. Exports: BootstrapWizard. Related: `packages/ui/src/components/RequirementsPanel.js`, `packages/ui/src/hooks/useBootstrap.js`.
+- `packages/ui/src/components/BundleInspector.tsx`: Bundle inspection screen for manifest/integrity results. Exports: BundleInspector. Related: `packages/ui/src/hooks/useBundles.js`.
+- `packages/ui/src/components/BundleInstallFlow.tsx`: Bundle install plan/apply screen. Exports: BundleInstallFlow. Related: `packages/ui/src/hooks/useBundles.js`.
+- `packages/ui/src/components/Dashboard.tsx`: Home dashboard that renders rig cards and high-level rig actions. Exports: Dashboard. Related: `packages/ui/src/components/RigCard.js`, `packages/ui/src/hooks/mutations.js`, `packages/ui/src/hooks/usePsEntries.js`, `packages/ui/src/hooks/useRigSummary.js`.
+- `packages/ui/src/components/DiscoveryOverlay.tsx`: Session discovery and claim surface. Exports: DiscoveryOverlay. Related: `packages/ui/src/hooks/useDiscovery.js`, `packages/ui/src/hooks/useRigSummary.js`.
+- `packages/ui/src/components/ImportFlow.tsx`: RigSpec validate/preflight/instantiate flow UI. Exports: ImportFlow. Related: `packages/ui/src/hooks/mutations.js`.
+- `packages/ui/src/components/PackageDetail.tsx`: Package detail screen with install history, journal, and rollback actions. Exports: PackageDetail. Related: `packages/ui/src/hooks/usePackageDetail.js`.
+- `packages/ui/src/components/PackageInstallFlow.tsx`: Package validate/configure/plan/apply flow UI. Exports: PackageInstallFlow. Related: none.
+- `packages/ui/src/components/PackageList.tsx`: Package summary list/grid screen. Exports: PackageList. Related: `packages/ui/src/hooks/usePackages.js`.
+- `packages/ui/src/components/RequirementsPanel.tsx`: Visualizes requirement probe results inside bootstrap flows. Exports: RequirementResult, RequirementsPanel. Related: none.
+- `packages/ui/src/components/RigCard.tsx`: Dashboard card for one rig with counts, status, and primary actions. Exports: RigCard, RigSummary. Related: `packages/ui/src/hooks/useCountUp.js`, `packages/ui/src/hooks/usePsEntries.js`.
+- `packages/ui/src/components/RigGraph.tsx`: Rig graph view that renders topology, discovery overlays, and focus interactions. Exports: RigGraph. Related: `packages/ui/src/components/RigNode.js`, `packages/ui/src/hooks/useDiscovery.js`, `packages/ui/src/hooks/useRigEvents.js`, `packages/ui/src/hooks/useRigGraph.js`.
+- `packages/ui/src/components/RigNode.tsx`: Custom graph-node renderer for React Flow topology cards. Exports: RigNode. Related: none.
+- `packages/ui/src/components/Sidebar.tsx`: App navigation sidebar. Exports: Sidebar. Related: none.
+- `packages/ui/src/components/SnapshotPanel.tsx`: Snapshot list/create/restore panel shown beside rig graphs. Exports: SnapshotPanel. Related: `packages/ui/src/hooks/mutations.js`, `packages/ui/src/hooks/useSnapshots.js`.
+- `packages/ui/src/components/StatusBar.tsx`: Footer/status surface for daemon health and summary telemetry. Exports: StatusBar. Related: `packages/ui/src/hooks/useRigSummary.js`.
+
+### Components: UI Primitives
+- `packages/ui/src/components/ui/alert.tsx`: Wrapped/customized shadcn-style UI primitive for alert. Exports: Alert, AlertDescription, AlertTitle. Related: none.
+- `packages/ui/src/components/ui/badge.tsx`: Wrapped/customized shadcn-style UI primitive for badge. Exports: Badge, BadgeProps, badgeVariants. Related: none.
+- `packages/ui/src/components/ui/button.tsx`: Wrapped/customized shadcn-style UI primitive for button. Exports: Button, ButtonProps, buttonVariants. Related: none.
+- `packages/ui/src/components/ui/card.tsx`: Wrapped/customized shadcn-style UI primitive for card. Exports: Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle. Related: none.
+- `packages/ui/src/components/ui/dialog.tsx`: Wrapped/customized shadcn-style UI primitive for dialog. Exports: Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger. Related: none.
+- `packages/ui/src/components/ui/input.tsx`: Wrapped/customized shadcn-style UI primitive for input. Exports: Input. Related: none.
+- `packages/ui/src/components/ui/separator.tsx`: Wrapped/customized shadcn-style UI primitive for separator. Exports: Separator. Related: none.
+- `packages/ui/src/components/ui/table.tsx`: Wrapped/customized shadcn-style UI primitive for table. Exports: Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow. Related: none.
+- `packages/ui/src/components/ui/tabs.tsx`: Wrapped/customized shadcn-style UI primitive for tabs. Exports: Tabs, TabsContent, TabsList, TabsTrigger. Related: none.
+- `packages/ui/src/components/ui/textarea.tsx`: Wrapped/customized shadcn-style UI primitive for textarea. Exports: Textarea. Related: none.
+- `packages/ui/src/components/ui/tooltip.tsx`: Wrapped/customized shadcn-style UI primitive for tooltip. Exports: Tooltip, TooltipContent, TooltipProvider, TooltipTrigger. Related: none.
+
+### Hooks
+- `packages/ui/src/hooks/mutations.ts`: Shared mutation hooks for rig import, teardown, snapshot creation, and restore. Exports: ImportError, useCreateSnapshot, useImportRig, useRestoreSnapshot, useTeardownRig. Related: none.
+- `packages/ui/src/hooks/useActivityFeed.ts`: SSE-backed activity-feed model and event-formatting helpers. Exports: ActivityEvent, UseActivityFeedResult, eventColor, eventRoute, eventSummary, formatRelativeTime, useActivityFeed. Related: none.
+- `packages/ui/src/hooks/useBootstrap.ts`: Bootstrap plan/apply hooks. Exports: BootstrapApplyResult, BootstrapPlanResult, useBootstrapApply, useBootstrapPlan. Related: none.
+- `packages/ui/src/hooks/useBundles.ts`: Bundle inspect/install hooks. Exports: BundleInstallResult, InspectResult, useBundleInspect, useBundleInstall. Related: none.
+- `packages/ui/src/hooks/useCountUp.ts`: Small animation helper for count-up telemetry. Exports: useCountUp. Related: none.
+- `packages/ui/src/hooks/useDiscovery.ts`: Discovery polling, scan, and claim hooks. Exports: DiscoveredSession, useClaimSession, useDiscoveredSessions, useDiscoveredSessionsConditional, useDiscoveryPoll, useDiscoveryScan. Related: none.
+- `packages/ui/src/hooks/usePackageDetail.ts`: Package detail, journal, history, and rollback hooks. Exports: InstallSummary, JournalEntry, PackageInfo, useInstallHistory, useJournalEntries, usePackageInfo, useRollbackInstall. Related: none.
+- `packages/ui/src/hooks/usePackages.ts`: Package summary list hook. Exports: PackageSummary, usePackages. Related: none.
+- `packages/ui/src/hooks/usePsEntries.ts`: `/api/ps` summary hook. Exports: PsEntry, usePsEntries. Related: none.
+- `packages/ui/src/hooks/useRigEvents.ts`: Rig-scoped SSE subscription and invalidation hook. Exports: UseRigEventsResult, useRigEvents. Related: none.
+- `packages/ui/src/hooks/useRigGraph.ts`: Rig graph fetch/transformation hook. Exports: useRigGraph. Related: none.
+- `packages/ui/src/hooks/useRigSummary.ts`: Rig summary list hook used across dashboard and shell surfaces. Exports: RigSummary, useRigSummary. Related: none.
+- `packages/ui/src/hooks/useSnapshots.ts`: Snapshot list hook for one rig. Exports: Snapshot, useSnapshots. Related: none.
+
+### Lib Utilities
+- `packages/ui/src/lib/edge-styles.ts`: Edge-style resolver for graph links. Exports: EdgeStyleResult, getEdgeStyle. Related: none.
+- `packages/ui/src/lib/graph-layout.ts`: Tree-layout helper for rig graph positioning. Exports: applyTreeLayout. Related: none.
+- `packages/ui/src/lib/instantiate-status-colors.ts`: Color-class lookup for instantiation states. Exports: getInstantiateStatusColorClass. Related: none.
+- `packages/ui/src/lib/query-client.ts`: Shared TanStack Query client singleton. Exports: queryClient. Related: none.
+- `packages/ui/src/lib/restore-status-colors.ts`: Color-class lookup for restore states. Exports: getRestoreStatusColorClass. Related: none.
+- `packages/ui/src/lib/status-colors.ts`: Generic rig/session status color mapping. Exports: getStatusColorClass. Related: none.
+- `packages/ui/src/lib/utils.ts`: Shared UI utility helpers, currently `cn` class merging. Exports: cn. Related: none.

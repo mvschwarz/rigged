@@ -266,4 +266,69 @@ describe("RigSpec schema (pod-aware)", () => {
     const normalized = LegacyRigSpecSchema.normalize(legacySpec);
     expect(normalized.nodes).toHaveLength(2);
   });
+
+  // -- Checkpoint 1 review fix regressions --
+
+  // R2: startup action missing value rejected
+  it("startup action missing value rejected", () => {
+    const rig = structuredClone(VALID_RIG);
+    (rig.pods[0]!.members[0] as Record<string, unknown>)["startup"] = {
+      files: [],
+      actions: [{ type: "slash_command", phase: "after_ready", idempotent: true }],
+    };
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("value") && e.includes("non-empty"))).toBe(true);
+  });
+
+  // R3: startup action missing idempotent rejected
+  it("startup action missing idempotent rejected", () => {
+    const rig = structuredClone(VALID_RIG);
+    (rig.pods[0]!.members[0] as Record<string, unknown>)["startup"] = {
+      files: [],
+      actions: [{ type: "slash_command", value: "/test", phase: "after_ready" }],
+    };
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("idempotent") && e.includes("required"))).toBe(true);
+  });
+
+  // R4: restore-safety with undefined idempotent + default applies_on
+  it("undefined idempotent with default applies_on triggers restore-safety rejection", () => {
+    const rig = structuredClone(VALID_RIG);
+    (rig.pods[0]!.members[0] as Record<string, unknown>)["startup"] = {
+      files: [],
+      actions: [{ type: "slash_command", value: "/setup", phase: "after_ready" }],
+    };
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("non-idempotent") && e.includes("restore"))).toBe(true);
+  });
+
+  // R5: member restore_policy "bogus" rejected
+  it("member restore_policy bogus rejected", () => {
+    const rig = structuredClone(VALID_RIG);
+    (rig.pods[0]!.members[0] as Record<string, unknown>)["restore_policy"] = "bogus";
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]).toMatch(/restore_policy.*must be one of/);
+  });
+
+  // R6: member agent_ref "github:foo/bar" rejected
+  it("member agent_ref github: rejected", () => {
+    const rig = structuredClone(VALID_RIG);
+    (rig.pods[0]!.members[0] as Record<string, unknown>)["agent_ref"] = "github:foo/bar";
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]).toMatch(/agent_ref.*must start with "local:" or "path:"/);
+  });
+
+  // R7: cross-pod edge from dev.impl to dev.qa (same pod) rejected
+  it("cross-pod edge referencing same pod rejected", () => {
+    const rig = structuredClone(VALID_RIG);
+    rig.edges = [{ kind: "can_observe", from: "dev.impl", to: "dev.qa" }];
+    const result = RigSpecSchema.validate(rig);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]).toMatch(/cross-pod edge must reference different pods/);
+  });
 });

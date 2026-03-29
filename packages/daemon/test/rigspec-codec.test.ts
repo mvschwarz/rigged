@@ -54,6 +54,40 @@ describe("RigSpec codec (pod-aware)", () => {
     expect(parsed["culture_file"]).toBe("culture.md");
   });
 
+  // R1: continuity_policy nested booleans round-trip through serialize -> parse -> normalize
+  it("continuity_policy nested booleans round-trip correctly", () => {
+    const rigWithCp: RigSpec = {
+      version: "0.2",
+      name: "cp-test",
+      pods: [{
+        id: "dev",
+        label: "Dev",
+        continuityPolicy: {
+          enabled: true,
+          syncTriggers: ["pre_compaction", "manual"],
+          artifacts: { sessionLog: true, restoreBrief: false, quiz: true },
+          restoreProtocol: { peerDriven: true, verifyViaQuiz: false },
+        },
+        members: [{ id: "impl", agentRef: "local:agents/impl", profile: "tdd", runtime: "claude-code", cwd: "." }],
+        edges: [],
+      }],
+      edges: [],
+    };
+
+    const yaml = RigSpecCodec.serialize(rigWithCp);
+    const parsed = RigSpecCodec.parse(yaml) as Record<string, unknown>;
+    const normalized = RigSpecSchema.normalize(parsed);
+
+    const cp = normalized.pods[0]!.continuityPolicy!;
+    expect(cp.enabled).toBe(true);
+    expect(cp.syncTriggers).toEqual(["pre_compaction", "manual"]);
+    expect(cp.artifacts!.sessionLog).toBe(true);
+    expect(cp.artifacts!.restoreBrief).toBe(false);
+    expect(cp.artifacts!.quiz).toBe(true);
+    expect(cp.restoreProtocol!.peerDriven).toBe(true);
+    expect(cp.restoreProtocol!.verifyViaQuiz).toBe(false);
+  });
+
   it("legacy codec still serializes/parses old flat specs", () => {
     const legacySpec = {
       schemaVersion: 1, name: "test", version: "1.0",

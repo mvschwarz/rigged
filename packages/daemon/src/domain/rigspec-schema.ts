@@ -1,10 +1,13 @@
-import type { LegacyRigSpec, LegacyRigSpecNode, LegacyRigSpecEdge, RigSpec, RigSpecPod, ValidationResult, StartupBlock, StartupFile, StartupAction } from "./types.js";
+import type { LegacyRigSpec, LegacyRigSpecNode, LegacyRigSpecEdge, RigSpec, RigSpecPod, ValidationResult } from "./types.js";
 import { validateSafePath } from "./path-safety.js";
+import { validateStartupBlock, normalizeStartupBlock } from "./startup-validation.js";
 
 // -- Canonical pod-aware RigSpec validation (AgentSpec reboot) --
 
 const VALID_EDGE_KINDS = new Set(["delegates_to", "spawned_by", "can_observe", "collaborates_with", "escalates_to"]);
 const VALID_SYNC_TRIGGERS = new Set(["pre_compaction", "pre_shutdown", "manual", "milestone"]);
+const VALID_RESTORE_POLICIES = new Set(["resume_if_possible", "relaunch_fresh", "checkpoint_only"]);
+const VALID_IMPORT_PREFIXES = ["local:", "path:"];
 
 /**
  * Pod-aware RigSpec validator. Canonical contract for the AgentSpec reboot.
@@ -193,6 +196,30 @@ function validateMember(member: Record<string, unknown>, index: number, podPrefi
     errors.push(`${prefix}.cwd: required non-empty string`);
   }
 
+  // restore_policy: closed set
+  if (member["restore_policy"] !== undefined && member["restore_policy"] !== null) {
+    if (!VALID_RESTORE_POLICIES.has(member["restore_policy"] as string)) {
+      errors.push(`${prefix}.restore_policy: must be one of ${[...VALID_RESTORE_POLICIES].join(", ")} (got "${member["restore_policy"]}")`);
+    }
+  }
+
+  // agent_ref: must be local: or path: with correct shape
+  if (typeof member["agent_ref"] === "string") {
+    const ref = member["agent_ref"] as string;
+    const hasValidPrefix = VALID_IMPORT_PREFIXES.some((p) => ref.startsWith(p));
+    if (!hasValidPrefix) {
+      errors.push(`${prefix}.agent_ref: must start with "local:" or "path:" (got "${ref}")`);
+    } else if (ref.startsWith("local:")) {
+      const path = ref.slice("local:".length);
+      if (!path) errors.push(`${prefix}.agent_ref: local: ref must have a path`);
+      else if (path.startsWith("/")) errors.push(`${prefix}.agent_ref: local: ref must be a relative path (got "${ref}")`);
+    } else if (ref.startsWith("path:")) {
+      const path = ref.slice("path:".length);
+      if (!path) errors.push(`${prefix}.agent_ref: path: ref must have a path`);
+      else if (!path.startsWith("/")) errors.push(`${prefix}.agent_ref: path: ref must be an absolute path (got "${ref}")`);
+    }
+  }
+
   // Member startup block validation
   if (member["startup"] !== undefined) {
     errors.push(...validateStartupBlock(member["startup"], `${prefix}.startup`));
@@ -252,6 +279,15 @@ function validateCrossPodEdge(edge: Record<string, unknown>, index: number, allQ
     errors.push(`${prefix}.to: cross-pod edge must use fully-qualified pod.member id (got "${to}")`);
   } else if (!allQualifiedIds.has(to)) {
     errors.push(`${prefix}.to: "${to}" does not resolve to a pod member`);
+  }
+
+  // Same-pod check: cross-pod edges must reference different pods
+  if (from && to && from.includes(".") && to.includes(".")) {
+    const fromPod = from.split(".")[0];
+    const toPod = to.split(".")[0];
+    if (fromPod === toPod) {
+      errors.push(`${prefix}: cross-pod edge must reference different pods (both reference "${fromPod}"); use pod-local edges instead`);
+    }
   }
 
   return errors;
@@ -338,110 +374,20 @@ function normalizePod(raw: Record<string, unknown>): RigSpecPod {
     continuityPolicy: cp ? {
       enabled: cp["enabled"] as boolean,
       syncTriggers: cp["sync_triggers"] as string[] | undefined,
-      artifacts: cp["artifacts"] as { sessionLog?: boolean; restoreBrief?: boolean; quiz?: boolean } | undefined,
-      restoreProtocol: cp["restore_protocol"] as { peerDriven?: boolean; verifyViaQuiz?: boolean } | undefined,
+      artifacts: cp["artifacts"] && typeof cp["artifacts"] === "object" ? {
+        sessionLog: (cp["artifacts"] as Record<string, unknown>)["session_log"] as boolean | undefined,
+        restoreBrief: (cp["artifacts"] as Record<string, unknown>)["restore_brief"] as boolean | undefined,
+        quiz: (cp["artifacts"] as Record<string, unknown>)["quiz"] as boolean | undefined,
+      } : undefined,
+      restoreProtocol: cp["restore_protocol"] && typeof cp["restore_protocol"] === "object" ? {
+        peerDriven: (cp["restore_protocol"] as Record<string, unknown>)["peer_driven"] as boolean | undefined,
+        verifyViaQuiz: (cp["restore_protocol"] as Record<string, unknown>)["verify_via_quiz"] as boolean | undefined,
+      } : undefined,
     } : undefined,
     startup: raw["startup"] ? normalizeStartupBlock(raw["startup"]) : undefined,
     members,
     edges,
   };
-}
-
-const VALID_ACTION_TYPES = new Set(["slash_command", "send_text"]);
-const VALID_PHASES = new Set(["after_files", "after_ready"]);
-const VALID_APPLIES_ON = new Set(["fresh_start", "restore"]);
-
-function validateStartupBlock(raw: unknown, prefix: string): string[] {
-  if (typeof raw !== "object" || raw === null) return [`${prefix}: must be an object`];
-  const obj = raw as Record<string, unknown>;
-  const errors: string[] = [];
-  const VALID_DELIVERY_HINTS = new Set(["auto", "guidance_merge", "skill_install", "send_text"]);
-
-  if (obj["files"] !== undefined) {
-    if (!Array.isArray(obj["files"])) {
-      errors.push(`${prefix}.files: must be an array`);
-    } else {
-      for (let i = 0; i < (obj["files"] as unknown[]).length; i++) {
-        const f = (obj["files"] as Record<string, unknown>[])[i]!;
-        const pathErr = validateSafePath(f["path"] as string, `${prefix}.files[${i}].path`);
-        if (pathErr) errors.push(pathErr);
-        if (f["delivery_hint"] !== undefined && !VALID_DELIVERY_HINTS.has(f["delivery_hint"] as string)) {
-          errors.push(`${prefix}.files[${i}].delivery_hint: must be one of ${[...VALID_DELIVERY_HINTS].join(", ")}`);
-        }
-        if (f["applies_on"] !== undefined) {
-          if (!Array.isArray(f["applies_on"])) {
-            errors.push(`${prefix}.files[${i}].applies_on: must be an array`);
-          } else {
-            for (const v of f["applies_on"] as string[]) {
-              if (!VALID_APPLIES_ON.has(v)) {
-                errors.push(`${prefix}.files[${i}].applies_on: invalid value "${v}"`);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  if (obj["actions"] !== undefined) {
-    if (!Array.isArray(obj["actions"])) {
-      errors.push(`${prefix}.actions: must be an array`);
-    } else {
-      for (let i = 0; i < (obj["actions"] as unknown[]).length; i++) {
-        const a = (obj["actions"] as Record<string, unknown>[])[i]!;
-        const type = a["type"] as string;
-        if (type === "shell") {
-          errors.push(`${prefix}.actions[${i}].type: "shell" is not supported in v1`);
-        } else if (!VALID_ACTION_TYPES.has(type)) {
-          errors.push(`${prefix}.actions[${i}].type: must be one of ${[...VALID_ACTION_TYPES].join(", ")}`);
-        }
-        if (a["phase"] !== undefined && !VALID_PHASES.has(a["phase"] as string)) {
-          errors.push(`${prefix}.actions[${i}].phase: must be one of ${[...VALID_PHASES].join(", ")}`);
-        }
-        if (a["idempotent"] !== undefined && typeof a["idempotent"] !== "boolean") {
-          errors.push(`${prefix}.actions[${i}].idempotent: must be a boolean`);
-        }
-        if (a["applies_on"] !== undefined) {
-          if (!Array.isArray(a["applies_on"])) {
-            errors.push(`${prefix}.actions[${i}].applies_on: must be an array`);
-          } else {
-            for (const v of a["applies_on"] as string[]) {
-              if (!VALID_APPLIES_ON.has(v)) {
-                errors.push(`${prefix}.actions[${i}].applies_on: invalid value "${v}"`);
-              }
-            }
-            // Restore safety: non-idempotent actions must not apply on restore
-            if (a["idempotent"] === false && (a["applies_on"] as string[]).includes("restore")) {
-              errors.push(`${prefix}.actions[${i}]: non-idempotent action must not apply on restore`);
-            }
-          }
-        }
-      }
-    }
-  }
-  return errors;
-}
-
-function normalizeStartupBlock(raw: unknown): StartupBlock {
-  if (!raw || typeof raw !== "object") return { files: [], actions: [] };
-  const obj = raw as Record<string, unknown>;
-  const files: StartupFile[] = Array.isArray(obj["files"])
-    ? (obj["files"] as Record<string, unknown>[]).map((f) => ({
-        path: f["path"] as string,
-        deliveryHint: (f["delivery_hint"] as StartupFile["deliveryHint"]) ?? "auto",
-        required: f["required"] !== false,
-        appliesOn: Array.isArray(f["applies_on"]) ? f["applies_on"] as StartupFile["appliesOn"] : ["fresh_start", "restore"],
-      }))
-    : [];
-  const actions: StartupAction[] = Array.isArray(obj["actions"])
-    ? (obj["actions"] as Record<string, unknown>[]).map((a) => ({
-        type: a["type"] as StartupAction["type"],
-        value: a["value"] as string,
-        phase: (a["phase"] as StartupAction["phase"]) ?? "after_files",
-        appliesOn: Array.isArray(a["applies_on"]) ? a["applies_on"] as StartupAction["appliesOn"] : ["fresh_start", "restore"],
-        idempotent: a["idempotent"] as boolean,
-      }))
-    : [];
-  return { files, actions };
 }
 
 // -- Legacy flat-node RigSpec validation (pre-reboot) --

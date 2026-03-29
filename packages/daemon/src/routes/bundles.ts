@@ -14,7 +14,8 @@ import { LegacyRigSpecCodec } from "../domain/rigspec-codec.js";
 import { LegacyRigSpecSchema } from "../domain/rigspec-schema.js";
 import { RigSpecCodec } from "../domain/rigspec-codec.js";
 import { RigSpecSchema } from "../domain/rigspec-schema.js";
-import { parseLegacyBundleManifest as parseBundleManifest, normalizeLegacyBundleManifest as normalizeBundleManifest, serializePodBundleManifest } from "../domain/bundle-types.js";
+import { parseLegacyBundleManifest as parseBundleManifest, normalizeLegacyBundleManifest as normalizeBundleManifest, serializePodBundleManifest, parsePodBundleManifest, validatePodBundleManifest } from "../domain/bundle-types.js";
+import type { PodBundleManifest } from "../domain/bundle-types.js";
 import type { FsOps } from "../domain/package-resolver.js";
 
 export const bundleRoutes = new Hono();
@@ -216,6 +217,44 @@ bundleRoutes.post("/inspect", async (c) => {
       return c.json({ error: "Bundle missing bundle.yaml", digestValid }, 200);
     }
     const manifestYaml = fs.readFileSync(manifestPath, "utf-8");
+    const rawParsed = parsePodBundleManifest(manifestYaml) as Record<string, unknown>;
+
+    // Detect v2 (pod-aware) vs v1 (legacy)
+    if (rawParsed && rawParsed["schema_version"] === 2) {
+      const validation = validatePodBundleManifest(rawParsed);
+      if (!validation.valid) {
+        return c.json({ error: `Invalid v2 manifest: ${validation.errors.join("; ")}`, digestValid }, 200);
+      }
+      const agents = (rawParsed["agents"] as Array<Record<string, unknown>>).map((a) => ({
+        name: a["name"] as string,
+        version: (a["version"] as string) ?? "",
+        path: a["path"] as string,
+      }));
+      const podManifest = {
+        schemaVersion: 2 as const,
+        name: rawParsed["name"] as string,
+        version: rawParsed["version"] as string,
+        createdAt: rawParsed["created_at"] as string,
+        rigSpec: rawParsed["rig_spec"] as string,
+        agents,
+      };
+      // Build a legacy-compatible object for verifyIntegrity
+      const integritySection = rawParsed["integrity"] as { algorithm?: string; files?: Record<string, string> } | undefined;
+      const integrityCompat = integritySection ? {
+        schemaVersion: 2,
+        name: podManifest.name,
+        version: podManifest.version,
+        createdAt: podManifest.createdAt,
+        rigSpec: podManifest.rigSpec,
+        packages: [],
+        integrity: { algorithm: "sha256" as const, files: integritySection.files ?? {} },
+      } : undefined;
+      const integrityResult = integrityCompat
+        ? verifyIntegrity(tmpDir, integrityCompat, integrityFsOps())
+        : { passed: false, mismatches: [], missing: [], extra: [], errors: ["no integrity section"] };
+      return c.json({ manifest: podManifest, digestValid, integrityResult }, 200);
+    }
+
     const manifest = normalizeBundleManifest(parseBundleManifest(manifestYaml));
     const integrityResult = manifest.integrity
       ? verifyIntegrity(tmpDir, manifest, integrityFsOps())

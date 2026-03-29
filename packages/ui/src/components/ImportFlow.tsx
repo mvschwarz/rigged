@@ -47,7 +47,7 @@ interface ImportFlowProps {
 }
 
 const STEPS = [
-  { num: 1, label: "VALIDATE" },
+  { num: 1, label: "VALIDATE RIGSPEC" },
   { num: 2, label: "PREFLIGHT" },
   { num: 3, label: "INSTANTIATE" },
 ] as const;
@@ -98,6 +98,7 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
   const handleBack = onBack ?? (() => navigate({ to: "/" }));
   const importRig = useImportRig();
   const [yaml, setYaml] = useState("");
+  const [rigRoot, setRigRoot] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [errorAtStep, setErrorAtStep] = useState<number>(0);
   const [errors, setErrors] = useState<string[]>([]);
@@ -133,9 +134,11 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
     setErrors([]);
     setWarnings([]);
     try {
+      const headers: Record<string, string> = { "Content-Type": "text/yaml" };
+      if (rigRoot) headers["X-Rig-Root"] = rigRoot;
       const res = await fetch("/api/rigs/import/preflight", {
         method: "POST",
-        headers: { "Content-Type": "text/yaml" },
+        headers,
         body: yaml,
       });
       const data = (await res.json()) as PreflightResult;
@@ -159,12 +162,16 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
     setStep("instantiating");
     setErrors([]);
     try {
-      const data = await importRig.mutateAsync(yaml) as InstantiateResult;
+      const data = await importRig.mutateAsync({ yaml, rigRoot: rigRoot.trim() || undefined }) as InstantiateResult;
       setResult(data);
       setStep("done");
     } catch (err) {
       if (err instanceof ImportError) {
-        setErrors(err.errors);
+        if (err.code === "cycle_error") {
+          setErrors(["Cycle detected in rig topology"]);
+        } else {
+          setErrors(err.errors);
+        }
         setWarnings(err.warnings);
       } else {
         setErrors([err instanceof Error ? err.message : "Instantiate request failed"]);
@@ -203,6 +210,17 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
             rows={14}
             className="bg-background font-mono text-body-sm mb-spacing-4"
           />
+          <div className="mb-spacing-4">
+            <label className="text-label-sm text-foreground-muted uppercase tracking-[0.04em] block mb-spacing-1">RIG ROOT (OPTIONAL)</label>
+            <input
+              data-testid="rig-root-input"
+              type="text"
+              value={rigRoot}
+              onChange={(e) => setRigRoot(e.target.value)}
+              placeholder="/path/to/rig/root"
+              className="w-full bg-transparent border-b border-foreground/20 focus:border-foreground px-0 py-spacing-2 text-body-sm font-mono outline-none transition-colors"
+            />
+          </div>
           <Button
             variant="tactical"
             data-testid="validate-btn"
@@ -223,7 +241,7 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
       {step === "valid" && (
         <div>
           <Alert className="mb-spacing-4" data-testid="valid-message">
-            <AlertDescription className="text-primary">Spec is valid. Run preflight checks?</AlertDescription>
+            <AlertDescription className="text-primary">RigSpec valid. Run preflight checks?</AlertDescription>
           </Alert>
           <Button variant="tactical" data-testid="preflight-btn" onClick={handlePreflight}>
             RUN PREFLIGHT
@@ -319,7 +337,7 @@ export function ImportFlow({ onBack }: ImportFlowProps = {}) {
           <Button
             variant="tactical"
             className="mt-spacing-4"
-            onClick={() => { setStep("input"); setErrors([]); setWarnings([]); setResult(null); setErrorAtStep(0); }}
+            onClick={() => { setStep("input"); setErrors([]); setWarnings([]); setResult(null); setErrorAtStep(0); setRigRoot(""); }}
           >
             TRY AGAIN
           </Button>

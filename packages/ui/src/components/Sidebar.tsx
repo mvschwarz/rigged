@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { to: "/", label: "RIGS", icon: "hub" },
-  { to: "/packages", label: "PKGS", icon: "folder" },
+  { to: "/packages", label: "SPECS", icon: "folder" },
   { to: "/bootstrap", label: "BOOT", icon: "play_arrow" },
   { to: "/discovery", label: "DISC", icon: "radar" },
   { to: "/import", label: "IMPORT", icon: "upload" },

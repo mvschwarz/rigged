@@ -73,6 +73,16 @@ function renderPackageList() {
 }
 
 describe("PackageList", () => {
+  // T5-AS-T14: Heading contains "(Legacy)"
+  it("heading contains (Legacy)", async () => {
+    mockFetchPackages(MOCK_PACKAGES);
+    renderPackageList();
+
+    await waitFor(() => {
+      expect(screen.getByText(/PACKAGES \(Legacy\)/)).toBeTruthy();
+    });
+  });
+
   it("renders newest packages first so fresh installs are visible", async () => {
     mockFetchPackages(MOCK_PACKAGES);
     renderPackageList();
@@ -179,7 +189,7 @@ describe("PackageList", () => {
     );
 
     await waitFor(() => {
-      const navItem = screen.getByTestId("nav-pkgs");
+      const navItem = screen.getByTestId("nav-specs");
       expect(navItem).toBeTruthy();
       expect(navItem.getAttribute("aria-current")).toBe("page");
     });

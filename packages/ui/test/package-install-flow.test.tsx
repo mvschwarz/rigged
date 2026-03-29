@@ -120,6 +120,14 @@ async function advanceToStep(target: "validated" | "configure" | "planned" | "do
 }
 
 describe("PackageInstallFlow", () => {
+  // T5-AS-T14: Heading contains "(Legacy)"
+  it("heading contains (Legacy)", async () => {
+    renderFlow();
+    await waitFor(() => {
+      expect(screen.getByText(/INSTALL PACKAGE \(Legacy\)/)).toBeTruthy();
+    });
+  });
+
   // Test 1: Step indicator shows correct active step
   it("step indicator shows correct active step", async () => {
     renderFlow();

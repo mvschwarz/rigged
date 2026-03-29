@@ -241,7 +241,7 @@ export function PackageInstallFlow() {
       {/* Header */}
       <div className="flex items-center justify-between mb-spacing-8">
         <div>
-          <h2 className="text-headline-lg uppercase tracking-[0.06em]">INSTALL PACKAGE</h2>
+          <h2 className="text-headline-lg uppercase tracking-[0.06em]">INSTALL PACKAGE (Legacy)</h2>
           <p className="text-label-md text-foreground-muted font-grotesk mt-spacing-1">
             Validate, configure, and apply an agent package
           </p>

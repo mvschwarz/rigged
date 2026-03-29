@@ -87,15 +87,20 @@ export function useImportRig() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (yaml: string) => {
+    mutationFn: async ({ yaml, rigRoot }: { yaml: string; rigRoot?: string }) => {
+      const headers: Record<string, string> = { "Content-Type": "text/yaml" };
+      if (rigRoot) headers["X-Rig-Root"] = rigRoot;
       const res = await fetch("/api/rigs/import", {
         method: "POST",
-        headers: { "Content-Type": "text/yaml" },
+        headers,
         body: yaml,
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new ImportError(data as { code?: string; errors?: string[]; warnings?: string[]; message?: string });
+        const data = await res.json().catch(() => ({})) as { code?: string; errors?: string[]; warnings?: string[]; message?: string };
+        if (data.code === "cycle_error") {
+          throw new ImportError({ ...data, errors: data.errors ?? ["Cycle detected in rig topology"] });
+        }
+        throw new ImportError(data);
       }
       return res.json();
     },

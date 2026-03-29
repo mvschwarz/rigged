@@ -88,7 +88,14 @@ export function BundleInstallFlow() {
       {step === "done" && planResult && (
         <div data-testid="step-done">
           <h3 className="text-headline-md uppercase mb-spacing-3">COMPLETE</h3>
-          <div className="text-label-sm font-mono">Status: <span className="text-success">{planResult.status.toUpperCase()}</span></div>
+          <div className="text-label-sm font-mono">
+            Status: <span className="text-success">{planResult.status.toUpperCase()}</span>
+            {planResult.stages.some((s) => s.detail?.source === "pod_bundle") ? (
+              <span className="ml-spacing-2 text-primary" data-testid="bundle-type-label">Pod-aware bundle</span>
+            ) : (
+              <span className="ml-spacing-2 text-foreground-muted" data-testid="bundle-type-label">Legacy bundle</span>
+            )}
+          </div>
           {planResult.rigId && (
             <div className="text-label-sm font-mono" data-testid="result-rig-id">Rig: {planResult.rigId}</div>
           )}

@@ -123,7 +123,7 @@ export function PackageList() {
       {/* Page header */}
       <div className="flex justify-between items-baseline mb-spacing-6">
         <div>
-          <h2 className="text-headline-lg uppercase">PACKAGES</h2>
+          <h2 className="text-headline-lg uppercase">PACKAGES (Legacy)</h2>
           <p className="text-label-md text-foreground-muted font-grotesk mt-spacing-1">
             {sortedPackages.length} installed package{sortedPackages.length !== 1 ? "s" : ""}
           </p>

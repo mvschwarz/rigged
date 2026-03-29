@@ -339,6 +339,62 @@ describe("Bundle API routes", () => {
     expect(resolveStage.detail.source).toBe("pod_bundle");
   });
 
+  // T9-AS-T14: Inspect v2 bundle returns schemaVersion 2 and agents array
+  it("POST /api/bundles/inspect with v2 bundle returns schemaVersion 2 and agents", async () => {
+    // Create a v2 bundle on disk
+    const agentsDir = path.join(tmpDir, "agents", "impl");
+    fs.mkdirSync(agentsDir, { recursive: true });
+    fs.writeFileSync(path.join(agentsDir, "agent.yaml"), [
+      'name: impl-agent',
+      'version: "1.0.0"',
+      'resources:',
+      '  skills: []',
+      'profiles:',
+      '  default:',
+      '    uses:',
+      '      skills: []',
+    ].join("\n"));
+
+    const specPath = path.join(tmpDir, "rig.yaml");
+    fs.writeFileSync(specPath, [
+      'version: "0.2"',
+      'name: v2-inspect-test',
+      'pods:',
+      '  - id: dev',
+      '    label: Dev',
+      '    members:',
+      '      - id: impl',
+      '        agent_ref: "local:agents/impl"',
+      '        profile: default',
+      '        runtime: claude-code',
+      '        cwd: .',
+      '    edges: []',
+      'edges: []',
+    ].join("\n"));
+
+    const bundlePath = path.join(tmpDir, "v2-inspect.rigbundle");
+    const createRes = await app.request("/api/bundles/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ specPath, bundleName: "v2-inspect", bundleVersion: "0.1.0", outputPath: bundlePath }),
+    });
+    expect(createRes.status).toBe(201);
+
+    const res = await app.request("/api/bundles/inspect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bundlePath }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.manifest.schemaVersion).toBe(2);
+    expect(Array.isArray(body.manifest.agents)).toBe(true);
+    expect(body.manifest.agents.length).toBeGreaterThan(0);
+    expect(body.manifest.agents[0].name).toBe("impl-agent");
+    expect(body.digestValid).toBe(true);
+  });
+
   // T11: Install concurrency lock
   it("concurrent bundle install returns 409", async () => {
     // Acquire lock manually

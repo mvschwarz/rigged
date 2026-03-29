@@ -231,7 +231,7 @@ export function PackageDetail() {
       {pkg && (
         <div className="card-dark p-spacing-6 mb-spacing-6" data-testid="package-header">
           <div className="flex items-baseline justify-between mb-spacing-2">
-            <h2 className="text-headline-lg uppercase">{pkg.name}</h2>
+            <h2 className="text-headline-lg uppercase">{pkg.name} (Legacy)</h2>
             <span className="text-label-md font-mono text-foreground-muted-on-dark">
               v{pkg.version}
             </span>

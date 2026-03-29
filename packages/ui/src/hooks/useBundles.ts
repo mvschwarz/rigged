@@ -1,7 +1,14 @@
 import { useMutation } from "@tanstack/react-query";
 
 export interface InspectResult {
-  manifest: { name: string; version: string; rigSpec: string; packages: Array<{ name: string; version: string; path: string }> };
+  manifest: {
+    name: string;
+    version: string;
+    rigSpec: string;
+    schemaVersion?: number;
+    packages?: Array<{ name: string; version: string; path: string }>;
+    agents?: Array<{ name: string; version: string; path: string }>;
+  };
   digestValid: boolean;
   integrityResult: { passed: boolean; mismatches: string[]; missing: string[]; extra: string[]; errors: string[] };
 }
@@ -10,7 +17,7 @@ export interface BundleInstallResult {
   runId: string;
   status: string;
   rigId?: string;
-  stages: Array<{ stage: string; status: string }>;
+  stages: Array<{ stage: string; status: string; detail?: { source?: string; [key: string]: unknown } }>;
   errors: string[];
 }
 

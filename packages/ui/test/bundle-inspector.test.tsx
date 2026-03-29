@@ -80,6 +80,43 @@ describe("BundleInspector", () => {
     });
   });
 
+  // T6-AS-T14: v2 manifest renders agents list instead of packages
+  it("v2 manifest renders agents list instead of packages", async () => {
+    const v2Response = {
+      manifest: {
+        schemaVersion: 2,
+        name: "pod-bundle",
+        version: "0.2.0",
+        rigSpec: "rig.yaml",
+        agents: [
+          { name: "impl-agent", version: "1.0.0", path: "agents/impl" },
+          { name: "review-agent", version: "1.1.0", path: "agents/review" },
+        ],
+      },
+      digestValid: true,
+      integrityResult: { passed: true, mismatches: [], missing: [], extra: [], errors: [] },
+    };
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => v2Response });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={qc}><BundleInspector /></QueryClientProvider>);
+
+    act(() => { fireEvent.change(screen.getByTestId("bundle-path-input"), { target: { value: "/tmp/v2.rigbundle" } }); });
+    act(() => { fireEvent.click(screen.getByTestId("inspect-btn")); });
+
+    await waitFor(() => {
+      // Should show agents, not packages
+      expect(screen.getByTestId("agent-list")).toBeTruthy();
+      const entries = screen.getAllByTestId("agent-entry");
+      expect(entries).toHaveLength(2);
+      expect(entries[0]!.textContent).toContain("impl-agent");
+      expect(entries[1]!.textContent).toContain("review-agent");
+      // Should NOT show package-list
+      expect(screen.queryByTestId("package-list")).toBeNull();
+      // Schema badge should show v2
+      expect(screen.getByTestId("schema-badge").textContent).toContain("v2");
+    });
+  });
+
   // T6: Error state
   it("shows error on inspect failure", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network error"));

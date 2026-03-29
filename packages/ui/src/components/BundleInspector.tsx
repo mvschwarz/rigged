@@ -43,7 +43,12 @@ export function BundleInspector() {
         <div data-testid="inspect-result">
           {/* Manifest summary */}
           <div className="card-dark p-spacing-4 mb-spacing-4" data-testid="manifest-summary">
-            <h3 className="text-headline-md uppercase mb-spacing-2">{result.manifest.name}</h3>
+            <div className="flex items-center gap-spacing-2 mb-spacing-2">
+              <h3 className="text-headline-md uppercase">{result.manifest.name}</h3>
+              <span className="text-label-sm font-mono px-spacing-2 py-px bg-foreground/10" data-testid="schema-badge">
+                v{result.manifest.schemaVersion ?? 1}
+              </span>
+            </div>
             <div className="text-label-sm font-mono text-foreground-muted-on-dark">v{result.manifest.version}</div>
             <div className="text-label-sm font-mono text-foreground-muted-on-dark">Spec: {result.manifest.rigSpec}</div>
             <div className="mt-spacing-2 flex gap-spacing-3">
@@ -56,22 +61,37 @@ export function BundleInspector() {
             </div>
           </div>
 
-          {/* Package list */}
-          <h3 className="text-headline-md uppercase mb-spacing-3">PACKAGES</h3>
-          <div className="space-y-spacing-1 mb-spacing-4" data-testid="package-list">
-            {result.manifest.packages.map((pkg) => (
-              <div key={pkg.name} className="text-label-sm font-mono" data-testid="package-entry">
-                {pkg.name} v{pkg.version} — {pkg.path}
+          {/* v2: Agents list, v1: Packages list */}
+          {result.manifest.schemaVersion === 2 && result.manifest.agents ? (
+            <>
+              <h3 className="text-headline-md uppercase mb-spacing-3">AGENTS</h3>
+              <div className="space-y-spacing-1 mb-spacing-4" data-testid="agent-list">
+                {result.manifest.agents.map((agent) => (
+                  <div key={agent.name} className="text-label-sm font-mono" data-testid="agent-entry">
+                    {agent.name} v{agent.version} — {agent.path}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <>
+              <h3 className="text-headline-md uppercase mb-spacing-3">PACKAGES</h3>
+              <div className="space-y-spacing-1 mb-spacing-4" data-testid="package-list">
+                {(result.manifest.packages ?? []).map((pkg) => (
+                  <div key={pkg.name} className="text-label-sm font-mono" data-testid="package-entry">
+                    {pkg.name} v{pkg.version} — {pkg.path}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Per-file integrity */}
           {result.integrityResult && (
             <>
               <h3 className="text-headline-md uppercase mb-spacing-3">FILE INTEGRITY</h3>
               <div className="space-y-spacing-1 mb-spacing-4" data-testid="file-integrity">
-                {Object.keys(result.manifest.packages.length > 0 ? (result as unknown as { manifest: { integrity?: { files: Record<string, string> } } }).manifest?.integrity?.files ?? {} : {}).map((file) => {
+                {Object.keys((result.manifest.packages ?? result.manifest.agents ?? []).length > 0 ? (result as unknown as { manifest: { integrity?: { files: Record<string, string> } } }).manifest?.integrity?.files ?? {} : {}).map((file) => {
                   const isMismatch = result.integrityResult.mismatches.includes(file);
                   const isMissing = result.integrityResult.missing.includes(file);
                   const status = isMismatch ? "MISMATCH" : isMissing ? "MISSING" : "OK";

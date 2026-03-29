@@ -130,7 +130,7 @@ describe("PackageDetail", () => {
       expect(screen.getByTestId("package-header")).toBeTruthy();
     });
 
-    expect(screen.getByText("acme-standards")).toBeTruthy();
+    expect(screen.getByText("acme-standards (Legacy)")).toBeTruthy();
     expect(screen.getByText("v2.0.0")).toBeTruthy();
     expect(screen.getByTestId("package-source").textContent).toBe("/packages/acme");
   });

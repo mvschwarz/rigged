@@ -239,3 +239,127 @@ describe("RigSpecPreflight", () => {
     expect(cmuxExec).toHaveBeenCalledWith("cmux capabilities --json");
   });
 });
+
+// -- Rebooted rig preflight (AgentSpec reboot) --
+
+import { rigPreflight, type RigPreflightInput } from "../src/domain/rigspec-preflight.js";
+import { RigSpecCodec } from "../src/domain/rigspec-codec.js";
+import type { AgentResolverFsOps } from "../src/domain/agent-resolver.js";
+import type { RigSpec as PodRigSpec } from "../src/domain/types.js";
+
+function mockFs(files: Record<string, string>): AgentResolverFsOps {
+  return {
+    readFile: (p: string) => { if (p in files) return files[p]!; throw new Error(`Not found: ${p}`); },
+    exists: (p: string) => p in files,
+  };
+}
+
+function validAgentYaml(name: string, opts?: { profiles?: string }): string {
+  const profiles = opts?.profiles ?? "profiles:\n  default:\n    uses:\n      skills: []";
+  return `name: ${name}\nversion: "1.0.0"\nresources:\n  skills: []\n${profiles}`;
+}
+
+function makeRigYaml(overrides?: Partial<PodRigSpec>): string {
+  const spec: PodRigSpec = {
+    version: "0.2", name: "test-rig",
+    pods: [{
+      id: "dev", label: "Dev",
+      members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." }],
+      edges: [],
+    }],
+    edges: [],
+    ...overrides,
+  };
+  return RigSpecCodec.serialize(spec);
+}
+
+const RIG_ROOT = "/project/rigs/my-rig";
+
+describe("Rebooted rig preflight", () => {
+  // T5: resolves all agent refs
+  it("resolves all agent refs successfully", () => {
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: validAgentYaml("impl"),
+    };
+    const result = rigPreflight({ rigSpecYaml: makeRigYaml(), rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  // T5b: missing profile surfaces in preflight
+  it("catches missing profile", () => {
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: validAgentYaml("impl"),
+    };
+    const rigYaml = makeRigYaml({
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [{ id: "impl", agentRef: "local:agents/impl", profile: "nonexistent", runtime: "claude-code", cwd: "." }],
+        edges: [],
+      }],
+    });
+    const result = rigPreflight({ rigSpecYaml: rigYaml, rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(false);
+    expect(result.errors.some((e) => e.includes("nonexistent") && e.includes("not found"))).toBe(true);
+  });
+
+  // T5c: invalid restore-policy narrowing surfaces
+  it("catches invalid restore-policy narrowing", () => {
+    const agentYaml = `name: impl\nversion: "1.0.0"\ndefaults:\n  lifecycle:\n    compaction_strategy: harness_native\n    restore_policy: checkpoint_only\nresources:\n  skills: []\nprofiles:\n  default:\n    uses:\n      skills: []`;
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: agentYaml,
+    };
+    const rigYaml = makeRigYaml({
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: ".", restorePolicy: "resume_if_possible" }],
+        edges: [],
+      }],
+    });
+    const result = rigPreflight({ rigSpecYaml: rigYaml, rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(false);
+    expect(result.errors.some((e) => e.includes("broadens"))).toBe(true);
+  });
+
+  // T6: unsupported runtime
+  it("reports unsupported runtime", () => {
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: validAgentYaml("impl"),
+    };
+    const rigYaml = makeRigYaml({
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [{ id: "impl", agentRef: "local:agents/impl", profile: "default", runtime: "unsupported-runtime", cwd: "." }],
+        edges: [],
+      }],
+    });
+    const result = rigPreflight({ rigSpecYaml: rigYaml, rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(false);
+    expect(result.errors.some((e) => e.includes("unsupported runtime"))).toBe(true);
+  });
+
+  // T7: missing cwd
+  it("reports missing cwd", () => {
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: validAgentYaml("impl"),
+    };
+    // Can't have empty cwd since RigSpec schema requires it — test with RigSpec that has cwd but empty
+    // Actually, cwd is required on RigSpecPodMember, so an empty cwd would fail schema validation.
+    // Let's verify the schema catches it.
+    const rigYaml = `version: "0.2"\nname: test-rig\npods:\n  - id: dev\n    label: Dev\n    members:\n      - id: impl\n        agent_ref: "local:agents/impl"\n        profile: default\n        runtime: claude-code\n    edges: []\nedges: []`;
+    const result = rigPreflight({ rigSpecYaml: rigYaml, rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(false);
+    expect(result.errors.some((e) => e.includes("cwd"))).toBe(true);
+  });
+
+  // T8: import collision as warning
+  it("reports import collision as warning", () => {
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: `name: impl\nversion: "1.0.0"\nimports:\n  - ref: local:../lib\nresources:\n  skills:\n    - id: shared\n      path: skills/shared\nprofiles:\n  default:\n    uses:\n      skills: [shared]`,
+      [`${RIG_ROOT}/agents/lib/agent.yaml`]: `name: lib\nversion: "1.0.0"\nresources:\n  skills:\n    - id: shared\n      path: skills/shared\nprofiles: {}`,
+    };
+    const result = rigPreflight({ rigSpecYaml: makeRigYaml(), rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(true);
+    expect(result.warnings.some((w) => w.includes("collision"))).toBe(true);
+  });
+});

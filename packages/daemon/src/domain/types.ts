@@ -194,6 +194,82 @@ export type RestoreOutcome =
   | { ok: false; code: "restore_error"; message: string }
   | { ok: false; code: "restore_in_progress"; message: string };
 
+// -- AgentSpec types (AgentSpec reboot) --
+
+export interface ImportSpec {
+  ref: string;
+  version?: string;
+}
+
+export interface StartupFile {
+  path: string;
+  deliveryHint: "auto" | "guidance_merge" | "skill_install" | "send_text";
+  required: boolean;
+  appliesOn: ("fresh_start" | "restore")[];
+}
+
+export interface StartupAction {
+  type: "slash_command" | "send_text";
+  value: string;
+  phase: "after_files" | "after_ready";
+  appliesOn: ("fresh_start" | "restore")[];
+  idempotent: boolean;
+}
+
+export interface StartupBlock {
+  files: StartupFile[];
+  actions: StartupAction[];
+}
+
+export interface LifecycleDefaults {
+  executionMode: "interactive_resident";
+  compactionStrategy: "harness_native" | "pod_continuity";
+  restorePolicy: "resume_if_possible" | "relaunch_fresh" | "checkpoint_only";
+}
+
+export interface SkillResource { id: string; path: string; }
+export interface GuidanceResource { id: string; path: string; target: string; merge: "managed_block" | "append"; }
+export interface SubagentResource { id: string; path: string; }
+export interface HookResource { id: string; path: string; runtimes?: string[]; }
+export interface RuntimeResource { id: string; path: string; runtime: string; type: string; }
+
+export interface AgentResources {
+  skills: SkillResource[];
+  guidance: GuidanceResource[];
+  subagents: SubagentResource[];
+  hooks: HookResource[];
+  runtimeResources: RuntimeResource[];
+}
+
+export interface ProfileSpec {
+  summary?: string;
+  preferences?: { runtime?: string; model?: string };
+  startup?: StartupBlock;
+  lifecycle?: LifecycleDefaults;
+  uses: {
+    skills: string[];
+    guidance: string[];
+    subagents: string[];
+    hooks: string[];
+    runtimeResources: string[];
+  };
+}
+
+export interface AgentSpec {
+  version: string;
+  name: string;
+  summary?: string;
+  imports: ImportSpec[];
+  defaults?: {
+    runtime?: string;
+    model?: string;
+    lifecycle?: LifecycleDefaults;
+  };
+  startup: StartupBlock;
+  resources: AgentResources;
+  profiles: Record<string, ProfileSpec>;
+}
+
 // -- RigSpec types (Phase 3) --
 
 export interface RigSpec {

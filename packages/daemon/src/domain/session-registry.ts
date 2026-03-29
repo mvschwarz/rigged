@@ -55,6 +55,18 @@ export class SessionRegistry {
       .run(status, sessionId);
   }
 
+  updateStartupStatus(sessionId: string, status: "pending" | "ready" | "failed", completedAt?: string): void {
+    if (completedAt) {
+      this.db
+        .prepare("UPDATE sessions SET startup_status = ?, startup_completed_at = ? WHERE id = ?")
+        .run(status, completedAt, sessionId);
+    } else {
+      this.db
+        .prepare("UPDATE sessions SET startup_status = ? WHERE id = ?")
+        .run(status, sessionId);
+    }
+  }
+
   markDetached(sessionId: string): void {
     this.updateStatus(sessionId, "detached");
   }

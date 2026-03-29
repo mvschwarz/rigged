@@ -46,7 +46,11 @@ function mockFetchSessions(sessions: DiscoveredSession[] = MOCK_SESSIONS) {
     if (typeof url === "string" && url.includes("/discovery")) {
       return { ok: true, json: async () => sessions };
     }
-    return { ok: false, status: 404, json: async () => ({}) };
+    if (typeof url === "string" && url.includes("/api/rigs/summary")) {
+      return { ok: true, json: async () => [{ id: "rig-1", name: "r01-test", nodeCount: 3, latestSnapshotAt: null, latestSnapshotId: null }] };
+    }
+    // Default: return empty success for any other API call
+    return { ok: true, json: async () => ({}) };
   });
 }
 
@@ -104,7 +108,10 @@ describe("DiscoveryOverlay", () => {
       if (typeof url === "string" && url.includes("/discovery")) {
         return { ok: true, json: async () => MOCK_SESSIONS };
       }
-      return { ok: false, status: 404, json: async () => ({}) };
+      if (typeof url === "string" && url.includes("/api/rigs/summary")) {
+        return { ok: true, json: async () => [{ id: "rig-1", name: "r01-test", nodeCount: 3, latestSnapshotAt: null, latestSnapshotId: null }] };
+      }
+      return { ok: true, json: async () => ({}) };
     });
 
     render(createTestRouter({ component: DiscoveryOverlay, path: "/discovery", initialPath: "/discovery" }));
@@ -146,7 +153,10 @@ describe("DiscoveryOverlay", () => {
             : [MOCK_SESSIONS[0]!],
         };
       }
-      return { ok: false, status: 404, json: async () => ({}) };
+      if (typeof url === "string" && url.includes("/api/rigs/summary")) {
+        return { ok: true, json: async () => [{ id: "rig-1", name: "r01-test", nodeCount: 3, latestSnapshotAt: null, latestSnapshotId: null }] };
+      }
+      return { ok: true, json: async () => ({}) };
     });
 
     render(createTestRouter({ component: DiscoveryOverlay, path: "/discovery", initialPath: "/discovery" }));
@@ -191,7 +201,10 @@ describe("DiscoveryOverlay", () => {
       if (typeof url === "string" && url.includes("/discovery")) {
         return { ok: true, json: async () => MOCK_SESSIONS };
       }
-      return { ok: false, status: 404, json: async () => ({}) };
+      if (typeof url === "string" && url.includes("/api/rigs/summary")) {
+        return { ok: true, json: async () => [{ id: "rig-1", name: "r01-test", nodeCount: 3, latestSnapshotAt: null, latestSnapshotId: null }] };
+      }
+      return { ok: true, json: async () => ({}) };
     });
 
     // Harness: renders DiscoveryOverlay + subscribes to rig graph query

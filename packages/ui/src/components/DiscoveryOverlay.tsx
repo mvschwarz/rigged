@@ -15,6 +15,7 @@ import {
   useDiscoveryPoll,
   type DiscoveredSession,
 } from "../hooks/useDiscovery.js";
+import { useRigSummary } from "../hooks/useRigSummary.js";
 
 function confidenceColor(confidence: string): string {
   switch (confidence) {
@@ -79,6 +80,7 @@ function DiscoveredSessionCard({ session, onClaim }: { session: DiscoveredSessio
 export function DiscoveryOverlay() {
   const { data: sessions = [] } = useDiscoveredSessions();
   useDiscoveryPoll(30_000);
+  const { data: rigs = [] } = useRigSummary();
   const claimMutation = useClaimSession();
   const visibleSessions = sessions.filter((session) => session.status !== "claimed");
 
@@ -132,14 +134,18 @@ export function DiscoveryOverlay() {
           </DialogHeader>
           <div className="space-y-spacing-3">
             <div>
-              <label className="text-label-sm uppercase block mb-spacing-1">RIG ID</label>
-              <input
+              <label className="text-label-sm uppercase block mb-spacing-1">RIG</label>
+              <select
                 data-testid="claim-rig-input"
-                type="text"
                 value={rigId}
                 onChange={(e) => setRigId(e.target.value)}
-                className="w-full bg-transparent border-b border-foreground/20 py-spacing-1 text-body-md font-mono focus:outline-none focus:border-primary"
-              />
+                className="w-full bg-white border-b border-outline py-spacing-1 text-body-md font-mono focus:outline-none focus:border-stone-900 appearance-none cursor-pointer"
+              >
+                <option value="">Select a rig...</option>
+                {rigs.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} ({r.nodeCount} nodes)</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-label-sm uppercase block mb-spacing-1">LOGICAL ID (optional)</label>

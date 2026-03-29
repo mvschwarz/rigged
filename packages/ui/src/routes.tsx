@@ -66,8 +66,8 @@ function RigDetail() {
 
       {/* Graph + Snapshots: side-by-side on wide, stacked on narrow */}
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        <div className="relative h-[60vh] lg:h-auto lg:flex-1">
-          <RigGraph rigId={rigId} />
+        <div className="flex-1 min-h-[400px] relative">
+          <RigGraph rigId={rigId} showDiscovered={false} />
         </div>
         <SnapshotPanel rigId={rigId} />
       </div>

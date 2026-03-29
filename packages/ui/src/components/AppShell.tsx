@@ -57,10 +57,10 @@ export function AppShell({ children }: AppShellProps) {
 
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        <main data-testid="content-area" className="flex-1 overflow-auto bg-background relative">
+        <main data-testid="content-area" className="flex-1 flex flex-col overflow-auto bg-background relative">
           {/* Subtle dither grain texture on canvas */}
           <div className="bg-dither absolute inset-0 pointer-events-none z-0" />
-          <div key={pathname} className="relative z-10 route-enter">{children}</div>
+          <div key={pathname} className="relative z-10 route-enter flex-1 flex flex-col">{children}</div>
         </main>
       </div>
 

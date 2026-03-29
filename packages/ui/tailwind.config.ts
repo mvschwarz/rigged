@@ -3,7 +3,6 @@ import type { Config } from "tailwindcss";
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}", "./index.html"],
   theme: {
-    // Zero ALL border radii — hard edges everywhere
     borderRadius: {
       none: "0px",
       sm: "0px",
@@ -13,60 +12,71 @@ const config: Config = {
       xl: "0px",
       "2xl": "0px",
       "3xl": "0px",
-      full: "0px",
+      full: "9999px", /* Exception: stamp circles only */
     },
     extend: {
       colors: {
+        /* Paper surfaces */
         background: "hsl(var(--background))",
-        "background-warm": "hsl(var(--background-warm))",
+        "surface-lowest": "hsl(var(--surface-container-lowest))",
+        "surface-low": "hsl(var(--surface-container-low))",
+        "surface-mid": "hsl(var(--surface-container))",
+        "surface-high": "hsl(var(--surface-container-high))",
+        "surface-highest": "hsl(var(--surface-container-highest))",
+
+        /* Ink */
         foreground: {
-          DEFAULT: "hsl(var(--foreground))",
-          muted: "hsl(var(--foreground-muted))",
-          "on-dark": "hsl(var(--foreground-on-dark))",
-          "muted-on-dark": "hsl(var(--foreground-muted-on-dark))",
+          DEFAULT: "hsl(var(--on-surface))",
+          muted: "hsl(var(--on-surface-variant))",
         },
-        // Keep simple aliases for shadcn compat
-        "foreground-muted": "hsl(var(--foreground-muted))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+        "foreground-muted": "hsl(var(--on-surface-variant))",
+        "on-surface": "hsl(var(--on-surface))",
+        "on-surface-variant": "hsl(var(--on-surface-variant))",
+
+        /* Technical */
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          container: "hsl(var(--secondary-container))",
         },
+
+        /* Alert red */
+        tertiary: "hsl(var(--tertiary))",
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
-        warning: "hsl(var(--warning))",
-        accent: "hsl(var(--accent))",
+        error: "hsl(var(--error))",
+
+        /* Interactive */
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--background))",
+        },
+        "inverse-surface": "hsl(var(--inverse-surface))",
+
+        /* Borders */
+        outline: {
+          DEFAULT: "hsl(var(--outline))",
+          variant: "hsl(var(--outline-variant))",
+        },
+
+        /* Status */
         success: "hsl(var(--success))",
-        surface: {
-          dark: "hsl(var(--surface-dark))",
-          mid: "hsl(var(--surface-mid))",
-          raised: "hsl(var(--surface-raised))",
-        },
-        "ghost-border": "var(--ghost-border)",
-        "ghost-border-dark": "var(--ghost-border-dark)",
-        // shadcn compat
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
+        warning: "hsl(var(--warning))",
+        accent: "hsl(var(--secondary))",
+
+        /* shadcn compat */
+        card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
+        popover: { DEFAULT: "hsl(var(--popover))", foreground: "hsl(var(--popover-foreground))" },
+        muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
       },
       fontFamily: {
+        headline: ["Space Grotesk Variable", "Space Grotesk", "sans-serif"],
+        body: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono Variable", "JetBrains Mono", "monospace"],
+        /* Legacy aliases */
         inter: ["Inter", "system-ui", "sans-serif"],
-        grotesk: ["Space Grotesk Variable", "monospace"],
-        mono: ["JetBrains Mono Variable", "monospace"],
+        grotesk: ["Space Grotesk Variable", "Space Grotesk", "sans-serif"],
       },
       spacing: {
         "spacing-1": "4px",
@@ -80,15 +90,15 @@ const config: Config = {
         "spacing-24": "96px",
       },
       fontSize: {
-        "display-lg": ["3.5rem", { lineHeight: "1.1", fontWeight: "700", letterSpacing: "-0.02em" }],
-        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "700", letterSpacing: "-0.01em" }],
-        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "700" }],
+        "display-lg": ["3.5rem", { lineHeight: "1.1", fontWeight: "900", letterSpacing: "-0.02em" }],
+        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "800", letterSpacing: "-0.01em" }],
+        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "800", letterSpacing: "-0.01em" }],
         "body-lg": ["1.125rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-md": ["1rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-sm": ["0.875rem", { lineHeight: "1.5", fontWeight: "400" }],
-        "label-lg": ["0.875rem", { lineHeight: "1.3", fontWeight: "500", letterSpacing: "0.02em" }],
+        "label-lg": ["0.875rem", { lineHeight: "1.3", fontWeight: "700", letterSpacing: "0.02em" }],
         "label-md": ["0.75rem", { lineHeight: "1.3", fontWeight: "500", letterSpacing: "0.04em" }],
-        "label-sm": ["0.625rem", { lineHeight: "1.3", fontWeight: "500", letterSpacing: "0.06em" }],
+        "label-sm": ["0.625rem", { lineHeight: "1.3", fontWeight: "400", letterSpacing: "0.06em" }],
       },
       transitionTimingFunction: {
         tactical: "cubic-bezier(0.2, 0, 0, 1)",

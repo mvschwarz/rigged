@@ -70,46 +70,41 @@ export function StatusBar({ onToggleFeed, feedOpen, eventCount }: StatusBarProps
   return (
     <footer
       data-testid="status-bar"
-      className="h-7 bg-surface-dark flex items-center px-spacing-4 gap-spacing-4 text-label-sm font-grotesk text-foreground-muted-on-dark shrink-0"
+      className="h-10 flex items-center px-spacing-4 gap-spacing-3 border-t border-stone-300 bg-background shrink-0"
     >
-      <span className="flex items-center gap-spacing-1">
-        <span
+      {/* Health pill */}
+      <div className="bg-white/90 border border-stone-900 px-3 py-0.5 font-mono text-[10px] flex items-center gap-2">
+        <div
           data-testid="health-dot"
-          className={`inline-block w-[5px] h-[5px] ${isConnected ? "bg-success" : "bg-destructive"} ${reconnectPulse ? "status-changed" : ""}`}
+          className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-success animate-pulse" : "bg-tertiary"} ${reconnectPulse ? "status-changed" : ""}`}
         />
         <span data-testid="health-text">
-          {isConnected ? "CONNECTED" : "DISCONNECTED"}
+          {isConnected ? "SYSTEM_STABLE" : "DISCONNECTED"}
         </span>
-      </span>
+      </div>
 
-      <span className="text-foreground-muted-on-dark/30">&middot;</span>
+      {/* Rig count pill */}
+      <div className="bg-white/90 border border-stone-900 px-3 py-0.5 font-mono text-[10px]" data-testid="rig-count">
+        RIGS: {rigCount ?? "\u2014"}
+      </div>
 
-      <span data-testid="rig-count">
-        RIGS <span className="font-mono text-foreground-on-dark">{rigCount ?? "\u2014"}</span>
-      </span>
+      {/* CMUX pill */}
+      <div className="bg-white/90 border border-stone-300 px-3 py-0.5 font-mono text-[10px] text-stone-500" data-testid="cmux-status">
+        CMUX: {cmuxAvailable === null ? "\u2014" : cmuxAvailable ? "OK" : "UNAVAIL"}
+      </div>
 
-      <span className="text-foreground-muted-on-dark/30">&middot;</span>
-
-      <span data-testid="cmux-status">
-        CMUX <span className="font-mono text-foreground-on-dark">
-          {cmuxAvailable === null ? "\u2014" : cmuxAvailable ? "OK" : "UNAVAILABLE"}
-        </span>
-      </span>
-
+      {/* Activity feed toggle — right aligned */}
       {onToggleFeed && (
         <>
           <span className="flex-1" />
           <button
             data-testid="feed-toggle"
             onClick={onToggleFeed}
-            className="flex items-center gap-spacing-1 text-label-sm text-foreground-muted-on-dark hover:text-foreground-on-dark transition-colors duration-150 ease-tactical"
+            className="bg-white/90 border border-stone-900 px-3 py-0.5 font-mono text-[10px] hover:bg-stone-900 hover:text-white transition-all"
             aria-label="Toggle activity feed"
             aria-expanded={feedOpen}
           >
-            ACTIVITY
-            {(eventCount ?? 0) > 0 && (
-              <span className="font-mono text-foreground-on-dark">{eventCount}</span>
-            )}
+            ACTIVITY{(eventCount ?? 0) > 0 ? ` ${eventCount}` : ""}
           </button>
         </>
       )}

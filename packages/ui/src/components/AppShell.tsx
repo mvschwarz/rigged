@@ -17,32 +17,66 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Header — dark chrome bar */}
+      {/* Header — paper with thick bottom border */}
       <header
         data-testid="app-header"
-        className="h-12 flex items-center justify-between px-spacing-4 bg-surface-dark text-foreground-on-dark shrink-0 relative z-30"
+        className="h-14 flex items-center justify-between px-spacing-6 bg-background border-b-2 border-stone-900 shrink-0 relative z-30"
       >
-        <div className="flex items-center gap-spacing-3">
-          {/* Hamburger — visible on narrow viewports, or always as toggle */}
+        <div className="flex items-center gap-spacing-4">
+          {/* Hamburger — narrow viewports only */}
           <button
             data-testid="sidebar-toggle"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="flex flex-col gap-[3px] p-1 lg:hidden"
             aria-label="Toggle navigation"
           >
-            <span className="block w-4 h-[1.5px] bg-foreground-on-dark" />
-            <span className="block w-4 h-[1.5px] bg-foreground-on-dark" />
-            <span className="block w-3 h-[1.5px] bg-foreground-on-dark" />
+            <span className="block w-4 h-[1.5px] bg-stone-900" />
+            <span className="block w-4 h-[1.5px] bg-stone-900" />
+            <span className="block w-3 h-[1.5px] bg-stone-900" />
           </button>
 
-          <h1 className="text-label-lg uppercase tracking-[0.08em] font-inter font-bold">
+          {/* Case ID block */}
+          <div className="font-mono text-base font-bold tracking-tighter text-stone-900 border-x border-stone-300 px-3 py-0.5">
             RIGGED
-          </h1>
+          </div>
         </div>
 
-        <span className="text-label-sm font-mono text-foreground-muted-on-dark">
-          v0.1.0
-        </span>
+        {/* Center nav — hidden on narrow */}
+        <nav className="hidden md:flex gap-spacing-8">
+          {[
+            { path: "/", label: "RIGS" },
+            { path: "/packages", label: "PACKAGES" },
+            { path: "/discovery", label: "DISCOVERY" },
+          ].map((item) => {
+            const isActive = item.path === "/"
+              ? pathname === "/" || pathname.startsWith("/rigs")
+              : pathname.startsWith(item.path);
+            return (
+              <a
+                key={item.path}
+                href={item.path}
+                className={`font-headline tracking-tight uppercase text-sm font-bold transition-colors ${
+                  isActive
+                    ? "text-stone-900 border-b-2 border-stone-900 pb-0.5"
+                    : "text-stone-500 hover:bg-stone-200"
+                }`}
+              >
+                {item.label}
+              </a>
+            );
+          })}
+        </nav>
+
+        {/* Right side — icons */}
+        <div className="flex items-center gap-spacing-2">
+          <button
+            onClick={() => setFeedOpen(!feedOpen)}
+            className="p-2 hover:bg-stone-200 transition-colors font-mono text-xs text-stone-500"
+            aria-label="Activity"
+          >
+            {events.length > 0 ? `${events.length}` : ""}
+          </button>
+        </div>
       </header>
 
       {/* Main: Sidebar + Content */}
@@ -50,16 +84,14 @@ export function AppShell({ children }: AppShellProps) {
         {/* Sidebar overlay backdrop for mobile */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 bg-black/30 z-20 lg:hidden"
+            className="fixed inset-0 bg-black/20 z-20 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        <main data-testid="content-area" className="flex-1 flex flex-col overflow-auto bg-background relative">
-          {/* Subtle dither grain texture on canvas */}
-          <div className="bg-dither absolute inset-0 pointer-events-none z-0" />
+        <main data-testid="content-area" className="flex-1 flex flex-col overflow-auto relative">
           <div key={pathname} className="relative z-10 route-enter flex-1 flex flex-col">{children}</div>
         </main>
       </div>

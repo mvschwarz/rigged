@@ -14,40 +14,36 @@ interface RigNodeData {
   } | null;
 }
 
-function getStatusColor(status: string | null): string {
+/** Core roles get dark header stripe, workers get light */
+function isCore(role: string | null): boolean {
+  return role === "architect" || role === "lead" || role === "orchestrator";
+}
+
+function getStatusLabel(status: string | null): string {
   switch (status) {
-    case "running": return "bg-success";
-    case "idle": return "bg-foreground-muted-on-dark";
-    case "exited": return "bg-destructive";
-    case "detached": return "bg-warning";
-    default: return "bg-foreground-muted-on-dark";
+    case "running": return "ACTIVE";
+    case "idle": return "IDLE";
+    case "exited": return "EXITED";
+    case "detached": return "DETACHED";
+    default: return "UNKNOWN";
   }
 }
 
 function getStatusCssColor(status: string | null): string {
   switch (status) {
     case "running": return "hsl(var(--success))";
-    case "idle": return "hsl(var(--foreground-muted-on-dark))";
-    case "exited": return "hsl(var(--destructive))";
+    case "idle": return "hsl(var(--on-surface-variant))";
+    case "exited": return "hsl(var(--tertiary))";
     case "detached": return "hsl(var(--warning))";
-    default: return "hsl(var(--foreground-muted-on-dark))";
-  }
-}
-
-function getStatusTextClass(status: string | null): string {
-  switch (status) {
-    case "running": return "text-success";
-    case "exited": return "text-destructive";
-    case "detached": return "text-warning";
-    default: return "text-foreground-muted-on-dark";
+    default: return "hsl(var(--on-surface-variant))";
   }
 }
 
 export function RigNode({ data }: { data: RigNodeData }) {
-  const statusColor = getStatusColor(data.status);
-  const statusCssColor = getStatusCssColor(data.status);
   const prevStatusRef = useRef(data.status);
   const [statusChanged, setStatusChanged] = useState(false);
+  const core = isCore(data.role);
+  const statusCssColor = getStatusCssColor(data.status);
 
   useEffect(() => {
     if (prevStatusRef.current !== data.status && prevStatusRef.current !== null) {
@@ -60,63 +56,69 @@ export function RigNode({ data }: { data: RigNodeData }) {
   }, [data.status]);
 
   const runtimeModel = [data.runtime, data.model].filter(Boolean).join(" \u00B7 ");
-  const sessionName = data.binding?.tmuxSession;
-  const isRunning = data.status === "running";
 
   return (
     <div
-      className="card-dark min-w-[200px] cursor-pointer transition-all duration-150 ease-tactical hover:bg-surface-mid"
+      className="bg-white border border-stone-900 min-w-[200px] hard-shadow"
       data-testid="rig-node"
     >
       <Handle type="target" position={Position.Top} />
 
-      <div className="p-spacing-3">
-        {/* Header: status dot + uppercase label */}
-        <div className="flex items-center gap-spacing-2 mb-spacing-2">
-          <span
-            data-testid={`status-dot-${data.logicalId}`}
-            className={`inline-block w-2 h-2 ${statusColor} ${statusChanged ? "status-changed" : ""} ${isRunning ? "status-dot-running" : ""}`}
-            style={{ "--status-color": statusCssColor } as React.CSSProperties}
-          />
-          <span className="text-label-lg uppercase tracking-[0.03em] text-foreground-on-dark">
+      {/* Header stripe — dark for core, light for workers */}
+      <div className={`px-3 py-1 font-mono text-[10px] flex justify-between items-center ${
+        core
+          ? "bg-stone-900 text-white"
+          : "bg-stone-200 text-stone-900 border-b border-stone-900"
+      }`}>
+        <span>NODE_TYPE: {(data.role ?? "AGENT").toUpperCase()}</span>
+        <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}>
+          {core ? "settings" : "link"}
+        </span>
+      </div>
+
+      {/* Body */}
+      <div className="p-3 space-y-2">
+        {/* Name + status badge */}
+        <div className="flex justify-between items-end border-b border-stone-100 pb-2">
+          <span className="font-headline font-bold text-sm tracking-tight uppercase">
             {data.logicalId}
+          </span>
+          <span className={`px-2 py-0.5 border font-mono text-[8px] uppercase ${
+            data.status === "running"
+              ? "border-stone-900 text-stone-900"
+              : data.status === "exited"
+                ? "border-tertiary text-tertiary"
+                : "border-stone-400 text-stone-400"
+          } ${statusChanged ? "status-changed" : ""}`}
+            style={{ "--status-color": statusCssColor } as React.CSSProperties}
+            data-testid={`status-dot-${data.logicalId}`}
+          >
+            {getStatusLabel(data.status)}
           </span>
         </div>
 
-        {/* Runtime + model */}
+        {/* Runtime info */}
         {runtimeModel && (
-          <div className="text-label-md text-foreground-muted-on-dark mb-spacing-1 pl-spacing-4">
-            {runtimeModel}
+          <div className="flex justify-between font-mono text-[9px] text-secondary">
+            <span>RUNTIME</span>
+            <span>{runtimeModel}</span>
           </div>
         )}
 
-        {/* Session name */}
-        {sessionName && (
-          <div className="text-label-sm font-mono text-foreground-muted-on-dark/60 mb-spacing-2 pl-spacing-4">
-            {sessionName}
+        {/* Alert state for exited/detached */}
+        {(data.status === "exited" || data.status === "detached") && (
+          <div className="stamp-badge">
+            <div className="w-2 h-2 rounded-full bg-tertiary" />
+            <span>{getStatusLabel(data.status)}</span>
           </div>
         )}
 
-        {/* Telemetry block */}
-        <div className="inset-dark p-spacing-2 mt-spacing-2">
-          <div className="grid grid-cols-[auto_1fr] gap-x-spacing-3 gap-y-spacing-1 text-label-sm">
-            <span className="text-foreground-muted-on-dark/60 uppercase tracking-[0.06em]">STATUS</span>
-            <span className={`font-mono ${getStatusTextClass(data.status)}`}>
-              {data.status ?? "unknown"}
-            </span>
-            <span className="text-foreground-muted-on-dark/60 uppercase tracking-[0.06em]">BOUND</span>
-            <span className="font-mono text-foreground-muted-on-dark">
-              {data.binding ? `tmux:${data.binding.tmuxSession ?? "\u2014"}` : "unbound"}
-            </span>
-          </div>
-        </div>
-
-        {/* Package badge — non-interactive until name->ID resolution exists */}
+        {/* Package badge */}
         {data.packageRefs && data.packageRefs.length > 0 && (
           <div
             data-testid="package-badge"
             title={data.packageRefs.join(", ")}
-            className="mt-spacing-2 px-spacing-2 py-spacing-1 bg-primary/12 text-label-sm text-primary font-mono"
+            className="font-mono text-[8px] text-stone-400"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >

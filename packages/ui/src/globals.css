@@ -4,160 +4,177 @@
 
 @layer base {
   :root {
-    /* Anduril-inspired Light Theme */
-    /* Reference: anduril.com/lattice/command-and-control */
+    /* Vellum Paper — "The Tactical Dossier" */
+    /* Reference: docs/design/design-v2-vellum-paper/code.md */
 
-    /* Canvas — warm Anduril beige */
-    --background: 50 5% 84%;          /* #d8d8d4 — the signature Anduril beige */
-    --background-warm: 45 6% 88%;     /* #e3e1dc — slightly lighter warm tone */
+    /* Paper surfaces */
+    --background: 47 20% 97%;           /* #faf9f5 — base paper */
+    --surface-container-lowest: 0 0% 100%;  /* #ffffff — card bodies */
+    --surface-container-low: 80 10% 95%;    /* #f3f4ef — secondary panels */
+    --surface-container: 80 10% 92%;        /* #ecefe8 — mid containers */
+    --surface-container-high: 100 10% 89%;  /* #e5e9e2 — active workspaces */
+    --surface-container-highest: 100 10% 87%; /* #dfe4dc — highest elevation */
 
-    /* Dark surfaces — cards, header, sidebar, panels */
-    --surface-dark: 0 0% 2%;          /* #050505 — near-black, Anduril card color */
-    --surface-mid: 0 0% 8%;           /* #141414 — slightly lighter dark */
-    --surface-raised: 0 0% 14%;       /* #242424 — elevated dark elements */
+    /* Ink */
+    --on-surface: 120 8% 19%;           /* #2e342e — primary text */
+    --on-surface-variant: 108 5% 36%;   /* #5b615a — secondary text */
 
-    /* Foreground — text colors */
-    --foreground: 0 0% 2%;            /* #050505 — black text on light bg */
-    --foreground-muted: 0 0% 40%;     /* #666666 — secondary text on light bg */
-    --foreground-on-dark: 50 5% 84%;  /* #d8d8d4 — light text on dark bg */
-    --foreground-muted-on-dark: 0 0% 55%;  /* #8c8c8c — muted text on dark bg */
+    /* Technical annotations */
+    --secondary: 213 15% 39%;           /* #546073 — lines, crosshairs, edge connectors */
+    --secondary-container: 220 39% 91%; /* #d8e3fa */
 
-    /* Accent */
-    --primary: 0 0% 2%;              /* Black — primary actions on light bg */
-    --primary-foreground: 50 5% 84%; /* Beige — text on primary buttons */
+    /* Stamped alerts */
+    --tertiary: 1 63% 42%;              /* #b12d2a — red ink stamps, critical */
+    --error: 0 43% 44%;                 /* #9f403d */
 
-    /* Semantic */
-    --destructive: 0 72% 51%;         /* #de3b2f — red that works on both */
-    --destructive-foreground: 0 0% 100%;
-    --warning: 40 90% 50%;            /* #f0a500 — amber */
-    --accent: 207 82% 40%;            /* #1272b8 — blue links/info */
-    --success: 145 63% 35%;           /* #21955a — green for running/ok */
+    /* Interactive */
+    --primary: 0 1% 37%;               /* #5f5e5e — primary actions */
+    --inverse-surface: 120 10% 4%;     /* #0d0f0d — dark fills, header stripes */
 
     /* Borders */
-    --ghost-border: rgba(0, 0, 0, 0.1);
-    --ghost-border-dark: rgba(255, 255, 255, 0.08);
+    --outline: 108 4% 47%;              /* #767c75 */
+    --outline-variant: 108 4% 68%;      /* #aeb4ac — ghost borders at 15% */
+
+    /* Success */
+    --success: 145 63% 35%;             /* #21955a */
 
     /* shadcn compatibility */
-    --border: var(--ghost-border);
-    --input: 0 0% 2%;
-    --ring: 0 0% 2%;
+    --foreground: var(--on-surface);
+    --foreground-muted: var(--on-surface-variant);
+    --border: var(--outline-variant);
+    --input: var(--outline);
+    --ring: var(--secondary);
     --radius: 0px;
 
-    --card: 0 0% 2%;
-    --card-foreground: 50 5% 84%;
+    --card: var(--surface-container-lowest);
+    --card-foreground: var(--on-surface);
+    --popover: var(--surface-container-lowest);
+    --popover-foreground: var(--on-surface);
+    --muted: var(--surface-container-low);
+    --muted-foreground: var(--on-surface-variant);
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 50 5% 84%;
-
-    --muted: 50 3% 78%;
-    --muted-foreground: 0 0% 40%;
-
-    --secondary: 0 0% 14%;
-    --secondary-foreground: 50 5% 84%;
+    --destructive: var(--tertiary);
+    --destructive-foreground: 0 0% 100%;
+    --warning: 40 90% 50%;
+    --accent: var(--secondary);
   }
 
   * {
-    border-color: var(--ghost-border);
+    border-color: hsl(var(--outline-variant) / 0.15);
   }
 
   body {
     background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    color: hsl(var(--on-surface));
     font-family: "Inter", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Blueprint dot grid — the paper texture */
+    background-image: radial-gradient(#d1d1cf 0.5px, transparent 0.5px);
+    background-size: 20px 20px;
   }
 
   ::selection {
-    background-color: hsl(var(--foreground) / 0.15);
-    color: hsl(var(--foreground));
+    background-color: hsl(var(--secondary) / 0.2);
+    color: hsl(var(--on-surface));
   }
 }
 
-/* Textures — Anduril dithered grain on warm surfaces */
+/* === REGISTRATION MARKS === */
+/* 8px L-shaped crosshairs at container corners, in secondary blue */
 
 @layer components {
-  /* Dot grid on warm beige canvas */
-  .bg-grid {
-    background-image: radial-gradient(circle, hsl(var(--foreground) / 0.12) 0.5px, transparent 0.5px);
-    background-size: 24px 24px;
+  .reg-mark { position: relative; }
+  .reg-mark::before,
+  .reg-mark::after,
+  .reg-mark > .reg-tl::before,
+  .reg-mark > .reg-tl::after { content: ''; position: absolute; background-color: #546073; }
+
+  .reg-tl { position: absolute; top: 0; left: 0; width: 0; height: 0; }
+  .reg-tl::before { top: 0; left: 0; width: 1px; height: 8px; }
+  .reg-tl::after  { top: 0; left: 0; width: 8px; height: 1px; }
+
+  .reg-tr { position: absolute; top: 0; right: 0; width: 0; height: 0; }
+  .reg-tr::before { content: ''; position: absolute; top: 0; right: 0; width: 1px; height: 8px; background-color: #546073; }
+  .reg-tr::after  { content: ''; position: absolute; top: 0; right: 0; width: 8px; height: 1px; background-color: #546073; }
+
+  .reg-bl { position: absolute; bottom: 0; left: 0; width: 0; height: 0; }
+  .reg-bl::before { content: ''; position: absolute; bottom: 0; left: 0; width: 1px; height: 8px; background-color: #546073; }
+  .reg-bl::after  { content: ''; position: absolute; bottom: 0; left: 0; width: 8px; height: 1px; background-color: #546073; }
+
+  .reg-br { position: absolute; bottom: 0; right: 0; width: 0; height: 0; }
+  .reg-br::before { content: ''; position: absolute; bottom: 0; right: 0; width: 1px; height: 8px; background-color: #546073; }
+  .reg-br::after  { content: ''; position: absolute; bottom: 0; right: 0; width: 8px; height: 1px; background-color: #546073; }
+}
+
+/* === VELLUM OVERLAYS === */
+
+@layer components {
+  .vellum {
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .vellum-heavy {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
   }
 
-  /* Dithered grain — the Anduril signature */
-  .bg-dither {
-    position: relative;
+  /* Crosshair marks inside vellum sheets */
+  .crosshair { position: relative; }
+  .crosshair::before {
+    content: ''; position: absolute;
+    top: 50%; left: -5px; right: -5px;
+    height: 0.5px; background: #546073; opacity: 0.5;
   }
-  .bg-dither::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-    opacity: 0.04;
-    pointer-events: none;
-    mix-blend-mode: multiply;
-    z-index: 1;
-  }
-
-  /* Noise on dark surfaces */
-  .bg-noise-dark {
-    position: relative;
-  }
-  .bg-noise-dark::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-    opacity: 0.04;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* Dark card — the primary container on light bg */
-  .card-dark {
-    background-color: hsl(var(--surface-dark));
-    color: hsl(var(--foreground-on-dark));
-    box-shadow: 0 2px 8px -2px hsl(0 0% 0% / 0.25);
-  }
-
-  /* Telemetry inset on dark cards */
-  .inset-dark {
-    background-color: hsl(0 0% 0% / 0.3);
-  }
-
-  /* Telemetry inset on light surfaces */
-  .inset-light {
-    background-color: hsl(var(--foreground) / 0.04);
-    border: 1px solid hsl(var(--foreground) / 0.06);
-  }
-
-  /* Shimmer for loading states */
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      hsl(var(--foreground) / 0.04) 25%,
-      hsl(var(--foreground) / 0.08) 50%,
-      hsl(var(--foreground) / 0.04) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s ease-in-out infinite;
-  }
-  .shimmer-dark {
-    background: linear-gradient(
-      90deg,
-      hsl(0 0% 100% / 0.02) 25%,
-      hsl(0 0% 100% / 0.06) 50%,
-      hsl(0 0% 100% / 0.02) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s ease-in-out infinite;
+  .crosshair::after {
+    content: ''; position: absolute;
+    left: 50%; top: -5px; bottom: -5px;
+    width: 0.5px; background: #546073; opacity: 0.5;
   }
 }
 
-/* Motion */
+/* === HARD SHADOWS === */
+
+@layer components {
+  .hard-shadow { box-shadow: 2px 2px 0px #2e342e; }
+  .hard-shadow-light { box-shadow: 4px 4px 0px #e5e9e2; }
+  .hard-shadow-hover:hover { box-shadow: 1px 1px 0px #2e342e; translate: 1px 1px; }
+}
+
+/* === STAMPS === */
+
+@layer components {
+  .stamp-watermark {
+    position: absolute;
+    pointer-events: none;
+    z-index: 0;
+    border: 4px solid hsl(var(--tertiary));
+    color: hsl(var(--tertiary));
+    font-family: 'Space Grotesk Variable', 'Space Grotesk', sans-serif;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    transform: rotate(-12deg);
+    opacity: 0.04;
+    padding: 0.5rem 1.5rem;
+  }
+  .stamp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid hsl(var(--tertiary) / 0.3);
+    background: hsl(var(--tertiary) / 0.08);
+    color: hsl(var(--tertiary));
+    padding: 0.125rem 0.5rem;
+    font-family: 'JetBrains Mono Variable', monospace;
+    font-size: 9px;
+    font-weight: 700;
+  }
+}
+
+/* === MOTION === */
 
 @layer components {
   @keyframes status-ping {
@@ -165,25 +182,13 @@
     70% { box-shadow: 0 0 0 6px transparent; }
     100% { box-shadow: 0 0 0 0 transparent; }
   }
-  .status-changed {
-    animation: status-ping 600ms ease-out;
-  }
+  .status-changed { animation: status-ping 600ms ease-out; }
 
   @keyframes panel-switch {
     0% { opacity: 0; }
     100% { opacity: 1; }
   }
-  .route-enter {
-    animation: panel-switch 150ms ease-out;
-  }
-
-  @keyframes loading-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-  .animate-pulse-tactical {
-    animation: loading-pulse 1.5s ease-in-out infinite;
-  }
+  .route-enter { animation: panel-switch 150ms ease-out; }
 
   @keyframes node-enter {
     from { opacity: 0; transform: translateY(8px); }
@@ -203,52 +208,57 @@
     opacity: 0;
   }
 
-  @keyframes ambient-pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 1; }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
-  .status-dot-running {
-    animation: ambient-pulse 3s ease-in-out infinite;
+  .shimmer {
+    background: linear-gradient(90deg, #ecefe8 25%, #dfe4dc 50%, #ecefe8 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-tactical {
+    animation: shimmer 2s ease-in-out infinite;
   }
 }
 
-/* React Flow — styled for light canvas with dark nodes */
+/* === REACT FLOW === */
+
 @layer components {
   .react-flow__controls {
-    border: none !important;
-    box-shadow: 0 1px 4px hsl(0 0% 0% / 0.15) !important;
+    border: 1px solid hsl(var(--outline-variant) / 0.3) !important;
+    box-shadow: 2px 2px 0px hsl(var(--on-surface) / 0.08) !important;
+    background: hsl(var(--background)) !important;
   }
   .react-flow__controls-button {
     background-color: hsl(var(--background)) !important;
     border: none !important;
-    border-bottom: 1px solid hsl(var(--foreground) / 0.08) !important;
-    fill: hsl(var(--foreground-muted)) !important;
+    border-bottom: 1px solid hsl(var(--outline-variant) / 0.15) !important;
+    fill: hsl(var(--on-surface-variant)) !important;
   }
   .react-flow__controls-button:hover {
-    background-color: hsl(var(--foreground) / 0.05) !important;
-    fill: hsl(var(--foreground)) !important;
-  }
-  .react-flow__edge-path {
-    stroke-width: 1.5;
+    background-color: hsl(var(--surface-container-high)) !important;
+    fill: hsl(var(--on-surface)) !important;
   }
   .react-flow__handle {
-    background-color: hsl(var(--foreground) / 0.3) !important;
-    border: 1px solid hsl(var(--foreground) / 0.5) !important;
+    background-color: #546073 !important;
+    border: none !important;
     width: 6px !important;
     height: 6px !important;
+    border-radius: 50% !important;
   }
 }
 
-/* Reduced motion */
+/* === REDUCED MOTION === */
+
 @media (prefers-reduced-motion: reduce) {
   .status-changed,
   .route-enter,
-  .animate-pulse-tactical,
   .node-enter,
   .edge-draw-in,
-  .status-dot-running,
   .shimmer,
-  .shimmer-dark {
+  .animate-pulse-tactical {
     animation: none;
     opacity: 1;
     transform: none;

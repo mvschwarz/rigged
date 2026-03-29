@@ -80,6 +80,7 @@ export function DiscoveryOverlay() {
   const { data: sessions = [] } = useDiscoveredSessions();
   useDiscoveryPoll(30_000);
   const claimMutation = useClaimSession();
+  const visibleSessions = sessions.filter((session) => session.status !== "claimed");
 
   const [claimTarget, setClaimTarget] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -107,7 +108,7 @@ export function DiscoveryOverlay() {
     );
   };
 
-  if (sessions.length === 0) {
+  if (visibleSessions.length === 0) {
     return (
       <div className="p-spacing-6" data-testid="discovery-empty">
         <p className="text-body-md text-foreground-muted">No discovered sessions</p>
@@ -119,7 +120,7 @@ export function DiscoveryOverlay() {
     <div className="p-spacing-6" data-testid="discovery-overlay">
       <h3 className="text-headline-md uppercase mb-spacing-4">DISCOVERED SESSIONS</h3>
 
-      {sessions.map((s) => (
+      {visibleSessions.map((s) => (
         <DiscoveredSessionCard key={s.id} session={s} onClaim={handleClaimClick} />
       ))}
 

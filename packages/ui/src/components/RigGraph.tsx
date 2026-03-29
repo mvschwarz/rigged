@@ -202,12 +202,22 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
 
   return (
     <div
-      className="w-full h-full relative bg-background"
+      className="w-full h-full relative"
       data-testid="graph-view"
       data-animated={shouldAnimate ? "true" : "false"}
     >
-      {/* Atmospheric grid overlay */}
-      <div className="absolute inset-0 bg-grid pointer-events-none z-0" />
+      {/* Registration marks on canvas */}
+      <div className="absolute top-4 left-4 w-3 h-3 reg-mark"><div className="reg-tl" /></div>
+      <div className="absolute top-4 right-4 w-3 h-3"><div className="reg-tr" /></div>
+      <div className="absolute bottom-4 left-4 w-3 h-3"><div className="reg-bl" /></div>
+      <div className="absolute bottom-4 right-4 w-3 h-3"><div className="reg-br" /></div>
+
+      {/* Ambient rig stamp watermark */}
+      {rigId && (
+        <div className="stamp-watermark text-3xl left-[20%] top-[35%]">
+          {rigId.slice(0, 12)}
+        </div>
+      )}
 
       {reconnecting && (
         <div className="absolute top-spacing-4 right-spacing-4 z-20">
@@ -217,10 +227,10 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
         </div>
       )}
       {focusMessage && (
-        <div className={`absolute top-spacing-4 left-spacing-4 z-20 px-spacing-4 py-spacing-2 text-label-md font-mono rim-light ${
-          focusMessage.type === "success" ? "card-dark text-foreground-on-dark" :
-          focusMessage.type === "error" ? "bg-destructive text-white" :
-          "card-dark text-foreground-on-dark"
+        <div className={`absolute top-spacing-4 left-spacing-4 z-20 px-spacing-4 py-spacing-2 font-mono text-[10px] border ${
+          focusMessage.type === "success" ? "bg-white border-stone-900 text-stone-900" :
+          focusMessage.type === "error" ? "bg-tertiary/10 border-tertiary text-tertiary" :
+          "bg-white border-stone-300 text-stone-600"
         }`}>
           {focusMessage.text}
         </div>
@@ -240,9 +250,12 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
         <Controls />
       </ReactFlow>
 
-      {/* Bottom-left rig ID label */}
-      <div className="absolute bottom-spacing-4 left-spacing-4 z-20 text-label-sm font-mono text-foreground-muted opacity-30">
-        RIG {rigId?.slice(0, 8)}
+      {/* Footer status pills */}
+      <div className="absolute bottom-4 left-4 z-20 flex gap-spacing-2">
+        <div className="bg-white/90 border border-stone-900 px-3 py-1 font-mono text-[10px] flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+          TOPOLOGY_ACTIVE
+        </div>
       </div>
     </div>
   );

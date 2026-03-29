@@ -1,45 +1,63 @@
 import type { CSSProperties } from "react";
+import { MarkerType } from "@xyflow/react";
 
 export interface EdgeStyleResult {
   style: CSSProperties;
   animated: boolean;
   type: string;
+  markerEnd: { type: MarkerType; color: string; width: number; height: number };
+  label?: undefined;
 }
 
+const EDGE_COLOR = "#546073";
+const ARROW = { type: MarkerType.ArrowClosed, color: EDGE_COLOR, width: 12, height: 12 };
+
 /**
- * Maps edge kind to React Flow edge style — dark edges on light canvas.
+ * Edge styles for vellum paper aesthetic.
+ * All edges use secondary blue (#546073) with arrow markers.
+ * Relationship type communicated via line style, not labels.
  */
 export function getEdgeStyle(kind: string): EdgeStyleResult {
   switch (kind) {
     case "delegates_to":
       return {
-        style: { stroke: "#050505", strokeWidth: 2 },
+        style: { stroke: EDGE_COLOR, strokeWidth: 1.5 },
         animated: false,
         type: "smoothstep",
+        markerEnd: ARROW,
+        label: undefined,
       };
     case "spawned_by":
       return {
-        style: { stroke: "#050505", strokeWidth: 2, strokeDasharray: "6 3" },
+        style: { stroke: EDGE_COLOR, strokeWidth: 1.5, strokeDasharray: "6 3" },
         animated: false,
         type: "smoothstep",
+        markerEnd: ARROW,
+        label: undefined,
       };
     case "can_observe":
       return {
-        style: { stroke: "#666666", strokeWidth: 1.5, strokeDasharray: "2 2" },
+        style: { stroke: EDGE_COLOR, strokeWidth: 1, strokeDasharray: "4 2" },
         animated: false,
         type: "smoothstep",
+        markerEnd: ARROW,
+        label: undefined,
       };
     case "uses":
       return {
-        style: { stroke: "#1272b8", strokeWidth: 1 },
+        style: { stroke: EDGE_COLOR, strokeWidth: 1, strokeDasharray: "2 2" },
         animated: false,
         type: "smoothstep",
+        markerEnd: ARROW,
+        label: undefined,
       };
     default:
       return {
-        style: { stroke: "#666666", strokeWidth: 1 },
+        style: { stroke: EDGE_COLOR, strokeWidth: 1 },
         animated: false,
         type: "smoothstep",
+        markerEnd: ARROW,
+        label: undefined,
       };
   }
 }

@@ -13,5 +13,7 @@ export function deriveSessionName(
   logicalId: string
 ): string {
   const stem = MANAGED_STEM_PATTERN.test(rigName) ? rigName : `r00-${rigName}`;
-  return `${stem}-${logicalId}`;
+  // tmux replaces dots with underscores in session names — normalize to match
+  const safeId = logicalId.replace(/\./g, "_");
+  return `${stem}-${safeId}`;
 }

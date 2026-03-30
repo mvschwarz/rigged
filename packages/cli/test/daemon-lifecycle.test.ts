@@ -61,7 +61,7 @@ describe("Daemon Lifecycle", () => {
     expect(spawnMock).toHaveBeenCalledOnce();
 
     const [cmd, args, opts] = spawnMock.mock.calls[0]!;
-    expect(cmd).toBe("node");
+    expect(cmd).toBe(process.execPath);
     expect(args[0]).toContain("packages/daemon");
     expect(args[0]).toContain("dist/index.js");
     expect(opts.env).toMatchObject({
@@ -427,5 +427,57 @@ describe("Daemon Lifecycle", () => {
     await stopDaemon(deps);
     expect(deps.kill).toHaveBeenCalledWith(999, "SIGTERM");
     expect(deps.removeFile).toHaveBeenCalledWith(STATE_FILE);
+  });
+
+  // Test 25: start spawns process.execPath, not bare "node"
+  it("start: spawns process.execPath as the Node binary", async () => {
+    const deps = mockDeps();
+    await startDaemon({ port: 7433, db: "rigged.sqlite" }, deps);
+
+    const spawnMock = deps.spawn as ReturnType<typeof vi.fn>;
+    const [cmd] = spawnMock.mock.calls[0]!;
+    expect(cmd).toBe(process.execPath);
+  });
+
+  // Test 26: RIGGED_URL set → getDaemonStatus bypasses daemon.json
+  it("status: RIGGED_URL set → probes URL directly, ignores daemon.json", async () => {
+    const prev = process.env["RIGGED_URL"];
+    process.env["RIGGED_URL"] = "http://127.0.0.1:7455";
+    try {
+      const deps = mockDeps({
+        exists: vi.fn(() => false),
+        readFile: vi.fn(() => null),
+        fetch: vi.fn(async () => ({ ok: true })),
+      });
+
+      const status = await getDaemonStatus(deps);
+      expect(status.state).toBe("running");
+      expect(status.port).toBe(7455);
+      expect(status.healthy).toBe(true);
+      // daemon.json was never read
+      expect(deps.readFile).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env["RIGGED_URL"];
+      else process.env["RIGGED_URL"] = prev;
+    }
+  });
+
+  // Test 27: RIGGED_URL set but unreachable → stopped
+  it("status: RIGGED_URL set but unreachable → stopped", async () => {
+    const prev = process.env["RIGGED_URL"];
+    process.env["RIGGED_URL"] = "http://127.0.0.1:9999";
+    try {
+      const deps = mockDeps({
+        exists: vi.fn(() => false),
+        readFile: vi.fn(() => null),
+        fetch: vi.fn(async () => { throw new Error("connection refused"); }),
+      });
+
+      const status = await getDaemonStatus(deps);
+      expect(status.state).toBe("stopped");
+    } finally {
+      if (prev === undefined) delete process.env["RIGGED_URL"];
+      else process.env["RIGGED_URL"] = prev;
+    }
   });
 });

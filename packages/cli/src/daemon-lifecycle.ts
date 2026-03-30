@@ -100,7 +100,7 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
 
   const logFd = deps.openForAppend(LOG_FILE);
 
-  const child = deps.spawn("node", [daemonEntry], {
+  const child = deps.spawn(process.execPath, [daemonEntry], {
     env: {
       ...process.env as Record<string, string>,
       RIGGED_PORT: String(port),
@@ -183,6 +183,18 @@ export async function stopDaemon(deps: LifecycleDeps): Promise<void> {
 }
 
 export async function getDaemonStatus(deps: LifecycleDeps): Promise<DaemonStatus> {
+  // If RIGGED_URL is set, bypass daemon.json and probe that URL directly
+  const riggedUrl = process.env["RIGGED_URL"];
+  if (riggedUrl) {
+    try {
+      const res = await deps.fetch(`${riggedUrl}/healthz`);
+      const url = new URL(riggedUrl);
+      return { state: "running", port: Number(url.port) || 7433, healthy: res.ok };
+    } catch {
+      return { state: "stopped" };
+    }
+  }
+
   const state = readState(deps);
   if (!state) return { state: "stopped" };
 

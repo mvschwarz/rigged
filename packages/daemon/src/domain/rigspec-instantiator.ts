@@ -1,3 +1,4 @@
+import nodePath from "node:path";
 import type Database from "better-sqlite3";
 import type { RigRepository } from "./rig-repository.js";
 import type { SessionRegistry } from "./session-registry.js";
@@ -601,7 +602,7 @@ export class PodRigInstantiator {
     member: RigSpecPodMember,
   ): ResolvedStartupFile[] {
     const files: ResolvedStartupFile[] = [];
-    const nodePath = require("node:path") as typeof import("node:path");
+    // nodePath imported at top level (ESM)
 
     // 1. Agent base startup
     for (const f of agentSpec.startup.files) {

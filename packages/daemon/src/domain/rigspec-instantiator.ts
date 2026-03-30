@@ -519,7 +519,8 @@ export class PodRigInstantiator {
     const allFailed = nodeResults.length > 0 && nodeResults.every((n) => n.status === "failed");
     if (allFailed) {
       try { this.deps.rigRepo.deleteRig(rigId); } catch { /* best-effort */ }
-      return { ok: false, code: "instantiate_error", message: "all node launches/startups failed" };
+      const details = nodeResults.map((n) => `${n.logicalId}: ${n.error ?? "unknown"}`).join("; ");
+      return { ok: false, code: "instantiate_error", message: `all node launches/startups failed — ${details}` };
     }
 
     // Emit rig.imported

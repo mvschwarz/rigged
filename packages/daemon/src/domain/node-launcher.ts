@@ -82,8 +82,12 @@ export class NodeLauncher {
       };
     }
 
-    // 3. Create tmux session
-    const tmuxResult = await this.tmuxAdapter.createSession(sessionName, opts?.cwd ?? node.cwd ?? undefined);
+    // 3. Create tmux session (handle stale duplicate by killing and retrying)
+    let tmuxResult = await this.tmuxAdapter.createSession(sessionName, opts?.cwd ?? node.cwd ?? undefined);
+    if (!tmuxResult.ok && tmuxResult.code === "duplicate_session") {
+      await this.tmuxAdapter.killSession(sessionName);
+      tmuxResult = await this.tmuxAdapter.createSession(sessionName, opts?.cwd ?? node.cwd ?? undefined);
+    }
     if (!tmuxResult.ok) {
       return { ok: false, code: tmuxResult.code, message: tmuxResult.message };
     }

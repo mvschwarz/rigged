@@ -645,7 +645,7 @@ describe("RestoreOrchestrator", () => {
     let callCount = 0;
     (tmux.createSession as ReturnType<typeof vi.fn>).mockImplementation(async () => {
       callCount++;
-      if (callCount === 2) return { ok: false as const, code: "duplicate_session", message: "err" };
+      if (callCount === 2) return { ok: false as const, code: "unknown", message: "simulated launch failure" };
       return { ok: true as const };
     });
     const orch = createOrchestrator({ tmux });

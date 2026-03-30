@@ -32,13 +32,6 @@ function formatAge(timestamp: string | null): string {
   return `${diffDay}d ago`;
 }
 
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  return `${h}h ${m}m`;
-}
-
 export function RigCard({ rig, psEntry, onSelect, onSnapshot, onExport, onDown }: RigCardProps) {
   const animatedCount = useCountUp(rig.nodeCount);
   const isRunning = psEntry && psEntry.runningCount > 0;
@@ -83,10 +76,10 @@ export function RigCard({ rig, psEntry, onSelect, onSnapshot, onExport, onDown }
             <span>SNAPSHOT</span>
             <span data-testid={`snapshot-age-${rig.id}`}>{formatAge(rig.latestSnapshotAt)}</span>
           </div>
-          {psEntry && psEntry.uptimeSeconds != null && (
+          {psEntry && psEntry.uptime != null && (
             <div className="flex justify-between font-mono text-[9px] text-secondary">
               <span>UPTIME</span>
-              <span>{formatUptime(psEntry.uptimeSeconds)}</span>
+              <span>{psEntry.uptime}</span>
             </div>
           )}
         </div>

@@ -130,7 +130,7 @@ function createMockDaemon() {
           res.end(JSON.stringify({ ok: false, code: "preflight_failed", message: "conflict" }));
         } else {
           res.writeHead(201, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ rigId: "rig-new", specName: "imported-rig", specVersion: "0.1.0", nodes: [{ logicalId: "orchestrator", status: "launched" }, { logicalId: "worker", status: "launched" }] }));
+          res.end(JSON.stringify({ rigId: "rig-new", specName: "imported-rig", specVersion: "0.1.0", nodes: [{ logicalId: "orchestrator", status: "launched" }, { logicalId: "worker", status: "launched" }], attachCommand: "tmux attach -t orch-lead@imported-rig" }));
         }
       });
       return;
@@ -384,5 +384,20 @@ describe("rigged export + import", () => {
     expect(output).toContain("imported-rig");
     // Verify X-Rig-Root header was sent
     expect(capturedImportHeaders["x-rig-root"]).toMatch(/\/my\/project/);
+  });
+
+  // NS-T14: import --instantiate handoff includes attach command
+  it("import --instantiate success shows attach command", async () => {
+    const deps: ImportDeps = {
+      lifecycleDeps: runningLifecycleDeps(port),
+      clientFactory: (baseUrl) => new DaemonClient(baseUrl),
+      readFile: () => 'version: "0.2"\nname: test\npods:\n  - id: dev\n    label: Dev\n    members:\n      - id: impl\n        agent_ref: "local:agents/impl"\n        profile: default\n        runtime: claude-code\n        cwd: .\n    edges: []\nedges: []',
+    };
+    const program = new Command();
+    program.addCommand(importCommand(deps));
+    const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "import", "rig.yaml", "--instantiate"]));
+    const output = logs.join("\n");
+    expect(output).toContain("Attach:");
+    expect(output).toContain("tmux attach -t orch-lead@imported-rig");
   });
 });

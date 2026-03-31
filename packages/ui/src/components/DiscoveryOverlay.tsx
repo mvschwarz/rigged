@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,6 +77,68 @@ function DiscoveredSessionCard({ session, onClaim }: { session: DiscoveredSessio
   );
 }
 
+export function GenerateDraftSection() {
+  const [draftYaml, setDraftYaml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleGenerate = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/discovery/draft-rig", { method: "POST" });
+      if (!res.ok) {
+        setDraftYaml(`# Error: draft generation failed (HTTP ${res.status})`);
+        return;
+      }
+      const yaml = await res.text();
+      setDraftYaml(yaml);
+    } catch {
+      setDraftYaml("# Error: failed to reach daemon");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return (
+    <div className="mt-spacing-4 border-t border-foreground/10 pt-spacing-4" data-testid="generate-draft-section">
+      <Button
+        variant="tactical"
+        onClick={handleGenerate}
+        disabled={loading}
+        data-testid="generate-draft-btn"
+        className="mb-spacing-3"
+      >
+        {loading ? "GENERATING..." : "GENERATE RIG SPEC"}
+      </Button>
+
+      {draftYaml && (() => {
+        // Extract warning comments from YAML preamble
+        const lines = draftYaml.split("\n");
+        const warnings = lines.filter((l) => l.startsWith("# WARNING:")).map((l) => l.replace(/^# WARNING:\s*/, ""));
+        const yamlBody = lines.filter((l) => !l.startsWith("# WARNING:")).join("\n").trim();
+        return (
+        <div className="relative">
+          {warnings.length > 0 && (
+            <div className="mb-spacing-2 p-spacing-2 bg-warning/10 border border-warning/30 text-label-sm" data-testid="draft-warnings">
+              {warnings.map((w, i) => <div key={i} className="text-warning font-mono">{w}</div>)}
+            </div>
+          )}
+          <pre className="bg-surface-low p-spacing-3 text-label-sm font-mono overflow-x-auto max-h-64 border border-foreground/10" data-testid="draft-yaml">
+            {yamlBody}
+          </pre>
+          <button
+            onClick={() => navigator.clipboard?.writeText(draftYaml)}
+            className="absolute top-2 right-2 text-label-sm text-foreground-muted hover:text-foreground"
+            data-testid="copy-draft-btn"
+          >
+            COPY
+          </button>
+        </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 export function DiscoveryOverlay() {
   const { data: sessions = [] } = useDiscoveredSessions();
   useDiscoveryPoll(30_000);
@@ -125,6 +187,9 @@ export function DiscoveryOverlay() {
       {visibleSessions.map((s) => (
         <DiscoveredSessionCard key={s.id} session={s} onClaim={handleClaimClick} />
       ))}
+
+      {/* Generate Draft Rig Spec */}
+      <GenerateDraftSection />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent data-testid="claim-dialog">

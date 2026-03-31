@@ -311,3 +311,46 @@ describe("Discovery activity feed events", () => {
     expect(eventRoute(makeEvent({ type: "session.vanished" }))).toBe("/discovery");
   });
 });
+
+// NS-T14: Generate Draft Rig Spec button — runtime regression
+import { GenerateDraftSection } from "../src/components/DiscoveryOverlay.js";
+
+describe("Discovery Generate Draft", () => {
+  it("clicking Generate Rig Spec button calls /api/discovery/draft-rig and renders YAML", async () => {
+    fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+      if (typeof url === "string" && url.includes("/api/discovery/draft-rig") && opts?.method === "POST") {
+        return { ok: true, text: async () => '# WARNING: Excluded session\nversion: "0.2"\nname: discovered-rig\npods: []' };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    global.fetch = fetchMock;
+
+    render(<GenerateDraftSection />);
+
+    // Button should be present
+    const btn = screen.getByTestId("generate-draft-btn");
+    expect(btn).toBeDefined();
+    expect(btn.textContent).toContain("GENERATE RIG SPEC");
+
+    // Click generate
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    // Draft YAML should appear with warnings extracted
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-yaml")).toBeDefined();
+      expect(screen.getByTestId("draft-yaml").textContent).toContain("discovered-rig");
+      // Warning should be extracted into separate section
+      expect(screen.getByTestId("draft-warnings")).toBeDefined();
+      expect(screen.getByTestId("draft-warnings").textContent).toContain("Excluded session");
+      // YAML body should NOT contain the warning comment
+      expect(screen.getByTestId("draft-yaml").textContent).not.toContain("# WARNING");
+    });
+
+    // Verify fetch was called with POST
+    const draftCalls = fetchMock.mock.calls.filter((c: any[]) => String(c[0]).includes("draft-rig"));
+    expect(draftCalls.length).toBeGreaterThan(0);
+    expect(draftCalls[0]![1]).toEqual(expect.objectContaining({ method: "POST" }));
+  });
+});

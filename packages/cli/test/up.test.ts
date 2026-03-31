@@ -68,7 +68,7 @@ describe("Up CLI", () => {
           res.end(JSON.stringify({ status: "planned", runId: "run-1", stages: [{ stage: "resolve_spec", status: "ok" }], errors: [], warnings: [] }));
         } else {
           res.writeHead(201, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "completed", runId: "run-2", rigId: "rig-1", stages: [{ stage: "resolve_spec", status: "ok" }, { stage: "import_rig", status: "ok" }], errors: [], warnings: [] }));
+          res.end(JSON.stringify({ status: "completed", runId: "run-2", rigId: "rig-1", stages: [{ stage: "resolve_spec", status: "ok" }, { stage: "import_rig", status: "ok" }], errors: [], warnings: [], attachCommand: "tmux attach -t dev-impl@test-rig" }));
         }
       } else {
         res.writeHead(404, { "Content-Type": "application/json" });
@@ -186,5 +186,17 @@ describe("Up CLI", () => {
 
     server.removeAllListeners("request");
     for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
+  });
+
+  // NS-T14: fresh boot handoff includes dashboard URL + attach command
+  it("fresh boot success shows dashboard URL and attach command", async () => {
+    const { logs } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rigged", "up", "/tmp/test.yaml"]);
+    });
+    const output = logs.join("\n");
+    expect(output).toContain("Dashboard:");
+    expect(output).toContain(`http://localhost:${port}/rigs/rig-1`);
+    expect(output).toContain("Attach:");
+    expect(output).toContain("tmux attach -t dev-impl@test-rig");
   });
 });

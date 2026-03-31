@@ -146,6 +146,7 @@ function createMockDaemon() {
           { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
           { nodeId: "n2", logicalId: "worker", status: "checkpoint_written" },
         ],
+        attachCommand: "tmux attach -t orch-lead@test-rig",
       }));
       return;
     }
@@ -188,7 +189,11 @@ describe("rigged snapshot + restore", () => {
     const program = new Command();
     program.addCommand(snapshotCommand(runningDeps(port)));
     const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "snapshot", "rig-1"]));
-    expect(logs.join("\n")).toContain("snap-new-123");
+    const output = logs.join("\n");
+    expect(output).toContain("snap-new-123");
+    // NS-T14: handoff includes restore instruction
+    expect(output).toContain("To restore:");
+    expect(output).toContain("rigged restore snap-new-123 --rig rig-1");
   });
 
   // Test 2: snapshot create 404
@@ -221,6 +226,9 @@ describe("rigged snapshot + restore", () => {
     expect(output).toContain("resumed");
     expect(output).toContain("worker");
     expect(output).toContain("checkpoint_written");
+    // NS-T14: handoff includes attach command
+    expect(output).toContain("Attach:");
+    expect(output).toContain("tmux attach -t orch-lead@test-rig");
   });
 
   // Test 5: restore with failed node -> non-zero exit

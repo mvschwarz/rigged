@@ -905,7 +905,7 @@ describe("RestoreOrchestrator", () => {
   });
 
   // NS-T05: R3 — resumeType set but missing token → FAILED
-  it("pod-aware restore with resume type but missing token → FAILED", async () => {
+  it("pod-aware restore with resume type but missing token → fresh launch with warning", async () => {
     const rig = rigRepo.createRig("test-rig");
     db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-2", rig.id, "Dev");
     const node = rigRepo.addNode(rig.id, "dev.qa", { runtime: "claude-code", podId: "pod-2" });
@@ -924,8 +924,9 @@ describe("RestoreOrchestrator", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       const nodeResult = result.result.nodes.find((n) => n.nodeId === node.id);
-      expect(nodeResult!.status).toBe("failed");
-      expect(nodeResult!.error).toContain("no token");
+      // Pod-aware with missing token: launches fresh (not failed), with warning
+      expect(nodeResult!.status).not.toBe("failed");
+      expect(result.result.warnings.some((w: string) => w.includes("no resume token"))).toBe(true);
     }
   });
 });

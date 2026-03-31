@@ -255,6 +255,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     }),
     podInstantiator,
     podBundleSourceResolver,
+    runtimeAdapters: { "claude-code": claudeAdapter, "codex": codexAdapter, "terminal": new (await import("./adapters/terminal-adapter.js")).TerminalAdapter() },
   };
 
   const app = createApp(deps);

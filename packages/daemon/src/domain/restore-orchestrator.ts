@@ -309,8 +309,22 @@ export class RestoreOrchestrator {
     // Clear stale state so NodeLauncher doesn't see already_bound
     this.clearStaleState(nodeId, rigId);
 
+    // Derive canonical session name for pod-aware nodes
+    const rig = this.rigRepo.getRig(rigId);
+    let launchOpts: { sessionName?: string } | undefined;
+    if (node.podId && rig) {
+      // Pod-aware: derive {pod}-{member}@{rigName} from node identity
+      const parts = node.logicalId.split(".");
+      if (parts.length >= 2) {
+        const podPart = parts[0]!;
+        const memberPart = parts.slice(1).join(".");
+        const { deriveCanonicalSessionName } = await import("./session-name.js");
+        launchOpts = { sessionName: deriveCanonicalSessionName(podPart, memberPart, rig.rig.name) };
+      }
+    }
+
     // Attempt launch — compensate ONLY if launch itself fails
-    const launchResult = await this.nodeLauncher.launchNode(rigId, node.logicalId);
+    const launchResult = await this.nodeLauncher.launchNode(rigId, node.logicalId, launchOpts);
     if (!launchResult.ok) {
       // Launch failed — restore prior state (compensating action)
       this.restoreNodeState(nodeId, priorState);
@@ -366,12 +380,14 @@ export class RestoreOrchestrator {
       } else {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume attempted but failed. Check the harness state manually or launch fresh with: rigged up` };
       }
-    } else if (restorePolicy === "resume_if_possible" && isPodAware && resumeType && resumeType !== "none") {
-      // Pod-aware resume: handled by launchHarness in startup orchestrator
+    } else if (restorePolicy === "resume_if_possible" && isPodAware) {
+      // Pod-aware restore: launchHarness handles resume (with token) or fresh (without)
+      // baseStatus stays fresh_no_checkpoint — it will be updated to "resumed" after
+      // startup replay succeeds IF the harness resumes. Fresh launch with no token
+      // is honest: the node boots but without prior context.
       if (!resumeToken) {
-        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume requested but no token available. Restore the node manually or launch fresh with: rigged up` };
+        warnings?.push(`${node.logicalId}: no resume token available. Node will launch fresh (without prior context).`);
       }
-      // baseStatus stays fresh_no_checkpoint — it will be updated to "resumed" after startup replay succeeds
     }
 
     // Checkpoint delivery (if not already resumed)

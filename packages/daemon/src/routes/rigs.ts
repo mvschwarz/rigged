@@ -114,7 +114,12 @@ rigsRoutes.post("/:id/up", async (c) => {
     return c.json({ error: "Restore orchestrator not available" }, 500);
   }
 
-  const result = await restoreOrch.restore(snapshot.id);
+  const adapters = c.get("runtimeAdapters" as never) as Record<string, import("../domain/runtime-adapter.js").RuntimeAdapter> | undefined;
+  const fs = await import("node:fs");
+  const result = await restoreOrch.restore(snapshot.id, {
+    adapters: adapters ?? {},
+    fsOps: { exists: (p: string) => fs.existsSync(p) },
+  });
   if (!result.ok) {
     return c.json({ error: result.message, code: result.code }, result.code === "rig_not_stopped" ? 409 : 400);
   }

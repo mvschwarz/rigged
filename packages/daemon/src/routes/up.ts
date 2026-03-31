@@ -19,6 +19,7 @@ function getDeps(c: { get: (key: string) => unknown }) {
     rigRepo: c.get("rigRepo" as never) as RigRepository,
     snapshotRepo: c.get("snapshotRepo" as never) as SnapshotRepository,
     restoreOrchestrator: c.get("restoreOrchestrator" as never) as RestoreOrchestrator | undefined,
+    runtimeAdapters: c.get("runtimeAdapters" as never) as Record<string, import("../domain/runtime-adapter.js").RuntimeAdapter> | undefined,
   };
 }
 
@@ -38,7 +39,11 @@ async function restoreByRigId(rigId: string, rigName: string | null, deps: Retur
     return c.json({ error: "Restore orchestrator not available" }, 500);
   }
 
-  const result = await restoreOrchestrator.restore(snapshot.id);
+  const fs = await import("node:fs");
+  const result = await restoreOrchestrator.restore(snapshot.id, {
+    adapters: deps.runtimeAdapters ?? {},
+    fsOps: { exists: (p: string) => fs.existsSync(p) },
+  });
   if (!result.ok) {
     return c.json({ error: result.message, code: result.code }, result.code === "rig_not_stopped" ? 409 : 400);
   }

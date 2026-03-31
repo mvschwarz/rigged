@@ -66,6 +66,7 @@ export interface AppDeps {
   teardownOrchestrator: RigTeardownOrchestrator;
   podInstantiator: PodRigInstantiator;
   podBundleSourceResolver: PodBundleSourceResolver | null;
+  runtimeAdapters?: Record<string, import("./domain/runtime-adapter.js").RuntimeAdapter>;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -149,6 +150,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("teardownOrchestrator" as never, deps.teardownOrchestrator);
     c.set("podInstantiator" as never, deps.podInstantiator);
     c.set("podBundleSourceResolver" as never, deps.podBundleSourceResolver);
+    c.set("runtimeAdapters" as never, deps.runtimeAdapters ?? {});
     await next();
   });
 

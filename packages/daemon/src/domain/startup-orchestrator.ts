@@ -149,10 +149,10 @@ export class StartupOrchestrator {
           errors.push(`Harness launch failed: ${launchResult.error}`);
           return this.fail(input, errors);
         }
-        // Persist resume token if returned
-        if (launchResult.resumeToken && launchResult.resumeType) {
+        // Persist resume metadata if returned (either token or type)
+        if (launchResult.resumeToken || launchResult.resumeType) {
           try {
-            this.sessionRegistry.updateResumeToken(input.sessionId, launchResult.resumeType, launchResult.resumeToken);
+            this.sessionRegistry.updateResumeToken(input.sessionId, launchResult.resumeType ?? "", launchResult.resumeToken ?? "");
           } catch { /* best-effort */ }
         }
       } catch (err) {

@@ -66,7 +66,12 @@ restoreRoutes.post("/:snapshotId", async (c) => {
     return c.json({ error: "Snapshot not found" }, 404);
   }
 
-  const outcome = await restoreOrchestrator.restore(snapshotId);
+  const adapters = c.get("runtimeAdapters" as never) as Record<string, import("../domain/runtime-adapter.js").RuntimeAdapter> | undefined;
+  const fs = await import("node:fs");
+  const outcome = await restoreOrchestrator.restore(snapshotId, {
+    adapters: adapters ?? {},
+    fsOps: { exists: (p: string) => fs.existsSync(p) },
+  });
 
   if (!outcome.ok) {
     const status = outcome.code === "snapshot_not_found" || outcome.code === "rig_not_found"
@@ -77,5 +82,11 @@ restoreRoutes.post("/:snapshotId", async (c) => {
     return c.json({ error: outcome.message, code: outcome.code }, status);
   }
 
-  return c.json(outcome.result);
+  // Compute attach command from first running node
+  const { getNodeInventory } = await import("../domain/node-inventory.js");
+  const inventory = getNodeInventory(restoreOrchestrator.db, rigId);
+  const firstRunning = inventory.find((n) => n.canonicalSessionName && n.sessionStatus === "running");
+  const attachCommand = firstRunning?.tmuxAttachCommand ?? inventory.find((n) => n.canonicalSessionName)?.tmuxAttachCommand ?? null;
+
+  return c.json({ ...outcome.result, attachCommand });
 });

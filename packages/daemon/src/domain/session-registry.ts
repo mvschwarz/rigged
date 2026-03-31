@@ -22,7 +22,7 @@ export class SessionRegistry {
   registerSession(nodeId: string, sessionName: string): Session {
     if (!validateSessionName(sessionName)) {
       throw new Error(
-        `Invalid session name "${sessionName}": must match Rigged naming pattern r{NN}-{cluster}{N}-{role}`
+        `Invalid session name "${sessionName}": must match legacy r{NN}-{suffix} or canonical {pod}-{member}@{rig} format with allowed characters (a-z, A-Z, 0-9, -, _, ., @)`
       );
     }
 

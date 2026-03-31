@@ -4,7 +4,7 @@ import type { RigRepository } from "./rig-repository.js";
 import type { TmuxAdapter } from "../adapters/tmux.js";
 import type { ExecFn } from "../adapters/tmux.js";
 import type { LegacyRigSpec as RigSpec, PreflightResult, RigSpec as PodRigSpec, RigSpecPod, RigSpecPodMember } from "./types.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
-import { deriveSessionName, validateSessionName } from "./session-name.js";
+import { deriveSessionName, validateSessionName, validateSessionComponents } from "./session-name.js";
 
 const RUNTIME_COMMANDS: Record<string, string> = {
   "claude-code": "claude --version",
@@ -153,7 +153,17 @@ export function rigPreflight(input: RigPreflightInput): PreflightResult {
     return { ready: false, errors: [`Parse error: ${(err as Error).message}`], warnings };
   }
 
-  // 2. For each pod member: resolve agent_ref + profile, check runtime, check cwd
+  // 2. Validate session name components for all pod members
+  for (const pod of rigSpec.pods) {
+    for (const member of pod.members) {
+      const nameErrors = validateSessionComponents(pod.id, member.id, rigSpec.name);
+      for (const err of nameErrors) {
+        errors.push(`${pod.id}.${member.id}: ${err}`);
+      }
+    }
+  }
+
+  // 3. For each pod member: resolve agent_ref + profile, check runtime, check cwd
   for (const pod of rigSpec.pods) {
     for (const member of pod.members) {
       // Resolve agent_ref

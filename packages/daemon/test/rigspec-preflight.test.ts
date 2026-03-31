@@ -353,6 +353,26 @@ describe("Rebooted rig preflight", () => {
   });
 
   // T8: import collision as warning
+  it("rejects invalid session name characters in authored pod/member/rig names with per-component error", () => {
+    const rigYaml = makeRigYaml({
+      name: "my rig",
+      pods: [{
+        id: "dev 1", label: "Dev",
+        members: [{ id: "impl!", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." }],
+        edges: [],
+      }],
+    });
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: validAgentYaml("impl"),
+    };
+    const result = rigPreflight({ rigSpecYaml: rigYaml, rigRoot: RIG_ROOT, fsOps: mockFs(files) });
+    expect(result.ready).toBe(false);
+    // Per-component errors for pod, member, and rig name
+    expect(result.errors.some((e) => e.includes("pod name") && e.includes("dev 1") && e.includes(" "))).toBe(true);
+    expect(result.errors.some((e) => e.includes("member name") && e.includes("impl!") && e.includes("!"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("rig name") && e.includes("my rig") && e.includes(" "))).toBe(true);
+  });
+
   it("reports import collision as warning", () => {
     const files: Record<string, string> = {
       [`${RIG_ROOT}/agents/impl/agent.yaml`]: `name: impl\nversion: "1.0.0"\nimports:\n  - ref: local:../lib\nresources:\n  skills:\n    - id: shared\n      path: skills/shared\nprofiles:\n  default:\n    uses:\n      skills: [shared]`,

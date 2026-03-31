@@ -5,6 +5,7 @@ import type { SessionRegistry } from "./session-registry.js";
 import type { EventBus } from "./event-bus.js";
 import type { NodeLauncher } from "./node-launcher.js";
 import type { RigSpecPreflight } from "./rigspec-preflight.js";
+import { deriveCanonicalSessionName, validateSessionComponents } from "./session-name.js";
 import { LegacyRigSpecSchema as RigSpecSchema } from "./rigspec-schema.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
 import { LegacyRigSpecCodec as RigSpecCodec } from "./rigspec-codec.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
 import type { LegacyRigSpec as RigSpec, LegacyRigSpecEdge as RigSpecEdge, InstantiateOutcome, InstantiateResult } from "./types.js"; // TODO: AS-T08b — migrate to pod-aware RigSpec
@@ -419,8 +420,16 @@ export class PodRigInstantiator {
           continue;
         }
 
-        // Launch session
-        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, qualifiedId);
+        // Validate session name components before launch
+        const sessionNameErrors = validateSessionComponents(pod.id, member.id, rigSpec.name);
+        if (sessionNameErrors.length > 0) {
+          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: sessionNameErrors.join("; ") });
+          continue;
+        }
+
+        // Launch session with canonical name
+        const canonicalSessionName = deriveCanonicalSessionName(pod.id, member.id, rigSpec.name);
+        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, qualifiedId, { sessionName: canonicalSessionName });
         if (!launchResult.ok) {
           nodeResults.push({ logicalId: qualifiedId, status: "failed", error: launchResult.message });
           continue;

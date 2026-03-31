@@ -368,6 +368,31 @@ describe("TmuxAdapter", () => {
     });
   });
 
+  describe("canonical session names with @", () => {
+    it("createSession + sendKeys with @ in name produce correct quoted commands", async () => {
+      const exec = vi.fn<ExecFn>().mockResolvedValue("");
+      const adapter = new TmuxAdapter(exec);
+
+      // createSession with canonical name
+      await adapter.createSession("dev-impl@auth-feats", "/home/user/code");
+      expect(exec.mock.calls[0]![0]).toBe(
+        "tmux new-session -d -s 'dev-impl@auth-feats' -c '/home/user/code'"
+      );
+
+      // sendKeys targeting canonical name
+      await adapter.sendKeys("dev-impl@auth-feats", ["Enter"]);
+      expect(exec.mock.calls[1]![0]).toBe(
+        "tmux send-keys -t 'dev-impl@auth-feats' 'Enter'"
+      );
+
+      // sendText targeting canonical name
+      await adapter.sendText("dev-impl@auth-feats", "hello");
+      expect(exec.mock.calls[2]![0]).toBe(
+        "tmux send-keys -t 'dev-impl@auth-feats' -l 'hello'"
+      );
+    });
+  });
+
   describe("malformed output", () => {
     it("bad lines skipped, valid lines returned", async () => {
       const output = [

@@ -296,6 +296,44 @@ describe("PodRigInstantiator", () => {
     db.close();
   });
 
+  // NS-T01: canonical session name {pod}-{member}@{rig}
+  it("launches nodes with canonical session names", async () => {
+    const { db, tmux, inst } = setup();
+    const yaml = RigSpecCodec.serialize(makeRigSpec());
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(true);
+    // tmux createSession was called with canonical name
+    const createSession = tmux.createSession as ReturnType<typeof vi.fn>;
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(createSession.mock.calls[0]![0]).toBe("dev-impl@test-rig");
+    db.close();
+  });
+
+  // NS-T01: invalid session name characters caught at preflight within instantiation
+  it("rejects invalid session name characters with per-component error at preflight", async () => {
+    const files = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: agentYaml("impl"),
+    };
+    const { db, inst } = setup(files);
+    const spec = makeRigSpec({
+      name: "my rig",
+      pods: [{
+        id: "dev 1", label: "Dev",
+        members: [{ id: "impl!", agentRef: "local:agents/impl", profile: "default", runtime: "claude-code", cwd: "." }],
+        edges: [],
+      }],
+    });
+    const yaml = RigSpecCodec.serialize(spec);
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(false);
+    if (!result.ok && "errors" in result) {
+      expect(result.errors.some((e: string) => e.includes("pod name") && e.includes(" "))).toBe(true);
+      expect(result.errors.some((e: string) => e.includes("member name") && e.includes("!"))).toBe(true);
+      expect(result.errors.some((e: string) => e.includes("rig name") && e.includes(" "))).toBe(true);
+    }
+    db.close();
+  });
+
   // CP2-R5: Two-node cycle must fail instantiation
   it("rejects dependency cycle between two nodes", async () => {
     const files = {

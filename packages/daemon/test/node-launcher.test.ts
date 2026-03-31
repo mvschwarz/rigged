@@ -326,6 +326,26 @@ describe("NodeLauncher", () => {
     expect(notifications).toHaveLength(1);
   });
 
+  it("canonical session name with @ accepted when passed as opts.sessionName", async () => {
+    const rig = rigRepo.createRig("auth-feats");
+    rigRepo.addNode(rig.id, "dev.impl", { runtime: "claude-code" });
+    const createSpy = vi.fn<(name: string, cwd?: string) => Promise<TmuxResult>>()
+      .mockResolvedValue({ ok: true });
+    const launcher = createLauncher(mockTmuxAdapter({ createSession: createSpy }));
+
+    const result = await launcher.launchNode(rig.id, "dev.impl", {
+      sessionName: "dev-impl@auth-feats",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(createSpy.mock.calls[0]![0]).toBe("dev-impl@auth-feats");
+
+    // Session persisted with canonical name
+    const sessions = sessionRegistry.getSessionsForRig(rig.id);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.sessionName).toBe("dev-impl@auth-feats");
+  });
+
   it("constructor throws if services use mismatched db handles", () => {
     const otherDb = createDb();
     migrate(otherDb, [coreSchema, bindingsSessionsSchema, eventsSchema]);

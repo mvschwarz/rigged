@@ -83,6 +83,12 @@ describe("SessionRegistry", () => {
     ).not.toThrow();
   });
 
+  it("registerSession accepts canonical session name with @", () => {
+    const session = registry.registerSession("node-1", "dev-impl@auth-feats");
+    expect(session.sessionName).toBe("dev-impl@auth-feats");
+    expect(session.nodeId).toBe("node-1");
+  });
+
   it("updateStatus changes status", () => {
     const session = registry.registerSession("node-1", "r01-dev1-impl");
     registry.updateStatus(session.id, "running");

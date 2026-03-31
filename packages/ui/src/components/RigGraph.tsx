@@ -4,6 +4,7 @@ import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
 import { useRigEvents } from "../hooks/useRigEvents.js";
 import { useDiscoveredSessionsConditional, type DiscoveredSession } from "../hooks/useDiscovery.js";
+import { useNodeSelection } from "./AppShell.js";
 import { getEdgeStyle } from "@/lib/edge-styles";
 import { applyTreeLayout } from "@/lib/graph-layout";
 import { RigNode } from "./RigNode.js";
@@ -132,6 +133,8 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
     return [...managed, ...discovered] as Node[];
   }, [rawNodes, rawEdges, shouldAnimate, discoveredSessions]);
 
+  const { setSelectedNode } = useNodeSelection();
+
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_event, node) => {
       if (!rigId) return;
@@ -140,6 +143,9 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
         logicalId: string;
         binding: { cmuxSurface?: string | null } | null;
       };
+
+      // Set shared node selection (for detail panel)
+      setSelectedNode({ rigId, logicalId: nodeData.logicalId });
 
       if (!nodeData.binding?.cmuxSurface) {
         showFocusMessage({ text: "Not bound to cmux surface", type: "info" });
@@ -170,7 +176,7 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
         showFocusMessage({ text: "Focus failed", type: "error" });
       }
     },
-    [rigId, showFocusMessage]
+    [rigId, showFocusMessage, setSelectedNode]
   );
 
   if (rigId === null) {

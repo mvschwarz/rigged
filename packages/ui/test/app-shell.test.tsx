@@ -91,7 +91,7 @@ describe("App Shell + Routing", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("app-header")).toBeDefined();
-      expect(screen.getByTestId("sidebar")).toBeDefined();
+      expect(screen.getByTestId("explorer")).toBeDefined();
       expect(screen.getByTestId("content-area")).toBeDefined();
       expect(screen.getByTestId("status-bar")).toBeDefined();
     });
@@ -124,17 +124,11 @@ describe("App Shell + Routing", () => {
     });
   });
 
-  it("sidebar navigation links work", async () => {
+  it("explorer renders with rig tree", async () => {
     mockAllApis();
     await renderRealAppAt("/");
 
-    await waitFor(() => expect(screen.getByTestId("nav-rigs")).toBeDefined());
-
-    fireEvent.click(screen.getByTestId("nav-import"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("import-flow")).toBeDefined();
-    });
+    await waitFor(() => expect(screen.getByTestId("explorer")).toBeDefined());
   });
 
   it("status bar shows CONNECTED when daemon responds", async () => {

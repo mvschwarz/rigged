@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { DiscoveryCoordinator } from "../domain/discovery-coordinator.js";
 import type { DiscoveryRepository } from "../domain/discovery-repository.js";
 import type { ClaimService } from "../domain/claim-service.js";
+import { generateDraftRig } from "../domain/draft-rig-generator.js";
 
 export const discoveryRoutes = new Hono();
 
@@ -39,6 +40,15 @@ discoveryRoutes.get("/:id", (c) => {
   const session = discoveryRepo.getDiscoveredSession(id);
   if (!session) return c.json({ error: "Discovered session not found" }, 404);
   return c.json(session);
+});
+
+// POST /api/discovery/draft-rig — generate candidate rig spec from discovered sessions
+discoveryRoutes.post("/draft-rig", (c) => {
+  const { discoveryRepo } = getDeps(c);
+  const sessions = discoveryRepo.listDiscovered("active");
+  const result = generateDraftRig(sessions);
+  c.header("Content-Type", "text/yaml");
+  return c.body(result.yaml);
 });
 
 // POST /api/discovery/:id/claim — claim into rig

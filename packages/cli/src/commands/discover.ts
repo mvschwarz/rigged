@@ -19,7 +19,8 @@ export function discoverCommand(depsOverride?: StatusDeps): Command {
 
   cmd
     .option("--json", "Output as parseable JSON")
-    .action(async (opts: { json?: boolean }) => {
+    .option("--draft", "Generate a candidate rig spec from discovered sessions")
+    .action(async (opts: { json?: boolean; draft?: boolean }) => {
       const deps = getDeps();
       const client = await getClient(deps);
       if (!client) { process.exitCode = 1; return; }
@@ -29,6 +30,20 @@ export function discoverCommand(depsOverride?: StatusDeps): Command {
       if (res.status >= 400) {
         console.error(res.data.error ?? `Scan failed (HTTP ${res.status})`);
         process.exitCode = 1;
+        return;
+      }
+
+      if (opts.draft) {
+        // Generate draft rig spec — use postText to get text/yaml back
+        const draftRes = await client.post<string>("/api/discovery/draft-rig", {});
+        if (draftRes.status >= 400) {
+          console.error(`Draft generation failed (HTTP ${draftRes.status}). Run a scan first with: rigged discover`);
+          process.exitCode = 1;
+          return;
+        }
+        // The response may be parsed as JSON string or raw text
+        const yaml = typeof draftRes.data === "string" ? draftRes.data : JSON.stringify(draftRes.data);
+        console.log(yaml);
         return;
       }
 

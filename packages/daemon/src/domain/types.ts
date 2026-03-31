@@ -216,6 +216,47 @@ export type RestoreOutcome =
   | { ok: false; code: "restore_error"; message: string }
   | { ok: false; code: "restore_in_progress"; message: string };
 
+// -- Node inventory projection (NS-T02) --
+
+export type NodeRestoreOutcome = "resumed" | "fresh-after-explicit-launch" | "failed" | "n-a";
+
+export interface NodeInventoryEntry {
+  rigId: string;
+  rigName: string;
+  logicalId: string;
+  podId: string | null;
+  canonicalSessionName: string | null;
+  nodeKind: "agent" | "infrastructure";
+  runtime: string | null;
+  sessionStatus: string | null;
+  startupStatus: "pending" | "ready" | "failed" | null;
+  restoreOutcome: NodeRestoreOutcome;
+  tmuxAttachCommand: string | null;
+  resumeCommand: string | null;
+  latestError: string | null;
+  // Extended fields
+  model: string | null;
+  agentRef: string | null;
+  profile: string | null;
+  resolvedSpecName: string | null;
+  resolvedSpecVersion: string | null;
+  resolvedSpecHash: string | null;
+  cwd: string | null;
+  restorePolicy: string | null;
+  resumeType: string | null;
+  resumeToken: string | null;
+  startupCompletedAt: string | null;
+}
+
+export interface NodeDetailEntry extends NodeInventoryEntry {
+  binding: Binding | null;
+  startupFiles: Array<{ path: string; deliveryHint: string; required: boolean }>;
+  startupActions: Array<{ type: string; value: string }>;
+  installedResources: Array<{ id: string; category: string; targetPath: string }>;
+  recentEvents: Array<{ type: string; createdAt: string; payload: Record<string, unknown> }>;
+  infrastructureStartupCommand: string | null;
+}
+
 // -- AgentSpec types (AgentSpec reboot) --
 
 export interface ImportSpec {

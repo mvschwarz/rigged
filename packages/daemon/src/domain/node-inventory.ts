@@ -1,0 +1,306 @@
+import type Database from "better-sqlite3";
+import type { NodeInventoryEntry, NodeDetailEntry, NodeRestoreOutcome, Binding, RestoreResult } from "./types.js";
+import type { RuntimeAdapter } from "./runtime-adapter.js";
+
+// -- Row types for SQL results --
+
+interface InventoryRow {
+  node_id: string;
+  rig_id: string;
+  rig_name: string;
+  logical_id: string;
+  pod_id: string | null;
+  runtime: string | null;
+  model: string | null;
+  agent_ref: string | null;
+  profile: string | null;
+  cwd: string | null;
+  restore_policy: string | null;
+  resolved_spec_name: string | null;
+  resolved_spec_version: string | null;
+  resolved_spec_hash: string | null;
+  // Newest session fields (may be null if no session)
+  session_name: string | null;
+  session_status: string | null;
+  startup_status: string | null;
+  resume_type: string | null;
+  resume_token: string | null;
+  startup_completed_at: string | null;
+}
+
+interface EventRow {
+  seq: number;
+  rig_id: string;
+  node_id: string;
+  type: string;
+  payload: string;
+  created_at: string;
+}
+
+interface StartupContextRow {
+  node_id: string;
+  projection_entries_json: string;
+  resolved_files_json: string;
+  startup_actions_json: string;
+  runtime: string;
+}
+
+interface BindingRow {
+  id: string;
+  node_id: string;
+  tmux_session: string | null;
+  tmux_window: string | null;
+  tmux_pane: string | null;
+  cmux_workspace: string | null;
+  cmux_surface: string | null;
+  updated_at: string;
+}
+
+// -- Helpers --
+
+function computeResumeCommand(runtime: string | null, resumeToken: string | null): string | null {
+  if (!resumeToken) return null;
+  if (runtime === "claude-code") return `claude --resume ${resumeToken}`;
+  if (runtime === "codex") return `codex resume ${resumeToken}`;
+  return null;
+}
+
+function deriveNodeKind(runtime: string | null): "agent" | "infrastructure" {
+  return runtime === "terminal" ? "infrastructure" : "agent";
+}
+
+function deriveRestoreOutcome(db: Database.Database, rigId: string, nodeId: string): NodeRestoreOutcome {
+  // Find the latest restore.completed event for this rig
+  const row = db.prepare(
+    "SELECT payload FROM events WHERE rig_id = ? AND type = 'restore.completed' ORDER BY seq DESC LIMIT 1"
+  ).get(rigId) as { payload: string } | undefined;
+
+  if (!row) return "n-a";
+
+  try {
+    const event = JSON.parse(row.payload) as { result: RestoreResult };
+    const nodeResult = event.result.nodes.find((n) => n.nodeId === nodeId);
+    if (!nodeResult) return "n-a";
+
+    if (nodeResult.status === "resumed") return "resumed";
+    if (nodeResult.status === "failed") return "failed";
+    // checkpoint_written and fresh_no_checkpoint are restore-path outcomes,
+    // not explicit fresh launches. Map to n-a until NS-T06 adds explicit fresh-launch state.
+    return "n-a";
+  } catch {
+    return "n-a";
+  }
+}
+
+function getLatestError(db: Database.Database, rigId: string, nodeId: string): string | null {
+  const row = db.prepare(
+    "SELECT payload FROM events WHERE rig_id = ? AND node_id = ? AND type = 'node.startup_failed' ORDER BY seq DESC LIMIT 1"
+  ).get(rigId, nodeId) as { payload: string } | undefined;
+
+  if (!row) return null;
+
+  try {
+    const event = JSON.parse(row.payload) as { error?: string };
+    return event.error ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map persisted projection entries to the installedResources shape.
+ * The startup-orchestrator persists: { category, effectiveId, sourceSpec, sourcePath, resourcePath, absolutePath, mergeStrategy, target }
+ * We normalize to: { id, category, targetPath }
+ */
+function mapProjectionEntries(entries: unknown[]): Array<{ id: string; category: string; targetPath: string }> {
+  return entries.map((e: unknown) => {
+    const entry = e as Record<string, string>;
+    return {
+      id: entry.effectiveId ?? entry.id ?? "",
+      category: entry.category ?? "",
+      targetPath: entry.target ?? entry.targetPath ?? "",
+    };
+  });
+}
+
+// -- Public API --
+
+/**
+ * Get the canonical node inventory for a rig.
+ * Single source of truth consumed by CLI, UI, and MCP.
+ */
+export function getNodeInventory(db: Database.Database, rigId: string): NodeInventoryEntry[] {
+  // Join nodes with newest session (max ULID = max session.id string comparison)
+  // and the rig name
+  const rows = db.prepare(`
+    SELECT
+      n.id as node_id,
+      n.rig_id,
+      r.name as rig_name,
+      n.logical_id,
+      n.pod_id,
+      n.runtime,
+      n.model,
+      n.agent_ref,
+      n.profile,
+      n.cwd,
+      n.restore_policy,
+      n.resolved_spec_name,
+      n.resolved_spec_version,
+      n.resolved_spec_hash,
+      s.session_name,
+      s.status as session_status,
+      s.startup_status,
+      s.resume_type,
+      s.resume_token,
+      s.startup_completed_at
+    FROM nodes n
+    JOIN rigs r ON r.id = n.rig_id
+    LEFT JOIN sessions s ON s.node_id = n.id
+      AND s.id = (SELECT s2.id FROM sessions s2 WHERE s2.node_id = n.id ORDER BY s2.id DESC LIMIT 1)
+    WHERE n.rig_id = ?
+    ORDER BY n.created_at
+  `).all(rigId) as InventoryRow[];
+
+  return rows.map((row) => ({
+    rigId: row.rig_id,
+    rigName: row.rig_name,
+    logicalId: row.logical_id,
+    podId: row.pod_id,
+    canonicalSessionName: row.session_name,
+    nodeKind: deriveNodeKind(row.runtime),
+    runtime: row.runtime,
+    sessionStatus: row.session_status,
+    startupStatus: row.startup_status as NodeInventoryEntry["startupStatus"],
+    restoreOutcome: deriveRestoreOutcome(db, rigId, row.node_id),
+    tmuxAttachCommand: row.session_name ? `tmux attach -t ${row.session_name}` : null,
+    resumeCommand: computeResumeCommand(row.runtime, row.resume_token),
+    latestError: getLatestError(db, rigId, row.node_id),
+    // Extended fields
+    model: row.model,
+    agentRef: row.agent_ref,
+    profile: row.profile,
+    resolvedSpecName: row.resolved_spec_name,
+    resolvedSpecVersion: row.resolved_spec_version,
+    resolvedSpecHash: row.resolved_spec_hash,
+    cwd: row.cwd,
+    restorePolicy: row.restore_policy,
+    resumeType: row.resume_type,
+    resumeToken: row.resume_token,
+    startupCompletedAt: row.startup_completed_at,
+  }));
+}
+
+/**
+ * Get detailed node information including startup files, resources, and events.
+ * The adapter dependency is optional — when provided, uses live listInstalled;
+ * otherwise falls back to projection entries from startup context.
+ */
+export function getNodeDetail(
+  db: Database.Database,
+  rigId: string,
+  logicalId: string,
+  opts?: {
+    adapters?: Record<string, RuntimeAdapter>;
+    /** Pre-resolved installed resources from adapter.listInstalled() — route layer provides this. */
+    installedResourcesOverride?: Array<{ id: string; category: string; targetPath: string }>;
+  },
+): NodeDetailEntry | null {
+  // Get the inventory entry first
+  const allEntries = getNodeInventory(db, rigId);
+  const entry = allEntries.find((e) => e.logicalId === logicalId);
+  if (!entry) return null;
+
+  // Find the node ID
+  const nodeRow = db.prepare(
+    "SELECT id FROM nodes WHERE rig_id = ? AND logical_id = ?"
+  ).get(rigId, logicalId) as { id: string } | undefined;
+  if (!nodeRow) return null;
+  const nodeId = nodeRow.id;
+
+  // Binding
+  const bindingRow = db.prepare("SELECT * FROM bindings WHERE node_id = ?").get(nodeId) as BindingRow | undefined;
+  const binding: Binding | null = bindingRow ? {
+    id: bindingRow.id,
+    nodeId,
+    tmuxSession: bindingRow.tmux_session,
+    tmuxWindow: bindingRow.tmux_window,
+    tmuxPane: bindingRow.tmux_pane,
+    cmuxWorkspace: bindingRow.cmux_workspace,
+    cmuxSurface: bindingRow.cmux_surface,
+    updatedAt: bindingRow.updated_at,
+  } : null;
+
+  // Startup context
+  const ctxRow = db.prepare(
+    "SELECT * FROM node_startup_context WHERE node_id = ?"
+  ).get(nodeId) as StartupContextRow | undefined;
+
+  const startupFiles = ctxRow ? JSON.parse(ctxRow.resolved_files_json) : [];
+  const startupActions = ctxRow ? JSON.parse(ctxRow.startup_actions_json) : [];
+  const projectionEntries = ctxRow ? JSON.parse(ctxRow.projection_entries_json) : [];
+
+  // Installed resources: override (from async adapter call) > projection fallback
+  let installedResources: NodeDetailEntry["installedResources"];
+  if (opts?.installedResourcesOverride) {
+    installedResources = opts.installedResourcesOverride;
+  } else if (opts?.adapters?.[entry.runtime ?? ""] && binding) {
+    // Adapter is available — caller should have pre-resolved via listInstalled (async).
+    // If caller passed adapters but not override, try sync call for test compatibility.
+    try {
+      const adapter = opts.adapters[entry.runtime ?? ""]!;
+      const nodeBinding = { ...binding, cwd: entry.cwd ?? "." };
+      const resources = adapter.listInstalled(nodeBinding) as unknown;
+      // Handle both sync (test mocks) and Promise (real adapters)
+      if (Array.isArray(resources)) {
+        installedResources = (resources as Array<{ effectiveId: string; category: string; installedPath: string }>).map((r) => ({
+          id: r.effectiveId,
+          category: r.category,
+          targetPath: r.installedPath,
+        }));
+      } else {
+        // Async — fall through to projection
+        installedResources = mapProjectionEntries(projectionEntries);
+      }
+    } catch {
+      installedResources = mapProjectionEntries(projectionEntries);
+    }
+  } else {
+    // Projection fallback
+    installedResources = mapProjectionEntries(projectionEntries);
+  }
+
+  // Recent events (last 20 for this node)
+  const eventRows = db.prepare(
+    "SELECT * FROM events WHERE node_id = ? ORDER BY seq DESC LIMIT 20"
+  ).all(nodeId) as EventRow[];
+
+  const recentEvents = eventRows.map((r) => {
+    let payload: Record<string, unknown> = {};
+    try { payload = JSON.parse(r.payload); } catch { /* empty */ }
+    return {
+      type: r.type,
+      createdAt: r.created_at,
+      payload,
+    };
+  });
+
+  // Infrastructure startup command
+  let infrastructureStartupCommand: string | null = null;
+  if (entry.nodeKind === "infrastructure" && startupActions.length > 0) {
+    const sendTextAction = startupActions.find((a: { type: string }) => a.type === "send_text");
+    if (sendTextAction) {
+      infrastructureStartupCommand = sendTextAction.value;
+    }
+  }
+
+  return {
+    ...entry,
+    binding,
+    startupFiles,
+    startupActions,
+    installedResources,
+    recentEvents,
+    infrastructureStartupCommand,
+  };
+}

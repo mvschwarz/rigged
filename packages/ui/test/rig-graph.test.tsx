@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup, act } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, act, fireEvent } from "@testing-library/react";
 import { ReactFlowProvider, MarkerType } from "@xyflow/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RigGraph } from "../src/components/RigGraph.js";
@@ -209,7 +209,8 @@ describe("RigNode", () => {
 
     expect(screen.getByText("dev1-impl")).toBeDefined();
     expect(screen.getByText(/claude-code · opus/)).toBeDefined();
-    expect(screen.getByText("ACTIVE")).toBeDefined();
+    // Status badge now uses startupStatus (defaults to STOPPED when not provided)
+    expect(screen.getByText("STOPPED")).toBeDefined();
   });
 
   it("shows 'UNKNOWN' status when binding is null and status is null", () => {
@@ -228,20 +229,20 @@ describe("RigNode", () => {
       </ReactFlowProvider>
     );
 
-    expect(screen.getByText("UNKNOWN")).toBeDefined();
+    expect(screen.getByText("STOPPED")).toBeDefined();
   });
 
   // UIF-T05 Test 1: Status dot (pill badge) shows correct label and border style per status
   it("status dot has correct border/text class per status", () => {
+    // NS-T12: status colors now based on startupStatus
     const statuses = [
-      { status: "running", expectedLabel: "ACTIVE", expectedClass: "border-stone-900" },
-      { status: "idle", expectedLabel: "IDLE", expectedClass: "border-stone-400" },
-      { status: "exited", expectedLabel: "EXITED", expectedClass: "border-tertiary" },
-      { status: "detached", expectedLabel: "DETACHED", expectedClass: "border-stone-400" },
-      { status: null, expectedLabel: "UNKNOWN", expectedClass: "border-stone-400" },
+      { status: "running", startupStatus: "ready", expectedLabel: "READY", expectedClass: "border-green-500" },
+      { status: "running", startupStatus: "pending", expectedLabel: "LAUNCHING", expectedClass: "border-amber-500" },
+      { status: "running", startupStatus: "failed", expectedLabel: "FAILED", expectedClass: "border-red-500" },
+      { status: null, startupStatus: null, expectedLabel: "STOPPED", expectedClass: "border-stone-400" },
     ];
 
-    for (const { status, expectedLabel, expectedClass } of statuses) {
+    for (const { status, startupStatus, expectedLabel, expectedClass } of statuses) {
       cleanup();
       const data = {
         logicalId: "test-node",
@@ -249,6 +250,7 @@ describe("RigNode", () => {
         runtime: "claude-code",
         model: null,
         status,
+        startupStatus,
         binding: null,
       };
 
@@ -262,6 +264,64 @@ describe("RigNode", () => {
       expect(dot.textContent).toBe(expectedLabel);
       expect(dot.className).toContain(expectedClass);
     }
+  });
+
+  // NS-T12: toolbar actions render on hover
+  it("toolbar shows Copy tmux attach button when session name present", () => {
+    const data = {
+      logicalId: "dev.impl",
+      rigId: "rig-1",
+      role: "worker",
+      runtime: "claude-code",
+      model: null,
+      status: "running",
+      startupStatus: "ready" as const,
+      canonicalSessionName: "dev-impl@test-rig",
+      binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: "s1" },
+      resumeToken: "abc-123",
+    };
+
+    render(
+      <ReactFlowProvider>
+        <RigNode data={data} />
+      </ReactFlowProvider>
+    );
+
+    // Simulate hover to show toolbar
+    const node = screen.getByTestId("rig-node");
+    fireEvent.mouseEnter(node);
+
+    expect(screen.getByTestId("toolbar-copy-attach")).toBeDefined();
+    expect(screen.getByTestId("toolbar-cmux-focus")).toBeDefined();
+    expect(screen.getByTestId("toolbar-copy-resume")).toBeDefined();
+  });
+
+  it("toolbar hides resume button when no resumeToken", () => {
+    const data = {
+      logicalId: "dev.impl",
+      rigId: "rig-1",
+      role: "worker",
+      runtime: "claude-code",
+      model: null,
+      status: "running",
+      startupStatus: "ready" as const,
+      canonicalSessionName: "dev-impl@test-rig",
+      binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+      resumeToken: null,
+    };
+
+    render(
+      <ReactFlowProvider>
+        <RigNode data={data} />
+      </ReactFlowProvider>
+    );
+
+    const node = screen.getByTestId("rig-node");
+    fireEvent.mouseEnter(node);
+
+    expect(screen.getByTestId("toolbar-copy-attach")).toBeDefined();
+    expect(screen.queryByTestId("toolbar-copy-resume")).toBeNull();
+    expect(screen.queryByTestId("toolbar-cmux-focus")).toBeNull(); // no cmux surface
   });
 });
 
@@ -796,5 +856,53 @@ describe("RigGraph discovery integration", () => {
     // Discovered node should have dashed border
     const discoveredNode = screen.getByTestId("discovered-graph-node");
     expect(discoveredNode.className).toContain("border-dashed");
+  });
+});
+
+// NS-T12: graph selection — clicking a graph node sets shared selectedNode
+import { NodeSelectionContext } from "../src/components/AppShell.js";
+
+describe("RigGraph node selection", () => {
+  it("click node -> setSelectedNode({ rigId, logicalId }) called via shared context", async () => {
+    const setSelectedNodeSpy = vi.fn();
+
+    // Wrap RigGraph in selection context with spy
+    function SelectionWrapper({ children }: { children: React.ReactNode }) {
+      return (
+        <NodeSelectionContext.Provider value={{ selectedNode: null, setSelectedNode: setSelectedNodeSpy }}>
+          {children}
+        </NodeSelectionContext.Provider>
+      );
+    }
+
+    mockFetch
+      .mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
+
+    const { container } = render(
+      <QueryWrapper>
+        <SelectionWrapper>
+          <RigGraph showDiscovered={false} rigId="rig-1" />
+        </SelectionWrapper>
+      </QueryWrapper>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='rf__node-n1']")).not.toBeNull();
+    });
+
+    // Click the orchestrator node (n1)
+    const node = container.querySelector("[data-testid='rf__node-n1']")!;
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    // setSelectedNode should have been called with the correct rigId and logicalId
+    await waitFor(() => {
+      expect(setSelectedNodeSpy).toHaveBeenCalledWith({
+        rigId: "rig-1",
+        logicalId: "orchestrator",
+      });
+    });
   });
 });

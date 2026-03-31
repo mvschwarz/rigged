@@ -6,12 +6,18 @@ export interface RigGraphInput extends RigWithRelations {
 
 interface RFNodeData {
   logicalId: string;
+  rigId: string;
   role: string | null;
   runtime: string | null;
   model: string | null;
   status: string | null;
   binding: Binding | null;
   nodeKind: "agent" | "infrastructure";
+  startupStatus: "pending" | "ready" | "failed" | null;
+  canonicalSessionName: string | null;
+  podId: string | null;
+  restoreOutcome: string;
+  resumeToken?: string | null;
 }
 
 interface RFNode {
@@ -19,6 +25,7 @@ interface RFNode {
   type: string;
   position: { x: number; y: number };
   data: RFNodeData;
+  parentId?: string;
 }
 
 interface RFEdge {
@@ -35,34 +42,82 @@ export interface ReactFlowGraph {
 
 const VERTICAL_SPACING = 200;
 
-export function projectRigToGraph(input: RigGraphInput): ReactFlowGraph {
+export interface InventoryOverlay {
+  logicalId: string;
+  startupStatus: "pending" | "ready" | "failed" | null;
+  canonicalSessionName: string | null;
+  restoreOutcome: string;
+}
+
+export function projectRigToGraph(input: RigGraphInput, inventoryOverlay?: InventoryOverlay[]): ReactFlowGraph {
   const { nodes: rigNodes, edges: rigEdges, sessions } = input;
+  const overlayMap = new Map((inventoryOverlay ?? []).map((o) => [o.logicalId, o]));
+
+  // Collect unique pods for group nodes
+  const podNodes = new Map<string, string[]>(); // podId → node IDs
 
   const nodes: RFNode[] = rigNodes.map((node, index) => {
-    // Find latest session for this node by createdAt
-    const nodeSessions = sessions
-      .filter((s) => s.nodeId === node.id)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
+    // Find latest session for this node by ULID ordering (max session.id)
+    const nodeSessions = sessions.filter((s) => s.nodeId === node.id);
     const latestSession = nodeSessions.length > 0
-      ? nodeSessions[nodeSessions.length - 1]!
+      ? nodeSessions.reduce((latest, s) => s.id > latest.id ? s : latest)
       : null;
+
+    const overlay = overlayMap.get(node.logicalId);
+
+    // Track pods
+    if (node.podId) {
+      if (!podNodes.has(node.podId)) podNodes.set(node.podId, []);
+      podNodes.get(node.podId)!.push(node.id);
+    }
 
     return {
       id: node.id,
       type: "rigNode",
       position: { x: 0, y: index * VERTICAL_SPACING },
+      parentId: node.podId ? `pod-${node.podId}` : undefined,
       data: {
         logicalId: node.logicalId,
+        rigId: node.rigId,
         role: node.role,
         runtime: node.runtime,
         model: node.model,
         status: latestSession ? latestSession.status : null,
         binding: node.binding,
         nodeKind: node.runtime === "terminal" ? "infrastructure" : "agent",
+        startupStatus: overlay?.startupStatus ?? (latestSession?.startupStatus as RFNodeData["startupStatus"]) ?? null,
+        canonicalSessionName: overlay?.canonicalSessionName ?? latestSession?.sessionName ?? null,
+        podId: node.podId ?? null,
+        restoreOutcome: overlay?.restoreOutcome ?? "n-a",
+        resumeToken: latestSession?.resumeToken ?? null,
       },
     };
   });
+
+  // Create pod group nodes
+  const groupNodes: RFNode[] = [];
+  for (const [podId] of podNodes) {
+    groupNodes.push({
+      id: `pod-${podId}`,
+      type: "group",
+      position: { x: 0, y: 0 },
+      data: {
+        logicalId: podId,
+        rigId: input.rig.id,
+        role: null,
+        runtime: null,
+        model: null,
+        status: null,
+        binding: null,
+        nodeKind: "agent",
+        startupStatus: null,
+        canonicalSessionName: null,
+        podId,
+        restoreOutcome: "n-a",
+        resumeToken: null,
+      },
+    });
+  }
 
   const edges: RFEdge[] = rigEdges.map((edge) => ({
     id: edge.id,
@@ -71,5 +126,5 @@ export function projectRigToGraph(input: RigGraphInput): ReactFlowGraph {
     label: edge.kind,
   }));
 
-  return { nodes, edges };
+  return { nodes: [...groupNodes, ...nodes], edges };
 }

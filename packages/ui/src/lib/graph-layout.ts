@@ -106,6 +106,32 @@ export function applyTreeLayout(
     }
   }
 
+  // Size group nodes to contain their children with padding
+  const GROUP_PADDING = 40;
+  for (const node of result) {
+    if ((node as any).type === "group") {
+      const children = result.filter((n) => (n as any).parentId === node.id);
+      if (children.length > 0) {
+        const minX = Math.min(...children.map((c) => c.position.x));
+        const maxX = Math.max(...children.map((c) => c.position.x + NODE_WIDTH));
+        const minY = Math.min(...children.map((c) => c.position.y));
+        const maxY = Math.max(...children.map((c) => c.position.y + NODE_HEIGHT));
+        node.position = { x: minX - GROUP_PADDING, y: minY - GROUP_PADDING };
+        (node as any).style = {
+          width: maxX - minX + GROUP_PADDING * 2,
+          height: maxY - minY + GROUP_PADDING * 2,
+        };
+        // Adjust children to be relative to group
+        for (const child of children) {
+          child.position = {
+            x: child.position.x - node.position.x,
+            y: child.position.y - node.position.y,
+          };
+        }
+      }
+    }
+  }
+
   return result;
 }
 

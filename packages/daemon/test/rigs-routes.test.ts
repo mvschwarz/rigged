@@ -327,6 +327,31 @@ describe("Rig CRUD routes", () => {
     expect(epsilons[0].latestSnapshotId).toBe("ZZZZ_snap");
   });
 
+  // NS-T12: graph route returns enriched data with inventory overlay
+  it("GET /api/rigs/:id/graph returns enriched node data with startupStatus and podId", async () => {
+    const rig = repo.createRig("test-rig");
+    db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-1", rig.id, "Dev");
+    const node = repo.addNode(rig.id, "dev.impl", { runtime: "claude-code", podId: "pod-1" });
+    const session = sessionRegistry.registerSession(node.id, "dev-impl@test-rig");
+    sessionRegistry.updateStartupStatus(session.id, "ready");
+
+    const res = await app.request(`/api/rigs/${rig.id}/graph`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Find the enriched node (not the group node)
+    const graphNode = body.nodes.find((n: any) => n.data?.logicalId === "dev.impl");
+    expect(graphNode).toBeDefined();
+    expect(graphNode.data.startupStatus).toBe("ready");
+    expect(graphNode.data.podId).toBe("pod-1");
+    expect(graphNode.data.canonicalSessionName).toBe("dev-impl@test-rig");
+    expect(graphNode.data.restoreOutcome).toBe("n-a");
+    expect(graphNode.data.rigId).toBeDefined();
+    // Group node for pod
+    const groupNode = body.nodes.find((n: any) => n.id === "pod-pod-1");
+    expect(groupNode).toBeDefined();
+    expect(groupNode.type).toBe("group");
+  });
+
   // NS-T06: POST /api/rigs/:id/up — power-on from auto-pre-down snapshot
   it("POST /api/rigs/:id/up returns 404 when no auto-pre-down snapshot exists", async () => {
     const rig = repo.createRig("no-snap-rig");

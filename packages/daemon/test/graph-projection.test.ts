@@ -188,6 +188,45 @@ describe("projectRigToGraph", () => {
     expect(result.nodes[0]!.data.status).toBeNull();
   });
 
+  // NS-T12: enriched fields
+  it("enriched fields include startupStatus, canonicalSessionName, podId, restoreOutcome from overlay", () => {
+    const input = makeRig([
+      { id: "n1", logicalId: "dev.impl", runtime: "claude-code" },
+    ]);
+
+    const overlay = [
+      { logicalId: "dev.impl", startupStatus: "ready" as const, canonicalSessionName: "dev-impl@test-rig", restoreOutcome: "resumed" },
+    ];
+
+    const result = projectRigToGraph(input, overlay);
+    const node = result.nodes.find((n) => n.data.logicalId === "dev.impl");
+    expect(node).toBeDefined();
+    expect(node!.data.startupStatus).toBe("ready");
+    expect(node!.data.canonicalSessionName).toBe("dev-impl@test-rig");
+    expect(node!.data.restoreOutcome).toBe("resumed");
+  });
+
+  // NS-T12: pod group nodes
+  it("creates React Flow group nodes for pods", () => {
+    const input = makeRig([
+      { id: "n1", logicalId: "dev.impl", runtime: "claude-code" },
+      { id: "n2", logicalId: "dev.qa", runtime: "codex" },
+    ]);
+    // Add podId to nodes
+    input.nodes[0]!.podId = "dev";
+    input.nodes[1]!.podId = "dev";
+
+    const result = projectRigToGraph(input);
+    const groupNode = result.nodes.find((n) => n.id === "pod-dev");
+    expect(groupNode).toBeDefined();
+    expect(groupNode!.type).toBe("group");
+
+    // Child nodes should have parentId and podId in data
+    const childNodes = result.nodes.filter((n) => n.parentId === "pod-dev");
+    expect(childNodes).toHaveLength(2);
+    expect(childNodes[0]!.data.podId).toBe("dev");
+  });
+
   // NS-T03: nodeKind derived from runtime
   it("nodeKind is 'infrastructure' for terminal runtime, 'agent' otherwise", () => {
     const input = makeRig([

@@ -19,7 +19,7 @@ interface NodeSelectionContextValue {
   setSelectedNode: (node: SelectedNode | null) => void;
 }
 
-const NodeSelectionContext = createContext<NodeSelectionContextValue>({
+export const NodeSelectionContext = createContext<NodeSelectionContextValue>({
   selectedNode: null,
   setSelectedNode: () => {},
 });

@@ -4,7 +4,8 @@ import type { SessionRegistry } from "../domain/session-registry.js";
 import type { EventBus } from "../domain/event-bus.js";
 import type { SnapshotRepository } from "../domain/snapshot-repository.js";
 import type { RestoreOrchestrator } from "../domain/restore-orchestrator.js";
-import { projectRigToGraph } from "../domain/graph-projection.js";
+import { projectRigToGraph, type InventoryOverlay } from "../domain/graph-projection.js";
+import { getNodeInventory } from "../domain/node-inventory.js";
 
 export const rigsRoutes = new Hono();
 
@@ -51,8 +52,17 @@ rigsRoutes.get("/:id/graph", (c) => {
   if (!rig) {
     return c.json({ error: "rig not found" }, 404);
   }
-  const sessions = getSessionRegistry(c).getSessionsForRig(c.req.param("id"));
-  return c.json(projectRigToGraph({ ...rig, sessions }));
+  const rigId = c.req.param("id");
+  const sessions = getSessionRegistry(c).getSessionsForRig(rigId);
+  // Overlay inventory data for enriched graph fields
+  const inventory = getNodeInventory(getRepo(c).db, rigId);
+  const overlay: InventoryOverlay[] = inventory.map((n) => ({
+    logicalId: n.logicalId,
+    startupStatus: n.startupStatus,
+    canonicalSessionName: n.canonicalSessionName,
+    restoreOutcome: n.restoreOutcome,
+  }));
+  return c.json(projectRigToGraph({ ...rig, sessions }, overlay));
 });
 
 rigsRoutes.delete("/:id", (c) => {

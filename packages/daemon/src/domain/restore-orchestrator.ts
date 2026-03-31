@@ -351,7 +351,12 @@ export class RestoreOrchestrator {
 
     let baseStatus: RestoreNodeResult["status"] = "fresh_no_checkpoint";
 
-    if (restorePolicy === "resume_if_possible" && resumeType && resumeType !== "none") {
+    // Pod-aware nodes: resume via launchHarness (handled in startup orchestrator with skipHarnessLaunch: false)
+    // Legacy nodes: resume via old claude-resume/codex-resume helpers
+    const isPodAware = !!node.podId;
+
+    if (restorePolicy === "resume_if_possible" && resumeType && resumeType !== "none" && !isPodAware) {
+      // Legacy resume path
       if (!resumeToken) {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume requested but no token available. Restore the node manually or launch fresh with: rigged up` };
       }
@@ -361,6 +366,12 @@ export class RestoreOrchestrator {
       } else {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume attempted but failed. Check the harness state manually or launch fresh with: rigged up` };
       }
+    } else if (restorePolicy === "resume_if_possible" && isPodAware && resumeType && resumeType !== "none") {
+      // Pod-aware resume: handled by launchHarness in startup orchestrator
+      if (!resumeToken) {
+        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume requested but no token available. Restore the node manually or launch fresh with: rigged up` };
+      }
+      // baseStatus stays fresh_no_checkpoint — it will be updated to "resumed" after startup replay succeeds
     }
 
     // Checkpoint delivery (if not already resumed)
@@ -443,10 +454,14 @@ export class RestoreOrchestrator {
               resolvedStartupFiles: filteredFiles,
               startupActions: startupCtx.startupActions,
               isRestore: true,
-              skipHarnessLaunch: true, // Restore already handled harness launch/resume via attemptResume
+              skipHarnessLaunch: !isPodAware, // Pod-aware: use launchHarness with resumeToken. Legacy: old helpers already handled.
+              resumeToken: isPodAware ? resumeToken ?? undefined : undefined,
+              sessionName: sessionName,
             });
             if (startupResult.ok) {
-              return { nodeId: node.id, logicalId: node.logicalId, status: baseStatus };
+              // Pod-aware nodes with resume token: startup used launchHarness with the token → resumed
+              const finalStatus = (isPodAware && resumeToken) ? "resumed" : baseStatus;
+              return { nodeId: node.id, logicalId: node.logicalId, status: finalStatus };
             }
             warnings?.push(`Restore startup failed for ${node.logicalId}: ${startupResult.errors.join("; ")}`);
           } catch (err) {

@@ -132,7 +132,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     rigRepo, tmuxAdapter, exec: opts?.tmuxExec ?? execCommand, cmuxExec: opts?.cmuxExec ?? execCommand,
   });
   const rigInstantiator = new RigInstantiator({
-    db, rigRepo, sessionRegistry, eventBus, nodeLauncher, preflight: rigSpecPreflight,
+    db, rigRepo, sessionRegistry, eventBus, nodeLauncher, preflight: rigSpecPreflight, tmuxAdapter,
   });
 
   // Phase 4: Package install services
@@ -192,6 +192,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     sessionRegistry, eventBus, nodeLauncher, startupOrchestrator,
     fsOps: { readFile: (p: string) => fs.readFileSync(p, "utf-8"), exists: (p: string) => fs.existsSync(p) },
     adapters: { "claude-code": claudeAdapter, "codex": codexAdapter, "terminal": new (await import("./adapters/terminal-adapter.js")).TerminalAdapter() },
+    tmuxAdapter,
   });
 
   const podBundleSourceResolver = new PodBundleSourceResolver();

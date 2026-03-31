@@ -20,6 +20,7 @@ interface RigInstantiatorDeps {
   eventBus: EventBus;
   nodeLauncher: NodeLauncher;
   preflight: RigSpecPreflight;
+  tmuxAdapter?: import("../adapters/tmux.js").TmuxAdapter;
 }
 
 export class RigInstantiator {
@@ -29,6 +30,7 @@ export class RigInstantiator {
   private eventBus: EventBus;
   private nodeLauncher: NodeLauncher;
   private preflight: RigSpecPreflight;
+  private tmuxAdapter?: import("../adapters/tmux.js").TmuxAdapter;
 
   constructor(deps: RigInstantiatorDeps) {
     if (deps.db !== deps.rigRepo.db) {
@@ -53,6 +55,7 @@ export class RigInstantiator {
     this.eventBus = deps.eventBus;
     this.nodeLauncher = deps.nodeLauncher;
     this.preflight = deps.preflight;
+    this.tmuxAdapter = deps.tmuxAdapter;
   }
 
   async instantiate(spec: RigSpec): Promise<InstantiateOutcome> {
@@ -123,19 +126,27 @@ export class RigInstantiator {
 
     // 5. Launch nodes in topological order
     const nodeResults: { logicalId: string; status: "launched" | "failed"; error?: string }[] = [];
+    const launchedSessionNames: string[] = [];
 
     for (const logicalId of launchOrder) {
       const result = await this.nodeLauncher.launchNode(rigId!, logicalId);
       if (result.ok) {
         nodeResults.push({ logicalId, status: "launched" });
+        launchedSessionNames.push(result.sessionName);
       } else {
         nodeResults.push({ logicalId, status: "failed", error: result.message });
       }
     }
 
-    // Check for total launch failure — clean up the rig
+    // Check for total launch failure — kill orphan sessions and clean up the rig
     const allFailed = nodeResults.every((n) => n.status === "failed");
     if (allFailed && nodeResults.length > 0) {
+      // Kill orphan tmux sessions (best-effort)
+      if (this.tmuxAdapter) {
+        for (const sessionName of launchedSessionNames) {
+          try { await this.tmuxAdapter.killSession(sessionName); } catch { /* best-effort */ }
+        }
+      }
       try {
         this.rigRepo.deleteRig(rigId!);
       } catch {
@@ -271,6 +282,8 @@ import { StartupOrchestrator } from "./startup-orchestrator.js";
 import { PodRepository } from "./pod-repository.js";
 import type { RigSpec as PodRigSpec, RigSpecPod, RigSpecPodMember, StartupFile } from "./types.js";
 import type { RuntimeAdapter, NodeBinding, ResolvedStartupFile } from "./runtime-adapter.js";
+import { resolveConcreteHint } from "./runtime-adapter.js";
+import type { TmuxAdapter } from "../adapters/tmux.js";
 
 interface PodInstantiatorDeps {
   db: Database.Database;
@@ -282,6 +295,7 @@ interface PodInstantiatorDeps {
   startupOrchestrator: StartupOrchestrator;
   fsOps: AgentResolverFsOps;
   adapters: Record<string, RuntimeAdapter>;
+  tmuxAdapter?: TmuxAdapter;
 }
 
 /**
@@ -341,6 +355,7 @@ export class PodRigInstantiator {
     // 5. Create pods + nodes + edges, then launch in topological order
     const nodeResults: { logicalId: string; status: "launched" | "failed"; error?: string }[] = [];
     const nodeIdMap: Record<string, string> = {}; // "pod.member" -> node DB id
+    const launchedSessionNames: string[] = []; // Track for orphan cleanup on total failure
     // Store per-member context for deferred launch
     const memberContext = new Map<string, { pod: typeof rigSpec.pods[0]; member: typeof rigSpec.pods[0]["members"][0]; podId: string; nodeId: string; resolveResult: any; configResult: any }>();
 
@@ -376,7 +391,7 @@ export class PodRigInstantiator {
         // Terminal fast-path: skip agent resolution and profile resolution
         if (member.agentRef === "builtin:terminal") {
           const termResult = await this.processTerminalMember(
-            rigId, rigSpec, rigRoot, pod, member, podId, qualifiedId, nodeIdMap,
+            rigId, rigSpec, rigRoot, pod, member, podId, qualifiedId, nodeIdMap, launchedSessionNames,
           );
           nodeResults.push(termResult);
           continue;
@@ -444,6 +459,7 @@ export class PodRigInstantiator {
           nodeResults.push({ logicalId: qualifiedId, status: "failed", error: launchResult.message });
           continue;
         }
+        launchedSessionNames.push(canonicalSessionName);
 
         // Propagate narrowed restorePolicy to session row (restore-orchestrator reads it)
         try {
@@ -534,9 +550,15 @@ export class PodRigInstantiator {
       }
     }
 
-    // Check for total failure
+    // Check for total failure — kill orphan tmux sessions and clean up rig
     const allFailed = nodeResults.length > 0 && nodeResults.every((n) => n.status === "failed");
     if (allFailed) {
+      // Kill orphan tmux sessions
+      if (this.deps.tmuxAdapter) {
+        for (const sessionName of launchedSessionNames) {
+          try { await this.deps.tmuxAdapter.killSession(sessionName); } catch { /* best-effort */ }
+        }
+      }
       try { this.deps.rigRepo.deleteRig(rigId); } catch { /* best-effort */ }
       const details = nodeResults.map((n) => `${n.logicalId}: ${n.error ?? "unknown"}`).join("; ");
       return { ok: false, code: "instantiate_error", message: `all node launches/startups failed — ${details}` };
@@ -621,6 +643,7 @@ export class PodRigInstantiator {
     podId: string,
     qualifiedId: string,
     nodeIdMap: Record<string, string>,
+    launchedSessionNames: string[],
   ): Promise<{ logicalId: string; status: "launched" | "failed"; error?: string }> {
     // Create node with sentinel values
     let nodeId: string;
@@ -653,6 +676,7 @@ export class PodRigInstantiator {
     if (!launchResult.ok) {
       return { logicalId: qualifiedId, status: "failed", error: launchResult.message };
     }
+    launchedSessionNames.push(canonicalSessionName);
 
     // Propagate restore_policy to session row (restore-orchestrator reads session.restorePolicy)
     try {
@@ -762,7 +786,7 @@ export class PodRigInstantiator {
       }
     }
 
-    return files;
+    return this.resolveAutoHints(files);
   }
 
   private buildResolvedStartupFiles(
@@ -817,6 +841,24 @@ export class PodRigInstantiator {
       }
     }
 
-    return files;
+    return this.resolveAutoHints(files);
+  }
+
+  /**
+   * Resolve any remaining 'auto' delivery hints to concrete hints at plan time.
+   * Uses the shared resolveConcreteHint resolver (single source of truth).
+   * After this, no file should have deliveryHint === 'auto'.
+   */
+  private resolveAutoHints(files: ResolvedStartupFile[]): ResolvedStartupFile[] {
+    return files.map((f) => {
+      if (f.deliveryHint !== "auto") return f;
+      try {
+        const content = this.deps.fsOps.readFile(f.absolutePath);
+        return { ...f, deliveryHint: resolveConcreteHint(f.path, content) };
+      } catch {
+        // If file can't be read, default to send_text (safest — delivered after harness ready)
+        return { ...f, deliveryHint: "send_text" as const };
+      }
+    });
   }
 }

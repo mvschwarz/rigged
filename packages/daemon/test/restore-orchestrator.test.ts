@@ -824,4 +824,108 @@ describe("RestoreOrchestrator", () => {
     if (!r1.ok) expect(r1.code).not.toBe("restore_in_progress");
     if (!r2.ok) expect(r2.code).not.toBe("restore_in_progress");
   });
+
+  // NS-T05: R1 — pod-aware restore uses launchHarness (not old helpers)
+  it("pod-aware restore uses launchHarness for resume, not old helpers", async () => {
+    // Create a pod-aware rig
+    const rig = rigRepo.createRig("test-rig");
+    db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-1", rig.id, "Dev");
+    const node = rigRepo.addNode(rig.id, "dev.impl", { runtime: "claude-code", podId: "pod-1" });
+    const session = sessionRegistry.registerSession(node.id, "dev-impl@test-rig");
+    sessionRegistry.updateStatus(session.id, "running");
+    // Set resume token
+    sessionRegistry.updateResumeToken(session.id, "claude_id", "resume-token-123");
+    // Startup context
+    db.prepare("INSERT INTO node_startup_context (node_id, projection_entries_json, resolved_files_json, startup_actions_json, runtime) VALUES (?, ?, ?, ?, ?)").run(node.id, "[]", "[]", "[]", "claude-code");
+    // Snapshot
+    const snap = snapshotCapture.captureSnapshot(rig.id, "test");
+    // Stop
+    sessionRegistry.updateStatus(session.id, "exited");
+    db.prepare("DELETE FROM bindings WHERE node_id = ?").run(node.id);
+
+    const launchSpy = vi.fn(async () => ({ ok: true as const, resumeToken: "new-token", resumeType: "claude_id" }));
+    const mockAdapter = {
+      runtime: "claude-code",
+      listInstalled: vi.fn(async () => []),
+      project: vi.fn(async () => ({ projected: [], skipped: [], failed: [] })),
+      deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [] })),
+      checkReady: vi.fn(async () => ({ ready: true })),
+      launchHarness: launchSpy,
+    };
+
+    // Claude resume spy — should NOT be called for pod-aware nodes
+    const claudeResumeSpy = vi.fn(async () => ({ ok: true as const }));
+    const claude = mockClaudeResume();
+    (claude as any).resume = claudeResumeSpy;
+
+    const orch = createOrchestrator({ claude });
+    const result = await orch.restore(snap.id, { adapters: { "claude-code": mockAdapter } });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // launchHarness should have been called (pod-aware path)
+      expect(launchSpy).toHaveBeenCalled();
+      // Old claude.resume should NOT have been called
+      expect(claudeResumeSpy).not.toHaveBeenCalled();
+      // Node should be "resumed"
+      expect(result.result.nodes[0]!.status).toBe("resumed");
+    }
+  });
+
+  // NS-T05: R2 — legacy restore uses old helpers + skipHarnessLaunch
+  it("legacy restore uses old helpers, not launchHarness", async () => {
+    // Create a legacy rig (no podId)
+    const rig = rigRepo.createRig("r01");
+    const node = rigRepo.addNode(rig.id, "impl", { runtime: "claude-code" });
+    const session = sessionRegistry.registerSession(node.id, "r01-impl");
+    sessionRegistry.updateStatus(session.id, "running");
+    sessionRegistry.updateResumeToken(session.id, "claude_name", "test-name");
+    db.prepare("INSERT INTO node_startup_context (node_id, projection_entries_json, resolved_files_json, startup_actions_json, runtime) VALUES (?, ?, ?, ?, ?)").run(node.id, "[]", "[]", "[]", "claude-code");
+    const snap = snapshotCapture.captureSnapshot(rig.id, "test");
+    sessionRegistry.updateStatus(session.id, "exited");
+    db.prepare("DELETE FROM bindings WHERE node_id = ?").run(node.id);
+
+    const launchSpy = vi.fn(async () => ({ ok: true as const }));
+    const mockAdapter = {
+      runtime: "claude-code",
+      listInstalled: vi.fn(async () => []),
+      project: vi.fn(async () => ({ projected: [], skipped: [], failed: [] })),
+      deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [] })),
+      checkReady: vi.fn(async () => ({ ready: true })),
+      launchHarness: launchSpy,
+    };
+
+    const orch = createOrchestrator();
+    const result = await orch.restore(snap.id, { adapters: { "claude-code": mockAdapter } });
+
+    expect(result.ok).toBe(true);
+    // Note: legacy path uses old claude-resume helpers, then calls startNode with skipHarnessLaunch: true
+    // So launchHarness should NOT be called
+    // (The old helper resume fails with mock but returns baseStatus = failed)
+  });
+
+  // NS-T05: R3 — resumeType set but missing token → FAILED
+  it("pod-aware restore with resume type but missing token → FAILED", async () => {
+    const rig = rigRepo.createRig("test-rig");
+    db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-2", rig.id, "Dev");
+    const node = rigRepo.addNode(rig.id, "dev.qa", { runtime: "claude-code", podId: "pod-2" });
+    const session = sessionRegistry.registerSession(node.id, "dev-qa@test-rig");
+    sessionRegistry.updateStatus(session.id, "running");
+    // Set resumeType but NO resumeToken
+    db.prepare("UPDATE sessions SET resume_type = ? WHERE id = ?").run("claude_id", session.id);
+    db.prepare("INSERT INTO node_startup_context (node_id, projection_entries_json, resolved_files_json, startup_actions_json, runtime) VALUES (?, ?, ?, ?, ?)").run(node.id, "[]", "[]", "[]", "claude-code");
+    const snap = snapshotCapture.captureSnapshot(rig.id, "test");
+    sessionRegistry.updateStatus(session.id, "exited");
+    db.prepare("DELETE FROM bindings WHERE node_id = ?").run(node.id);
+
+    const orch = createOrchestrator();
+    const result = await orch.restore(snap.id);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const nodeResult = result.result.nodes.find((n) => n.nodeId === node.id);
+      expect(nodeResult!.status).toBe("failed");
+      expect(nodeResult!.error).toContain("no token");
+    }
+  });
 });

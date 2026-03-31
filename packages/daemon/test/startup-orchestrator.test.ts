@@ -240,7 +240,7 @@ describe("StartupOrchestrator", () => {
       checkReady: vi.fn(async () => ({ ready: false, reason: "not responding" })),
     });
     const orch = createOrchestrator();
-    await orch.startNode(makeInput(seed, { adapter }));
+    await orch.startNode(makeInput(seed, { adapter, readinessTimeoutMs: 100 }));
 
     // Session should show failed startup
     const sessions = sessionRegistry.getSessionsForRig(seed.rigId);
@@ -387,5 +387,35 @@ describe("StartupOrchestrator", () => {
     const session = sessions.find((s) => s.id === seed.sessionId);
     expect(session!.resumeToken).toBe("sess-xyz");
     expect(session!.resumeType).toBe("claude_id");
+  });
+
+  // NS-T05: readiness retry loop
+  it("readiness retries until ready", async () => {
+    const seed = seedSession();
+    let callCount = 0;
+    const adapter = mockAdapter({
+      checkReady: vi.fn(async () => {
+        callCount++;
+        // Ready on 3rd attempt
+        return callCount >= 3 ? { ready: true } : { ready: false, reason: "not yet" };
+      }),
+    });
+    const orch = createOrchestrator();
+    const result = await orch.startNode(makeInput(seed, { adapter, readinessTimeoutMs: 10_000 }));
+    expect(result.ok).toBe(true);
+    expect(callCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("readiness timeout → startup_failed with timeout message", async () => {
+    const seed = seedSession();
+    const adapter = mockAdapter({
+      checkReady: vi.fn(async () => ({ ready: false, reason: "harness not interactive" })),
+    });
+    const orch = createOrchestrator();
+    const result = await orch.startNode(makeInput(seed, { adapter, readinessTimeoutMs: 100 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes("timeout") || e.includes("Readiness timeout"))).toBe(true);
+    }
   });
 });

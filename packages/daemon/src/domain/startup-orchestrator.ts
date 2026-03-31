@@ -28,6 +28,8 @@ export interface StartupInput {
   resumeToken?: string;
   /** Skip harness launch (legacy nodes that already resumed via old helpers). */
   skipHarnessLaunch?: boolean;
+  /** Readiness timeout in ms (default 30000). */
+  readinessTimeoutMs?: number;
 }
 
 export type StartupResult =
@@ -46,17 +48,20 @@ interface StartupOrchestratorDeps {
 /**
  * Drives one node from projected resources to startup_status: ready.
  *
- * Sequence:
+ * Sequence (NS-T05):
  * 1. Mark pending, emit node.startup_pending
- * 2. Project resources via adapter
- * 3. Deliver startup files via adapter
- * 4. Execute after_files actions
- * 5. Poll readiness via adapter.checkReady
- * 6. Execute after_ready actions
- * 7. Mark ready, emit node.startup_ready
+ * 2. Project resources (filesystem)
+ * 3. Deliver pre-launch files (guidance_merge, skill_install → filesystem)
+ * 4. Launch harness via adapter.launchHarness()
+ * 5. Wait for harness ready (retry with exponential backoff, 30s timeout)
+ * 6. Deliver post-launch files (send_text → TUI)
+ * 7. Execute after_files actions
+ * 8. Execute after_ready actions
+ * 9. Persist startup context + resume token
+ * 10. Mark ready, emit node.startup_ready
  *
  * Failure leaves startup_status: failed, node visible.
- * The caller (AS-T08b instantiator) creates session + binding first via NodeLauncher,
+ * The caller creates session + binding first via NodeLauncher,
  * then calls startNode() with the full startup payload.
  */
 export class StartupOrchestrator {
@@ -100,6 +105,8 @@ export class StartupOrchestrator {
     }
 
     // 3. Partition startup files by concrete hint: pre-launch (filesystem) vs post-launch (TUI)
+    // Note: new file-building paths (NS-T05+) emit only concrete hints. The auto fallback
+    // is compatibility-only for pre-NS-T05 persisted startup contexts in node_startup_context.
     const context = input.isRestore ? "restore" : "fresh_start";
     const applicableFiles = input.resolvedStartupFiles.filter((f) => f.appliesOn.includes(context));
     const preLaunchFiles: ResolvedStartupFile[] = [];
@@ -154,13 +161,11 @@ export class StartupOrchestrator {
       }
     }
 
-    // 6. Check readiness
-    // TODO: checkReady is currently a single poll, not a retry loop with timeout.
-    // NS-T05 evolves this to a retry loop with backoff and 30s timeout.
+    // 6. Wait for harness readiness (retry with exponential backoff, 30s timeout)
     try {
-      const readiness = await input.adapter.checkReady(input.binding);
+      const readiness = await this.waitForReady(input.adapter, input.binding, input.readinessTimeoutMs ?? 30_000);
       if (!readiness.ready) {
-        errors.push(`Harness not ready: ${readiness.reason ?? "unknown"}`);
+        errors.push(`Readiness timeout after 30s — harness did not become interactive: ${readiness.reason ?? "unknown"}`);
         return this.fail(input, errors);
       }
     } catch (err) {
@@ -214,6 +219,36 @@ export class StartupOrchestrator {
     this.eventBus.emit({ type: "node.startup_ready", rigId: input.rigId, nodeId: input.nodeId });
 
     return { ok: true, startupStatus: "ready" };
+  }
+
+  /**
+   * Wait for harness readiness with exponential backoff.
+   * Backoff: 1s → 2s → 4s → 8s → 16s (capped), total timeout default 30s.
+   */
+  private async waitForReady(
+    adapter: RuntimeAdapter,
+    binding: NodeBinding,
+    timeoutMs: number = 30_000,
+  ): Promise<import("./runtime-adapter.js").ReadinessResult> {
+    const startTime = Date.now();
+    let delay = 1000; // Start at 1s
+    const maxDelay = 16_000;
+
+    while (true) {
+      const result = await adapter.checkReady(binding);
+      if (result.ready) return result;
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed + delay > timeoutMs) {
+        // One final check before timing out
+        const finalResult = await adapter.checkReady(binding);
+        if (finalResult.ready) return finalResult;
+        return { ready: false, reason: result.reason ?? "readiness timeout" };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, maxDelay);
+    }
   }
 
   private safeReadFile(path: string): string {

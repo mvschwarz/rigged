@@ -76,6 +76,7 @@ describe("PodRigInstantiator", () => {
     const inst = new PodRigInstantiator({
       db, rigRepo, podRepo, sessionRegistry, eventBus, nodeLauncher, startupOrchestrator: startupOrch,
       fsOps, adapters: { "claude-code": adapter, "codex": mockAdapter(), "terminal": mockAdapter() },
+      tmuxAdapter: tmux,
     });
 
     return { db, rigRepo, podRepo, sessionRegistry, eventBus, inst, adapter, tmux };
@@ -449,6 +450,47 @@ describe("PodRigInstantiator", () => {
       expect(result.code).toBe("cycle_error");
       expect(result.message).toMatch(/cycle/i);
     }
+    db.close();
+  });
+
+  // NS-T05: orphan tmux sessions killed on total failure
+  it("kills orphan tmux sessions on total failure", async () => {
+    const files = {
+      [`${RIG_ROOT}/agents/impl/agent.yaml`]: agentYaml("impl"),
+    };
+    // Create a setup where startup always fails after launch
+    const db = createFullTestDb();
+    const rigRepo = new RigRepository(db);
+    const podRepo = new PodRepository(db);
+    const sessionRegistry = new SessionRegistry(db);
+    const eventBus = new EventBus(db);
+    const tmux = mockTmux();
+    const nodeLauncher = new NodeLauncher({ db, rigRepo, sessionRegistry, eventBus, tmuxAdapter: tmux });
+    // Adapter that fails at project (after launch)
+    const failAdapter = {
+      runtime: "claude-code",
+      listInstalled: vi.fn(async () => []),
+      project: vi.fn(async () => ({ projected: [], skipped: [], failed: [{ effectiveId: "x", error: "disk full" }] })),
+      deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [] })),
+      checkReady: vi.fn(async () => ({ ready: true })),
+      launchHarness: vi.fn(async () => ({ ok: true })),
+    };
+    const startupOrch = new StartupOrchestrator({ db, sessionRegistry, eventBus, tmuxAdapter: tmux });
+    const fsOps = mockFs(files);
+    const inst = new PodRigInstantiator({
+      db, rigRepo, podRepo, sessionRegistry, eventBus, nodeLauncher, startupOrchestrator: startupOrch,
+      fsOps, adapters: { "claude-code": failAdapter, "codex": failAdapter, "terminal": failAdapter },
+      tmuxAdapter: tmux,
+    });
+
+    const yaml = RigSpecCodec.serialize(makeRigSpec());
+    const result = await inst.instantiate(yaml, RIG_ROOT);
+    expect(result.ok).toBe(false);
+
+    // tmux.killSession should have been called for the orphan session
+    const killSession = tmux.killSession as ReturnType<typeof vi.fn>;
+    expect(killSession).toHaveBeenCalled();
+
     db.close();
   });
 });

@@ -102,15 +102,27 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
           process.exitCode = 1;
         }
       } else {
-        // Fresh boot output
+        // Fresh boot handoff
         const stages = (res.data["stages"] as Array<{ stage: string; status: string }>) ?? [];
         for (const s of stages) {
           console.log(`  ${s.stage}: ${s.status}`);
         }
 
         const rigId = res.data["rigId"] as string | undefined;
-        if (rigId) console.log(`\nRig: ${rigId}`);
+        if (rigId) {
+          console.log(`\nRig: ${rigId}`);
+          // Dashboard URL
+          if (status.port) {
+            console.log(`Dashboard: http://localhost:${status.port}/rigs/${rigId}`);
+          }
+        }
         console.log(`Status: ${resStatus}`);
+
+        // Attach command from server response
+        const attachCommand = res.data["attachCommand"] as string | undefined;
+        if (attachCommand) {
+          console.log(`Attach: ${attachCommand}`);
+        }
 
         if (resStatus === "partial") process.exitCode = 1;
       }

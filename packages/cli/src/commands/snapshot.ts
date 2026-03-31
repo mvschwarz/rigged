@@ -38,6 +38,7 @@ export function snapshotCommand(depsOverride?: StatusDeps): Command {
         process.exitCode = 1;
       } else {
         console.log(`Snapshot created: ${res.data.id}`);
+        console.log(`To restore: rigged restore ${res.data.id} --rig ${rigId}`);
       }
     });
 

@@ -153,13 +153,33 @@ upRoutes.post("/", async (c) => {
 
       if (result.status === "completed") {
         eventBus.emit({ type: "bootstrap.completed", runId: result.runId, rigId: result.rigId!, sourceRef });
-        return c.json(result, 201);
+
+        // Compute attach command from first running node
+        let attachCommand: string | null = null;
+        if (result.rigId) {
+          const { getNodeInventory } = await import("../domain/node-inventory.js");
+          const inventory = getNodeInventory(bootstrapRepo.db, result.rigId);
+          const firstRunning = inventory.find((n) => n.canonicalSessionName && n.sessionStatus === "running");
+          attachCommand = firstRunning?.tmuxAttachCommand ?? inventory.find((n) => n.canonicalSessionName)?.tmuxAttachCommand ?? null;
+        }
+
+        return c.json({ ...result, attachCommand }, 201);
       }
       if (result.status === "partial") {
         const ok = result.stages.filter((s) => s.status === "ok").length;
         const fail = result.stages.filter((s) => s.status === "failed" || s.status === "blocked").length;
         eventBus.emit({ type: "bootstrap.partial", runId: result.runId, sourceRef, rigId: result.rigId, completed: ok, failed: fail });
-        return c.json(result, 200);
+
+        // Compute attach command from first running node
+        let attachCommand: string | null = null;
+        if (result.rigId) {
+          const { getNodeInventory } = await import("../domain/node-inventory.js");
+          const inventory = getNodeInventory(bootstrapRepo.db, result.rigId);
+          const firstRunning = inventory.find((n) => n.canonicalSessionName && n.sessionStatus === "running");
+          attachCommand = firstRunning?.tmuxAttachCommand ?? inventory.find((n) => n.canonicalSessionName)?.tmuxAttachCommand ?? null;
+        }
+
+        return c.json({ ...result, attachCommand }, 200);
       }
       eventBus.emit({ type: "bootstrap.failed", runId: result.runId, sourceRef, error: result.errors[0] ?? "failed" });
       const hasBlocked = result.stages.some((s) => s.status === "blocked");

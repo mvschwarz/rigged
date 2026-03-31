@@ -28,7 +28,7 @@ export function restoreCommand(depsOverride?: StatusDeps): Command {
       const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
       const rigId = opts.rig;
 
-      const res = await client.post<{ nodes?: Array<{ nodeId: string; logicalId: string; status: string }> }>(`/api/rigs/${encodeURIComponent(rigId)}/restore/${encodeURIComponent(snapshotId)}`);
+      const res = await client.post<{ nodes?: Array<{ nodeId: string; logicalId: string; status: string; error?: string }>; attachCommand?: string }>(`/api/rigs/${encodeURIComponent(rigId)}/restore/${encodeURIComponent(snapshotId)}`);
 
       if (res.status === 404) {
         console.error(`Snapshot "${snapshotId}" or rig "${rigId}" not found. List snapshots with: rigged snapshot list --rig ${rigId}`);
@@ -43,7 +43,12 @@ export function restoreCommand(depsOverride?: StatusDeps): Command {
         console.log("Restore complete:");
         const nodes = res.data.nodes ?? [];
         for (const node of nodes) {
-          console.log(`  ${node.logicalId}: ${node.status}`);
+          const label = node.status === "failed" && node.error ? `${node.status} — ${node.error}` : node.status;
+          console.log(`  ${node.logicalId}: ${label}`);
+        }
+        const attachCommand = (res.data as Record<string, unknown>)["attachCommand"] as string | undefined;
+        if (attachCommand) {
+          console.log(`Attach: ${attachCommand}`);
         }
         if (nodes.some((node) => node.status === "failed")) {
           process.exitCode = 1;

@@ -352,9 +352,14 @@ export class RestoreOrchestrator {
     let baseStatus: RestoreNodeResult["status"] = "fresh_no_checkpoint";
 
     if (restorePolicy === "resume_if_possible" && resumeType && resumeType !== "none") {
+      if (!resumeToken) {
+        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume requested but no token available. Restore the node manually or launch fresh with: rigged up` };
+      }
       const resumed = await this.attemptResume(sessionName, resumeType, resumeToken, node.cwd ?? "/");
       if (resumed) {
         baseStatus = "resumed";
+      } else {
+        return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume attempted but failed. Check the harness state manually or launch fresh with: rigged up` };
       }
     }
 
@@ -438,9 +443,10 @@ export class RestoreOrchestrator {
               resolvedStartupFiles: filteredFiles,
               startupActions: startupCtx.startupActions,
               isRestore: true,
+              skipHarnessLaunch: true, // Restore already handled harness launch/resume via attemptResume
             });
             if (startupResult.ok) {
-              return { nodeId: node.id, logicalId: node.logicalId, status: "resumed" };
+              return { nodeId: node.id, logicalId: node.logicalId, status: baseStatus };
             }
             warnings?.push(`Restore startup failed for ${node.logicalId}: ${startupResult.errors.join("; ")}`);
           } catch (err) {

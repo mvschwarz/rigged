@@ -7,6 +7,7 @@ import type {
   RuntimeAdapter, NodeBinding, ResolvedStartupFile,
   ProjectionResult, StartupDeliveryResult,
 } from "./runtime-adapter.js";
+import { resolveConcreteHint } from "./runtime-adapter.js";
 import type { ProjectionPlan } from "./projection-planner.js";
 
 // -- Types --
@@ -21,6 +22,12 @@ export interface StartupInput {
   resolvedStartupFiles: ResolvedStartupFile[];
   startupActions: StartupAction[];
   isRestore: boolean;
+  /** Session name for harness launch (used as --name flag). */
+  sessionName?: string;
+  /** Resume token for restore path. */
+  resumeToken?: string;
+  /** Skip harness launch (legacy nodes that already resumed via old helpers). */
+  skipHarnessLaunch?: boolean;
 }
 
 export type StartupResult =
@@ -32,6 +39,8 @@ interface StartupOrchestratorDeps {
   sessionRegistry: SessionRegistry;
   eventBus: EventBus;
   tmuxAdapter: TmuxAdapter;
+  /** Read file content for concrete-hint resolution. */
+  readFile?: (path: string) => string;
 }
 
 /**
@@ -63,7 +72,10 @@ export class StartupOrchestrator {
     this.sessionRegistry = deps.sessionRegistry;
     this.eventBus = deps.eventBus;
     this.tmuxAdapter = deps.tmuxAdapter;
+    this.readFile = deps.readFile ?? (() => "");
   }
+
+  private readFile: (path: string) => string;
 
   async startNode(input: StartupInput): Promise<StartupResult> {
     const errors: string[] = [];
@@ -87,32 +99,64 @@ export class StartupOrchestrator {
       return this.fail(input, errors);
     }
 
-    // 3. Deliver startup files (filtered by appliesOn)
+    // 3. Partition startup files by concrete hint: pre-launch (filesystem) vs post-launch (TUI)
     const context = input.isRestore ? "restore" : "fresh_start";
     const applicableFiles = input.resolvedStartupFiles.filter((f) => f.appliesOn.includes(context));
-    let deliveryResult: StartupDeliveryResult;
-    try {
-      deliveryResult = await input.adapter.deliverStartup(applicableFiles, input.binding);
-      if (deliveryResult.failed.length > 0) {
-        for (const f of deliveryResult.failed) {
-          errors.push(`Startup file delivery failed: ${f.path}: ${f.error}`);
+    const preLaunchFiles: ResolvedStartupFile[] = [];
+    const postLaunchFiles: ResolvedStartupFile[] = [];
+    for (const f of applicableFiles) {
+      const hint = f.deliveryHint === "auto"
+        ? resolveConcreteHint(f.path, this.safeReadFile(f.absolutePath))
+        : f.deliveryHint;
+      if (hint === "send_text") {
+        postLaunchFiles.push(f);
+      } else {
+        preLaunchFiles.push(f);
+      }
+    }
+
+    // 4. Deliver pre-launch files (filesystem: guidance_merge, skill_install)
+    if (preLaunchFiles.length > 0) {
+      try {
+        const deliveryResult = await input.adapter.deliverStartup(preLaunchFiles, input.binding);
+        if (deliveryResult.failed.length > 0) {
+          for (const f of deliveryResult.failed) {
+            errors.push(`Pre-launch file delivery failed: ${f.path}: ${f.error}`);
+          }
+          return this.fail(input, errors);
         }
+      } catch (err) {
+        errors.push(`Pre-launch delivery error: ${(err as Error).message}`);
         return this.fail(input, errors);
       }
-    } catch (err) {
-      errors.push(`Startup delivery error: ${(err as Error).message}`);
-      return this.fail(input, errors);
     }
 
-    // 4. Execute after_files actions
-    const afterFilesResult = await this.executeActions(input, "after_files");
-    if (!afterFilesResult.ok) {
-      return this.fail(input, afterFilesResult.errors);
+    // 5. Launch harness (unless skipped for legacy nodes)
+    if (!input.skipHarnessLaunch) {
+      try {
+        const launchResult = await input.adapter.launchHarness(input.binding, {
+          name: input.sessionName ?? input.binding.tmuxSession ?? "",
+          resumeToken: input.resumeToken,
+        });
+        if (!launchResult.ok) {
+          errors.push(`Harness launch failed: ${launchResult.error}`);
+          return this.fail(input, errors);
+        }
+        // Persist resume token if returned
+        if (launchResult.resumeToken && launchResult.resumeType) {
+          try {
+            this.sessionRegistry.updateResumeToken(input.sessionId, launchResult.resumeType, launchResult.resumeToken);
+          } catch { /* best-effort */ }
+        }
+      } catch (err) {
+        errors.push(`Harness launch error: ${(err as Error).message}`);
+        return this.fail(input, errors);
+      }
     }
 
-    // 5. Poll readiness
+    // 6. Check readiness
     // TODO: checkReady is currently a single poll, not a retry loop with timeout.
-    // A real readiness gate should poll with backoff until the harness responds or times out.
+    // NS-T05 evolves this to a retry loop with backoff and 30s timeout.
     try {
       const readiness = await input.adapter.checkReady(input.binding);
       if (!readiness.ready) {
@@ -124,7 +168,29 @@ export class StartupOrchestrator {
       return this.fail(input, errors);
     }
 
-    // 6. Execute after_ready actions
+    // 7. Deliver post-launch files (send_text → TUI, now that harness is ready)
+    if (postLaunchFiles.length > 0) {
+      try {
+        const deliveryResult = await input.adapter.deliverStartup(postLaunchFiles, input.binding);
+        if (deliveryResult.failed.length > 0) {
+          for (const f of deliveryResult.failed) {
+            errors.push(`Post-launch file delivery failed: ${f.path}: ${f.error}`);
+          }
+          return this.fail(input, errors);
+        }
+      } catch (err) {
+        errors.push(`Post-launch delivery error: ${(err as Error).message}`);
+        return this.fail(input, errors);
+      }
+    }
+
+    // 8. Execute after_files actions
+    const afterFilesResult = await this.executeActions(input, "after_files");
+    if (!afterFilesResult.ok) {
+      return this.fail(input, afterFilesResult.errors);
+    }
+
+    // 9. Execute after_ready actions
     const afterReadyResult = await this.executeActions(input, "after_ready");
     if (!afterReadyResult.ok) {
       return this.fail(input, afterReadyResult.errors);
@@ -148,6 +214,10 @@ export class StartupOrchestrator {
     this.eventBus.emit({ type: "node.startup_ready", rigId: input.rigId, nodeId: input.nodeId });
 
     return { ok: true, startupStatus: "ready" };
+  }
+
+  private safeReadFile(path: string): string {
+    try { return this.readFile(path); } catch { return ""; }
   }
 
   private fail(input: StartupInput, errors: string[]): StartupResult {

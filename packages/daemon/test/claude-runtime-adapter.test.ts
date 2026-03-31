@@ -143,4 +143,64 @@ describe("Claude Code runtime adapter", () => {
     const store = (fs as unknown as { _store: Record<string, string> })._store;
     expect(store["/project/.claude/agents/reviewer.yaml"]).toBe("name: reviewer");
   });
+
+  // NS-T04: launchHarness tests
+  it("launchHarness sends correct fresh launch command", async () => {
+    const tmux = mockTmux();
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.launchHarness(makeBinding(), { name: "dev-impl@test-rig" });
+
+    expect(result.ok).toBe(true);
+    const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
+    expect(sendText).toHaveBeenCalledWith("r01-impl", "claude --name dev-impl@test-rig");
+  });
+
+  it("launchHarness sends correct resume command with token", async () => {
+    const tmux = mockTmux();
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.launchHarness(makeBinding(), { name: "dev-impl@test-rig", resumeToken: "abc-123" });
+
+    expect(result.ok).toBe(true);
+    const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
+    expect(sendText).toHaveBeenCalledWith("r01-impl", "claude --resume abc-123 --name dev-impl@test-rig");
+  });
+
+  it("launchHarness captures resume token from session file", async () => {
+    const tmux = mockTmux();
+    const sessionData = JSON.stringify({ pid: 12345, sessionId: "abc-session-id", name: "dev-impl@test-rig" });
+    const fs = mockFs({});
+    // Add readdir + homedir capabilities
+    const fsWithDir = {
+      ...fs,
+      readdir: (dir: string) => dir.includes("sessions") ? ["12345.json"] : [],
+      homedir: "/mock-home",
+      readFile: (p: string) => {
+        if (p.includes("12345.json")) return sessionData;
+        return fs.readFile(p);
+      },
+      exists: (p: string) => p.includes("sessions") || fs.exists(p),
+    };
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: fsWithDir });
+
+    const result = await adapter.launchHarness(makeBinding(), { name: "dev-impl@test-rig" });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.resumeToken).toBe("abc-session-id");
+      expect(result.resumeType).toBe("claude_id");
+    }
+  });
+
+  it("launchHarness returns error when no tmux session bound", async () => {
+    const tmux = mockTmux();
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: mockFs() });
+    const binding = { ...makeBinding(), tmuxSession: null };
+
+    const result = await adapter.launchHarness(binding, { name: "test" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("No tmux session");
+  });
 });

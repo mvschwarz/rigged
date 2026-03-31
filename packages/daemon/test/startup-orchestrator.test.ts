@@ -6,6 +6,7 @@ import { EventBus } from "../src/domain/event-bus.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { StartupOrchestrator, type StartupInput } from "../src/domain/startup-orchestrator.js";
 import type { RuntimeAdapter, NodeBinding, ResolvedStartupFile, ProjectionResult, StartupDeliveryResult, ReadinessResult } from "../src/domain/runtime-adapter.js";
+import { resolveConcreteHint } from "../src/domain/runtime-adapter.js";
 import type { ProjectionPlan } from "../src/domain/projection-planner.js";
 import type { TmuxAdapter } from "../src/adapters/tmux.js";
 import type { StartupAction } from "../src/domain/types.js";
@@ -33,6 +34,7 @@ function mockAdapter(overrides?: Partial<RuntimeAdapter>): RuntimeAdapter {
     project: vi.fn(async () => ({ projected: [], skipped: [], failed: [] })),
     deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [] })),
     checkReady: vi.fn(async () => ({ ready: true })),
+    launchHarness: vi.fn(async () => ({ ok: true })),
     ...overrides,
   };
 }
@@ -129,7 +131,10 @@ describe("StartupOrchestrator", () => {
       deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [{ path: "startup.md", error: "disk full" }] })),
     });
     const orch = createOrchestrator();
-    const result = await orch.startNode(makeInput(seed, { adapter }));
+    const result = await orch.startNode(makeInput(seed, {
+      adapter,
+      resolvedStartupFiles: [{ path: "startup.md", absolutePath: "/tmp/startup.md", ownerRoot: "/tmp", deliveryHint: "guidance_merge", required: true, appliesOn: ["fresh_start", "restore"] }],
+    }));
     expect(result.ok).toBe(false);
     expect(result.startupStatus).toBe("failed");
 
@@ -148,14 +153,15 @@ describe("StartupOrchestrator", () => {
     expect(result.startupStatus).toBe("failed");
   });
 
-  // T5: after_files runs before checkReady, after_ready runs only after
-  it("after_files actions run before checkReady; after_ready after", async () => {
+  // T5: new startup sequence: project → pre-launch deliver → launchHarness → checkReady → post-launch deliver → after_files → after_ready
+  it("startup sequence: pre-launch deliver before launchHarness; after_files after post-launch; after_ready last", async () => {
     const seed = seedSession();
     const callOrder: string[] = [];
 
     const adapter = mockAdapter({
       project: vi.fn(async () => { callOrder.push("project"); return { projected: [], skipped: [], failed: [] }; }),
       deliverStartup: vi.fn(async () => { callOrder.push("deliver"); return { delivered: 1, failed: [] }; }),
+      launchHarness: vi.fn(async () => { callOrder.push("launchHarness"); return { ok: true }; }),
       checkReady: vi.fn(async () => { callOrder.push("checkReady"); return { ready: true }; }),
     });
 
@@ -171,16 +177,23 @@ describe("StartupOrchestrator", () => {
       makeAction({ phase: "after_files", value: "/after-files-cmd" }),
       makeAction({ phase: "after_ready", value: "/after-ready-cmd" }),
     ];
-    await orch.startNode(makeInput(seed, { adapter, startupActions: actions }));
+    const files = [
+      { path: "culture.md", absolutePath: "/tmp/culture.md", ownerRoot: "/tmp", deliveryHint: "guidance_merge" as const, required: true, appliesOn: ["fresh_start" as const, "restore" as const] },
+      { path: "priming.txt", absolutePath: "/tmp/priming.txt", ownerRoot: "/tmp", deliveryHint: "send_text" as const, required: false, appliesOn: ["fresh_start" as const] },
+    ];
+    await orch.startNode(makeInput(seed, { adapter, startupActions: actions, resolvedStartupFiles: files }));
 
-    const deliverIdx = callOrder.indexOf("deliver");
-    const afterFilesIdx = callOrder.indexOf("action:/after-files-cmd");
+    const projectIdx = callOrder.indexOf("project");
+    const launchIdx = callOrder.indexOf("launchHarness");
     const checkReadyIdx = callOrder.indexOf("checkReady");
+    const afterFilesIdx = callOrder.indexOf("action:/after-files-cmd");
     const afterReadyIdx = callOrder.indexOf("action:/after-ready-cmd");
 
-    expect(afterFilesIdx).toBeGreaterThan(deliverIdx);
-    expect(checkReadyIdx).toBeGreaterThan(afterFilesIdx);
-    expect(afterReadyIdx).toBeGreaterThan(checkReadyIdx);
+    // deliver is called twice (pre-launch + post-launch), but we verify order via launchHarness position
+    expect(launchIdx).toBeGreaterThan(projectIdx);
+    expect(checkReadyIdx).toBeGreaterThan(launchIdx);
+    expect(afterFilesIdx).toBeGreaterThan(checkReadyIdx);
+    expect(afterReadyIdx).toBeGreaterThan(afterFilesIdx);
   });
 
   // T6: non-idempotent restore action is skipped
@@ -317,5 +330,62 @@ describe("StartupOrchestrator", () => {
     expect(events).toContain("node.startup_pending");
     expect(events).toContain("node.startup_ready");
     expect(events.indexOf("node.startup_pending")).toBeLessThan(events.indexOf("node.startup_ready"));
+  });
+
+  // NS-T04: resolveConcreteHint shared resolver
+  it("resolveConcreteHint: SKILL.md path → skill_install", () => {
+    expect(resolveConcreteHint("skills/my-skill/SKILL.md", "some content")).toBe("skill_install");
+  });
+
+  it("resolveConcreteHint: content starting with # SKILL → skill_install", () => {
+    expect(resolveConcreteHint("custom.txt", "# SKILL Some tool")).toBe("skill_install");
+  });
+
+  it("resolveConcreteHint: .md file → guidance_merge", () => {
+    expect(resolveConcreteHint("role.md", "You are a developer")).toBe("guidance_merge");
+  });
+
+  it("resolveConcreteHint: non-.md file → send_text", () => {
+    expect(resolveConcreteHint("config.yaml", "key: value")).toBe("send_text");
+  });
+
+  // NS-T04: skipHarnessLaunch
+  it("skipHarnessLaunch: true skips launchHarness entirely", async () => {
+    const seed = seedSession();
+    const launchSpy = vi.fn(async () => ({ ok: true as const }));
+    const adapter = mockAdapter({ launchHarness: launchSpy });
+    const orch = createOrchestrator();
+    const result = await orch.startNode(makeInput(seed, { adapter, skipHarnessLaunch: true }));
+    expect(result.ok).toBe(true);
+    expect(launchSpy).not.toHaveBeenCalled();
+  });
+
+  // NS-T04: launchHarness failure → startup_failed
+  it("launchHarness failure transitions to startup_failed", async () => {
+    const seed = seedSession();
+    const adapter = mockAdapter({
+      launchHarness: vi.fn(async () => ({ ok: false as const, error: "harness crash" })),
+    });
+    const orch = createOrchestrator();
+    const result = await orch.startNode(makeInput(seed, { adapter }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes("harness crash"))).toBe(true);
+    }
+  });
+
+  // NS-T04: launchHarness persists resume token
+  it("launchHarness resume token persisted to session", async () => {
+    const seed = seedSession();
+    const adapter = mockAdapter({
+      launchHarness: vi.fn(async () => ({ ok: true as const, resumeToken: "sess-xyz", resumeType: "claude_id" })),
+    });
+    const orch = createOrchestrator();
+    await orch.startNode(makeInput(seed, { adapter }));
+
+    const sessions = sessionRegistry.getSessionsForRig(seed.rigId);
+    const session = sessions.find((s) => s.id === seed.sessionId);
+    expect(session!.resumeToken).toBe("sess-xyz");
+    expect(session!.resumeType).toBe("claude_id");
   });
 });

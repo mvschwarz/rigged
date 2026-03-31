@@ -44,6 +44,7 @@ function mockAdapter(fsCheck?: AgentResolverFsOps): RuntimeAdapter {
       return { delivered: files.length - failed.length, failed };
     }),
     checkReady: vi.fn(async () => ({ ready: true })),
+    launchHarness: vi.fn(async () => ({ ok: true })),
   };
 }
 

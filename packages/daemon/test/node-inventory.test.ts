@@ -73,6 +73,7 @@ function mockAdapter(overrides?: Partial<RuntimeAdapter>): RuntimeAdapter {
     project: vi.fn(async () => ({ projected: [], skipped: [], failed: [] })),
     deliverStartup: vi.fn(async () => ({ delivered: 0, failed: [] })),
     checkReady: vi.fn(async () => ({ ready: true })),
+    launchHarness: vi.fn(async () => ({ ok: true })),
     ...overrides,
   };
 }

@@ -533,7 +533,8 @@ describe("RestoreOrchestrator", () => {
     const result = await orch.restore(snap.id);
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+    // NS-T04: resume failure is now FAILED loudly, no silent fallback to checkpoint
+    if (result.ok) expect(result.result.nodes[0]!.status).toBe("failed");
     fs.rmSync(tmpDir, { recursive: true });
   });
 

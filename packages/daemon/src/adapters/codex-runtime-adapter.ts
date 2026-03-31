@@ -4,7 +4,9 @@ import type { TmuxAdapter } from "./tmux.js";
 import type {
   RuntimeAdapter, NodeBinding, ResolvedStartupFile,
   InstalledResource, ProjectionResult, StartupDeliveryResult, ReadinessResult,
+  HarnessLaunchResult,
 } from "../domain/runtime-adapter.js";
+import { resolveConcreteHint } from "../domain/runtime-adapter.js";
 import type { ProjectionPlan, ProjectionEntry } from "../domain/projection-planner.js";
 
 export interface CodexAdapterFsOps {
@@ -104,6 +106,29 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     return { delivered, failed };
   }
 
+  async launchHarness(binding: NodeBinding, opts: { name: string; resumeToken?: string }): Promise<HarnessLaunchResult> {
+    if (!binding.tmuxSession) {
+      return { ok: false, error: "No tmux session bound — cannot launch Codex harness" };
+    }
+
+    const cmd = opts.resumeToken
+      ? `codex resume ${opts.resumeToken}`
+      : "codex";
+
+    const textResult = await this.tmux.sendText(binding.tmuxSession, cmd);
+    if (!textResult.ok) {
+      return { ok: false, error: `Failed to send launch command: ${textResult.message}` };
+    }
+    const enterResult = await this.tmux.sendKeys(binding.tmuxSession, ["Enter"]);
+    if (!enterResult.ok) {
+      return { ok: false, error: `Failed to send Enter: ${enterResult.message}` };
+    }
+
+    // Codex token: not available until first exchange (per spike).
+    // Fresh launch returns without token. Resume returns without new token.
+    return { ok: true };
+  }
+
   async checkReady(binding: NodeBinding): Promise<ReadinessResult> {
     if (!binding.tmuxSession) {
       return { ready: false, reason: "No tmux session bound" };
@@ -174,9 +199,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
   }
 
   private detectDeliveryHint(path: string, content: string): "guidance_merge" | "skill_install" | "send_text" {
-    if (path.endsWith("SKILL.md") || content.startsWith("# SKILL")) return "skill_install";
-    if (path.endsWith(".md")) return "guidance_merge";
-    return "send_text";
+    return resolveConcreteHint(path, content);
   }
 }
 

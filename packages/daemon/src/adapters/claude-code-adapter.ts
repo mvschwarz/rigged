@@ -4,7 +4,9 @@ import type { TmuxAdapter } from "./tmux.js";
 import type {
   RuntimeAdapter, NodeBinding, ResolvedStartupFile,
   InstalledResource, ProjectionResult, StartupDeliveryResult, ReadinessResult,
+  HarnessLaunchResult,
 } from "../domain/runtime-adapter.js";
+import { resolveConcreteHint } from "../domain/runtime-adapter.js";
 import type { ProjectionPlan, ProjectionEntry } from "../domain/projection-planner.js";
 
 export interface ClaudeAdapterFsOps {
@@ -14,6 +16,10 @@ export interface ClaudeAdapterFsOps {
   mkdirp(path: string): void;
   copyFile(src: string, dest: string): void;
   listFiles?(dirPath: string): string[];
+  /** List files in a directory (for session token capture). */
+  readdir?(dirPath: string): string[];
+  /** User home directory (for session file lookup). */
+  homedir?: string;
 }
 
 const MANAGED_BLOCK_START = (id: string) => `<!-- BEGIN RIGGED MANAGED BLOCK: ${id} -->`;
@@ -105,6 +111,32 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     return { delivered, failed };
   }
 
+  async launchHarness(binding: NodeBinding, opts: { name: string; resumeToken?: string }): Promise<HarnessLaunchResult> {
+    if (!binding.tmuxSession) {
+      return { ok: false, error: "No tmux session bound — cannot launch Claude Code harness" };
+    }
+
+    const cmd = opts.resumeToken
+      ? `claude --resume ${opts.resumeToken} --name ${opts.name}`
+      : `claude --name ${opts.name}`;
+
+    const textResult = await this.tmux.sendText(binding.tmuxSession, cmd);
+    if (!textResult.ok) {
+      return { ok: false, error: `Failed to send launch command: ${textResult.message}` };
+    }
+    // Send Enter to execute
+    const enterResult = await this.tmux.sendKeys(binding.tmuxSession, ["Enter"]);
+    if (!enterResult.ok) {
+      return { ok: false, error: `Failed to send Enter: ${enterResult.message}` };
+    }
+
+    // Token capture: read ~/.claude/sessions/ and find the session by name
+    const token = this.captureResumeToken(opts.name);
+    return token
+      ? { ok: true, resumeToken: token, resumeType: "claude_id" }
+      : { ok: true, resumeType: "claude_id" }; // Best-effort — token may not be available yet
+  }
+
   async checkReady(binding: NodeBinding): Promise<ReadinessResult> {
     if (!binding.tmuxSession) {
       return { ready: false, reason: "No tmux session bound" };
@@ -180,10 +212,34 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     }
   }
 
+  /**
+   * Best-effort token capture from ~/.claude/sessions/*.json.
+   * Finds the session file whose name matches the expected session name.
+   * Returns the sessionId if found, undefined otherwise.
+   */
+  private captureResumeToken(expectedName: string): string | undefined {
+    try {
+      const home = this.fs.homedir ?? (typeof process !== "undefined" ? process.env.HOME : undefined);
+      if (!home || !this.fs.readdir) return undefined;
+      const sessDir = nodePath.join(home, ".claude", "sessions");
+      if (!this.fs.exists(sessDir)) return undefined;
+      const files = this.fs.readdir(sessDir);
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        try {
+          const content = this.fs.readFile(nodePath.join(sessDir, file));
+          const data = JSON.parse(content) as { sessionId?: string; name?: string };
+          if (data.name === expectedName && data.sessionId) {
+            return data.sessionId;
+          }
+        } catch { /* skip malformed files */ }
+      }
+    } catch { /* best-effort */ }
+    return undefined;
+  }
+
   private detectDeliveryHint(path: string, content: string): "guidance_merge" | "skill_install" | "send_text" {
-    if (path.endsWith("SKILL.md") || content.startsWith("# SKILL")) return "skill_install";
-    if (path.endsWith(".md")) return "guidance_merge";
-    return "send_text";
+    return resolveConcreteHint(path, content);
   }
 }
 

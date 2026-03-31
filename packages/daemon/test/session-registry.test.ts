@@ -83,6 +83,17 @@ describe("SessionRegistry", () => {
     ).not.toThrow();
   });
 
+  // NS-T04: updateResumeToken
+  it("updateResumeToken persists type and token", () => {
+    const session = registry.registerSession("node-1", "r01-dev1-impl");
+    registry.updateResumeToken(session.id, "claude_id", "abc-123-def");
+
+    const sessions = registry.getSessionsForRig("rig-1");
+    const updated = sessions.find((s) => s.id === session.id);
+    expect(updated!.resumeType).toBe("claude_id");
+    expect(updated!.resumeToken).toBe("abc-123-def");
+  });
+
   it("registerSession accepts canonical session name with @", () => {
     const session = registry.registerSession("node-1", "dev-impl@auth-feats");
     expect(session.sessionName).toBe("dev-impl@auth-feats");

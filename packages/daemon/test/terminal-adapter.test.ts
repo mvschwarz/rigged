@@ -46,4 +46,10 @@ describe("TerminalAdapter", () => {
     const result = await adapter.listInstalled(MOCK_BINDING);
     expect(result).toEqual([]);
   });
+
+  // NS-T04
+  it("launchHarness is no-op returning ok", async () => {
+    const result = await adapter.launchHarness(MOCK_BINDING, { name: "infra-server@test-rig" });
+    expect(result).toEqual({ ok: true });
+  });
 });

@@ -116,4 +116,27 @@ describe("Codex runtime adapter", () => {
     const blockCount = (content.match(/BEGIN RIGGED MANAGED BLOCK/g) ?? []).length;
     expect(blockCount).toBe(1); // exactly one block, not two
   });
+
+  // NS-T04: launchHarness tests
+  it("launchHarness sends correct fresh launch command", async () => {
+    const tmux = mockTmux();
+    const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.launchHarness(makeBinding(), { name: "dev-qa@test-rig" });
+
+    expect(result.ok).toBe(true);
+    const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
+    expect(sendText).toHaveBeenCalledWith("r01-qa", "codex");
+  });
+
+  it("launchHarness sends correct resume command", async () => {
+    const tmux = mockTmux();
+    const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.launchHarness(makeBinding(), { name: "dev-qa@test-rig", resumeToken: "sess-456" });
+
+    expect(result.ok).toBe(true);
+    const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
+    expect(sendText).toHaveBeenCalledWith("r01-qa", "codex resume sess-456");
+  });
 });

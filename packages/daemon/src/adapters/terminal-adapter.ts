@@ -6,6 +6,7 @@ import type {
   StartupDeliveryResult,
   ReadinessResult,
   ResolvedStartupFile,
+  HarnessLaunchResult,
 } from "../domain/runtime-adapter.js";
 import type { ProjectionPlan } from "../domain/projection-planner.js";
 
@@ -28,6 +29,10 @@ export class TerminalAdapter implements RuntimeAdapter {
 
   async deliverStartup(_files: ResolvedStartupFile[], _binding: NodeBinding): Promise<StartupDeliveryResult> {
     return { delivered: 0, failed: [] };
+  }
+
+  async launchHarness(_binding: NodeBinding, _opts: { name: string; resumeToken?: string }): Promise<HarnessLaunchResult> {
+    return { ok: true };
   }
 
   async checkReady(_binding: NodeBinding): Promise<ReadinessResult> {

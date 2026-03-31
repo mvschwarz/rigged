@@ -44,13 +44,35 @@ export interface ReadinessResult {
   reason?: string;
 }
 
+// -- Harness launch result --
+
+export type HarnessLaunchResult =
+  | { ok: true; resumeToken?: string; resumeType?: string }
+  | { ok: false; error: string };
+
+// -- Shared concrete-hint resolver --
+
+/**
+ * Resolve 'auto' delivery hint to a concrete hint.
+ * Single source of truth — used by both the startup partition and adapter delivery.
+ * Rules match existing adapter logic byte-for-byte.
+ */
+export function resolveConcreteHint(
+  path: string,
+  content: string,
+): "guidance_merge" | "skill_install" | "send_text" {
+  if (path.endsWith("SKILL.md") || content.startsWith("# SKILL")) return "skill_install";
+  if (path.endsWith(".md")) return "guidance_merge";
+  return "send_text";
+}
+
 // -- Runtime adapter contract --
 
 /**
- * The four-method runtime adapter contract for the AgentSpec reboot.
- * Adapters own projection, delivery, reconciliation, and readiness.
+ * The five-method runtime adapter contract.
+ * Adapters own projection, delivery, harness launch, reconciliation, and readiness.
  * Startup action execution is NOT part of this contract — that belongs
- * to the startup orchestrator (AS-T07) after checkReady().
+ * to the startup orchestrator after checkReady().
  */
 export interface RuntimeAdapter {
   readonly runtime: string;
@@ -63,6 +85,9 @@ export interface RuntimeAdapter {
 
   /** Deliver startup files to the runtime. */
   deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult>;
+
+  /** Launch the harness (claude/codex/terminal) inside the tmux session. */
+  launchHarness(binding: NodeBinding, opts: { name: string; resumeToken?: string }): Promise<HarnessLaunchResult>;
 
   /** Check if the runtime harness is responsive and ready. */
   checkReady(binding: NodeBinding): Promise<ReadinessResult>;

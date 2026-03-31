@@ -1,7 +1,7 @@
 import { type ReactNode, useState, createContext, useContext } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Explorer } from "./Explorer.js";
-import { NodeDetailPlaceholder } from "./NodeDetailPlaceholder.js";
+import { NodeDetailPanel } from "./NodeDetailPanel.js";
 import { StatusBar } from "./StatusBar.js";
 import { ActivityFeed } from "./ActivityFeed.js";
 import { useActivityFeed } from "../hooks/useActivityFeed.js";
@@ -130,9 +130,9 @@ export function AppShell({ children }: AppShellProps) {
             <div key={pathname} className="relative z-10 route-enter flex-1 flex flex-col">{children}</div>
           </main>
 
-          {/* Placeholder detail panel — visible when a node is selected */}
+          {/* Node detail panel — visible when a node is selected */}
           {selectedNode && (
-            <NodeDetailPlaceholder
+            <NodeDetailPanel
               rigId={selectedNode.rigId}
               logicalId={selectedNode.logicalId}
               onClose={() => setSelectedNode(null)}

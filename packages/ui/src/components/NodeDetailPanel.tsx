@@ -1,0 +1,144 @@
+import { useNodeDetail } from "../hooks/useNodeDetail.js";
+
+interface NodeDetailPanelProps {
+  rigId: string;
+  logicalId: string;
+  onClose: () => void;
+}
+
+function statusColor(status: string | null): string {
+  switch (status) {
+    case "ready": return "text-green-600";
+    case "pending": return "text-amber-600";
+    case "failed": return "text-red-600";
+    default: return "text-stone-400";
+  }
+}
+
+export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelProps) {
+  const { data, isLoading, error } = useNodeDetail(rigId, logicalId);
+
+  const handleCopyAttach = () => {
+    if (data?.tmuxAttachCommand) navigator.clipboard?.writeText(data.tmuxAttachCommand);
+  };
+
+  const handleFocusCmux = async () => {
+    try {
+      await fetch(`/api/rigs/${encodeURIComponent(rigId)}/nodes/${encodeURIComponent(logicalId)}/focus`, { method: "POST" });
+    } catch { /* best-effort */ }
+  };
+
+  const handleCopyResume = () => {
+    if (data?.resumeCommand) navigator.clipboard?.writeText(data.resumeCommand);
+  };
+
+  return (
+    <div
+      data-testid="node-detail-panel"
+      className="w-80 border-l border-stone-300 bg-stone-50 flex flex-col shrink-0 overflow-y-auto"
+    >
+      {/* Header */}
+      <div className="flex justify-between items-center px-4 py-3 border-b border-stone-200">
+        <span className="font-mono text-xs font-bold text-stone-900 uppercase truncate">{logicalId}</span>
+        <button onClick={onClose} className="text-stone-400 hover:text-stone-900 text-sm" data-testid="detail-close">&times;</button>
+      </div>
+
+      {isLoading && <div className="p-4 font-mono text-[9px] text-stone-400">Loading...</div>}
+      {error && <div className="p-4 font-mono text-[9px] text-red-500">Failed to load node detail</div>}
+
+      {data && (
+        <div className="flex flex-col gap-0">
+          {/* Identity */}
+          <section className="px-4 py-3 border-b border-stone-100">
+            <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Identity</div>
+            <div className="space-y-1 font-mono text-[10px]">
+              <div className="flex justify-between"><span className="text-stone-500">Session</span><span className="text-stone-900 truncate ml-2">{data.canonicalSessionName ?? "—"}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Pod</span><span className="text-stone-900">{data.podId ?? "—"}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Runtime</span><span className="text-stone-900">{data.runtime ?? "—"}</span></div>
+              {data.nodeKind !== "infrastructure" && (
+                <>
+                  <div className="flex justify-between"><span className="text-stone-500">Agent Spec</span><span className="text-stone-900">{data.resolvedSpecName ?? "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-stone-500">Profile</span><span className="text-stone-900">{data.profile ?? "—"}</span></div>
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* Status */}
+          <section className="px-4 py-3 border-b border-stone-100">
+            <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Status</div>
+            <div className="space-y-1 font-mono text-[10px]">
+              <div className="flex justify-between">
+                <span className="text-stone-500">Startup</span>
+                <span className={statusColor(data.startupStatus)} data-testid="detail-startup-status">{data.startupStatus ?? "stopped"}</span>
+              </div>
+              <div className="flex justify-between"><span className="text-stone-500">Restore</span><span className="text-stone-900">{data.restoreOutcome}</span></div>
+              {data.latestError && (
+                <div className="mt-1 p-2 bg-red-50 border border-red-200 font-mono text-[9px] text-red-700" data-testid="detail-error">
+                  {data.latestError}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Actions */}
+          <section className="px-4 py-3 border-b border-stone-100">
+            <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Actions</div>
+            <div className="flex flex-col gap-1">
+              {data.tmuxAttachCommand && (
+                <button onClick={handleCopyAttach} data-testid="detail-copy-attach" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left truncate">
+                  Copy tmux attach
+                </button>
+              )}
+              <button onClick={handleFocusCmux} data-testid="detail-cmux-focus" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left">
+                Open in cmux
+              </button>
+              {data.resumeCommand && (
+                <button onClick={handleCopyResume} data-testid="detail-copy-resume" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left truncate">
+                  Copy resume command
+                </button>
+              )}
+            </div>
+          </section>
+
+          {/* Infrastructure startup command */}
+          {data.nodeKind === "infrastructure" && data.infrastructureStartupCommand && (
+            <section className="px-4 py-3 border-b border-stone-100">
+              <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Startup Command</div>
+              <code className="font-mono text-[9px] text-stone-700 bg-stone-100 px-2 py-1 block">{data.infrastructureStartupCommand}</code>
+            </section>
+          )}
+
+          {/* Startup Files */}
+          {data.startupFiles.length > 0 && (
+            <section className="px-4 py-3 border-b border-stone-100">
+              <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Startup Files</div>
+              <ol className="list-decimal list-inside space-y-0.5">
+                {data.startupFiles.map((f, i) => (
+                  <li key={i} className="font-mono text-[9px] text-stone-700 truncate">
+                    {f.path} <span className="text-stone-400">({f.deliveryHint})</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {/* Recent Events */}
+          {data.recentEvents.length > 0 && (
+            <section className="px-4 py-3">
+              <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Recent Events</div>
+              <div className="space-y-0.5">
+                {data.recentEvents.slice(0, 10).map((e, i) => (
+                  <div key={i} className="font-mono text-[9px] flex justify-between">
+                    <span className="text-stone-700 truncate">{e.type}</span>
+                    <span className="text-stone-400 ml-2 shrink-0">{e.createdAt}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

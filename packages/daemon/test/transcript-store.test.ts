@@ -77,6 +77,27 @@ describe("TranscriptStore", () => {
       expect(stripped).toContain("mschwarz@mike-air /tmp %");
       expect(stripped).toContain("echo 'test'");
     });
+
+    it("preserves readability for real TUI cursor-motion output", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      const raw = "\x1b[38;5;231m⏺\x1b[1C\x1b[39mTRANSCRIPT PROBE\x1b[1CACK\x1b[1C2026-03-31\r\x1b[2B\x1b[38;5;174m✳\x1b[39m \x1b[38;5;174mSchlepping… \x1b[39m                                                                   \r\x1b[1B   \r\x1b[2B\x1b[38;5;246m❯\u00a0\x1b[39m\x1b[7m \x1b[27m               \r\n\x1b]0;✳ Restore protocol start and read inventory\u0007\r\n\x1b[2C\x1b[38;5;246mesc\x1b[1Cto\x1b[1Cinterrupt\x1b[39m";
+      const stripped = store.stripAnsi(raw);
+      expect(stripped).toContain("TRANSCRIPT PROBE ACK 2026-03-31");
+      expect(stripped).toContain("esc to interrupt");
+      expect(stripped).not.toContain("\x1b");
+      expect(stripped).not.toContain("]0;");
+    });
+
+    it("removes shell redraw noise from real transcript capture", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      const raw = "printf 'TRACK_A_SMOKE_LINE\\nPNS-T06 marker\\n'\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m                                                                               \r  \r\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jmschwarz@mike-air rigged % \x1b[K\x1b[?2004hp\bprintf 'TRACK_A_SMOKE_LINE\\nPNS-T06 marker\\n'";
+      const stripped = store.stripAnsi(raw);
+      expect(stripped).toContain("mschwarz@mike-air rigged %");
+      expect(stripped).toContain("printf 'TRACK_A_SMOKE_LINE\\nPNS-T06 marker\\n'");
+      expect(stripped).not.toContain("pprintf");
+      expect(stripped).not.toContain("\b");
+      expect(stripped).not.toContain("\x1b");
+    });
   });
 
   describe("enabled: false", () => {
@@ -143,6 +164,19 @@ describe("TranscriptStore", () => {
       expect(result).toHaveLength(2);
       expect(result![0]).toBe("decision made"); // ANSI stripped
       expect(result![1]).toBe("decision final");
+    });
+
+    it("matches against stripped logical lines from noisy shell capture", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("my-rig");
+      const filePath = store.getTranscriptPath("my-rig", "dev@my-rig");
+      writeFileSync(
+        filePath,
+        "printf 'TRACK_A_SMOKE_LINE\\nPNS-T06 marker\\n'\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m                                                                                \r  \r\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jmschwarz@mike-air rigged % \x1b[K\x1b[?2004hprintf 'TRACK_A_GROWTH_LINE\\\\n'\n",
+      );
+
+      const result = store.grep("my-rig", "dev@my-rig", "TRACK_A_GROWTH_LINE");
+      expect(result).toEqual(["printf 'TRACK_A_GROWTH_LINE\\\\n'"]);
     });
 
     it("returns null on missing file without throwing", () => {

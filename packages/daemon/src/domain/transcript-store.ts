@@ -9,6 +9,22 @@ export interface TranscriptStoreOpts {
 
 const DEFAULT_ROOT = join(homedir(), ".rigged", "transcripts");
 
+function applyBackspaces(text: string): string {
+  const chars: string[] = [];
+  for (const ch of text) {
+    if (ch === "\b") {
+      chars.pop();
+      continue;
+    }
+    chars.push(ch);
+  }
+  return chars.join("");
+}
+
+function stripShellPromptPrefix(line: string): string {
+  return line.replace(/^\S+@\S+ .*? %\s+/, "");
+}
+
 export class TranscriptStore {
   private readonly root: string;
   private readonly _enabled: boolean;
@@ -60,8 +76,23 @@ export class TranscriptStore {
 
   stripAnsi(text: string): string {
     return text
-      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-      .replace(/\x1b\[\?[0-9]*[a-zA-Z]/g, "");
+      // Preserve horizontal spacing from cursor-forward/absolute motions.
+      .replace(/\x1b\[(\d*)C/g, (_, n: string) => " ".repeat(Math.max(1, Number(n || "1"))))
+      .replace(/\x1b\[(\d*)G/g, (_, n: string) => " ".repeat(Math.max(1, Number(n || "1"))))
+      // Strip OSC/title updates like ESC ] 0;title BEL.
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+      // Strip remaining CSI and single-char escape sequences.
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+      .replace(/\x1b[@-_]/g, "")
+      // Shell redraws often emit char + backspace before replaying the line.
+      .replace(/\r/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .replace(/[^\n]\x08/g, (match) => applyBackspaces(match))
+      .replace(/\x08+/g, "")
+      // Treat carriage-return redraws as separate transcript lines.
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n");
   }
 
   readTail(rigName: string, sessionName: string, lines: number): string | null {
@@ -85,12 +116,12 @@ export class TranscriptStore {
     try {
       const filePath = this.getTranscriptPath(rigName, sessionName);
       if (!existsSync(filePath)) return null;
-      const content = readFileSync(filePath, "utf-8");
+      const content = this.stripAnsi(readFileSync(filePath, "utf-8"));
       const regex = new RegExp(pattern);
       return content
         .split("\n")
         .filter((line) => regex.test(line))
-        .map((line) => this.stripAnsi(line));
+        .map((line) => stripShellPromptPrefix(line));
     } catch {
       return null;
     }

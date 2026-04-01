@@ -21,6 +21,19 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let start = 0;
+  while (true) {
+    const index = haystack.indexOf(needle, start);
+    if (index === -1) break;
+    count++;
+    start = index + needle.length;
+  }
+  return count;
+}
+
 export type TargetSpec =
   | { session: string }
   | { rig: string }
@@ -285,6 +298,8 @@ export class SessionTransport {
   }
 
   async send(sessionName: string, text: string, opts?: SendOpts): Promise<SendResult> {
+    let preVerifyContent: string | null = null;
+
     // 1. Check session exists / tmux available
     try {
       const exists = await this.tmuxAdapter.hasSession(sessionName);
@@ -322,6 +337,14 @@ export class SessionTransport {
       }
     }
 
+    if (opts?.verify) {
+      try {
+        preVerifyContent = await this.tmuxAdapter.capturePaneContent(sessionName, 30);
+      } catch {
+        preVerifyContent = null;
+      }
+    }
+
     // 3. Send text (paste)
     const textResult = await this.tmuxAdapter.sendText(sessionName, text);
     if (!textResult.ok) {
@@ -352,7 +375,10 @@ export class SessionTransport {
       await delay(500);
       try {
         const content = await this.tmuxAdapter.capturePaneContent(sessionName, 30);
-        const verified = content ? content.includes(text.substring(0, Math.min(text.length, 40))) : false;
+        const snippet = text.substring(0, Math.min(text.length, 40));
+        const preCount = countOccurrences(preVerifyContent ?? "", snippet);
+        const postCount = countOccurrences(content ?? "", snippet);
+        const verified = postCount > preCount;
         return { ok: true, sessionName, verified };
       } catch {
         return { ok: true, sessionName, verified: false };

@@ -44,7 +44,8 @@ Without --rig or --pod, broadcasts to ALL running sessions across all rigs.`)
 
       if (opts.json) {
         console.log(JSON.stringify(res.data));
-        if (res.status >= 400) process.exitCode = 1;
+        const results = ((res.data as Record<string, unknown>)["results"] as Array<{ ok: boolean }> | undefined) ?? [];
+        if (res.status >= 400 || results.some((r) => !r.ok)) process.exitCode = 1;
         return;
       }
 
@@ -66,7 +67,7 @@ Without --rig or --pod, broadcasts to ALL running sessions across all rigs.`)
       }
       console.log(`${data["sent"]}/${data["total"]} delivered`);
 
-      if ((data["failed"] as number) > 0) {
+      if ((data["failed"] as number) > 0 || results.some((r) => !r.ok)) {
         process.exitCode = 1;
       }
     });

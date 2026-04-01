@@ -412,12 +412,16 @@ export class RestoreOrchestrator {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume attempted but failed. Check the harness state manually or launch fresh with: rigged up` };
       }
     } else if (restorePolicy === "resume_if_possible" && isPodAware) {
-      // Pod-aware restore: launchHarness handles resume (with token) or fresh (without)
-      // baseStatus stays fresh — it will be updated to "resumed" after
-      // startup replay succeeds IF the harness resumes. Fresh launch with no token
-      // is honest: the node boots but without prior context.
+      // Pod-aware restore must preserve the same honesty contract as legacy restore:
+      // if resume was requested but continuity state is unavailable, fail loudly
+      // instead of silently downgrading to a fresh launch with amnesia.
       if (!resumeToken) {
-        warnings?.push(`${node.logicalId}: no resume token available. Node will launch fresh (without prior context).`);
+        return {
+          nodeId: node.id,
+          logicalId: node.logicalId,
+          status: "failed",
+          error: "Resume requested but no token available. Restore the node manually or launch fresh with: rigged up",
+        };
       }
     }
 

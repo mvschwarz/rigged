@@ -31,6 +31,15 @@ describe("Broadcast CLI", () => {
       req.on("end", () => {
         if (req.method === "POST" && req.url === "/api/transport/broadcast") {
           const parsed = JSON.parse(body);
+          if (parsed.rig === "empty-rig") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              total: 0, sent: 0, failed: 0,
+              results: [
+                { ok: false, sessionName: "", error: "No running sessions found for rig 'empty-rig'. Check rig status with: rigged ps" },
+              ],
+            }));
+          } else
           if (parsed.rig === "fail-rig") {
             // Partial failure
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -92,5 +101,15 @@ describe("Broadcast CLI", () => {
     const parsed = JSON.parse(logs.join("\n"));
     expect(parsed.total).toBe(2);
     expect(parsed.sent).toBe(2);
+  });
+
+  it("broadcast exits nonzero when no targets resolve", async () => {
+    const { logs, exitCode } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rigged", "broadcast", "--rig", "empty-rig", "hello"]);
+    });
+    const output = logs.join("\n");
+    expect(output).toContain("No running sessions found");
+    expect(output).toContain("0/0 delivered");
+    expect(exitCode).toBe(1);
   });
 });

@@ -159,14 +159,31 @@ describe("SessionTransport", () => {
   // Test 6: send with verify captures pane and checks for text
   it("send with verify checks pane for sent text", async () => {
     seedCanonicalRig();
+    let captureCount = 0;
     const tmux = mockTmux({
-      capturePaneContent: async () => "some output\nhello\n❯ ",
+      capturePaneContent: async () => {
+        captureCount++;
+        return captureCount < 3 ? "some output\n❯ " : "some output\nhello\n❯ ";
+      },
     });
     const transport = createTransport(tmux);
 
     const result = await transport.send("dev-impl@my-rig", "hello", { verify: true });
     expect(result.ok).toBe(true);
     expect(result.verified).toBe(true);
+  });
+
+  it("send with verify does not false-positive on pre-existing pane content", async () => {
+    seedCanonicalRig();
+    const tmux = mockTmux({
+      capturePaneContent: async () => "prior output\nhello\n❯ ",
+    });
+    const transport = createTransport(tmux);
+
+    const result = await transport.send("dev-impl@my-rig", "hello", { verify: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.verified).toBe(false);
   });
 
   // Test 7: send with mid-work detected → refusal

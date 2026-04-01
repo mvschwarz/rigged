@@ -227,4 +227,95 @@ describe("TranscriptStore", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("large file performance", () => {
+    function writeLargeTranscript(filePath: string, totalLines: number, markerEvery: number) {
+      const chunks: string[] = [];
+      for (let i = 0; i < totalLines; i++) {
+        if (i > 0 && i % markerEvery === 0) {
+          chunks.push(`MARKER_LINE_${i}`);
+        } else {
+          chunks.push(`line ${i}: ${"x".repeat(80)}`);
+        }
+      }
+      writeFileSync(filePath, chunks.join("\n") + "\n");
+    }
+
+    it("readTail returns enough lines even when most raw lines are prompt noise", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("noisy-rig");
+      const filePath = store.getTranscriptPath("noisy-rig", "dev@noisy-rig");
+      // 8 prompt noise lines + 2 real lines
+      const lines = [
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "KEEP_ONE",
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "mschwarz@mike-air rigged % ",
+        "KEEP_TWO",
+      ];
+      writeFileSync(filePath, lines.join("\n") + "\n");
+      const result = store.readTail("noisy-rig", "dev@noisy-rig", 2);
+      expect(result).toContain("KEEP_ONE");
+      expect(result).toContain("KEEP_TWO");
+    });
+
+    it("readTail handles multibyte UTF-8 characters at chunk boundaries", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("utf8-rig");
+      const filePath = store.getTranscriptPath("utf8-rig", "dev-tail@utf8-rig");
+      // Write enough padding to push the multibyte char near a chunk boundary
+      const padding = "X".repeat(16 * 1024 - 5); // just before 16KB boundary
+      writeFileSync(filePath, padding + "\ncafé résumé\nlast line\n");
+      const result = store.readTail("utf8-rig", "dev-tail@utf8-rig", 2);
+      expect(result).not.toBeNull();
+      expect(result).toContain("café");
+      expect(result).toContain("last line");
+    });
+
+    it("grep matches multibyte UTF-8 characters correctly", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("utf8-rig");
+      const filePath = store.getTranscriptPath("utf8-rig", "dev@utf8-rig");
+      // Write lines with multibyte characters
+      writeFileSync(filePath, "hello world\ncafé résumé\nnormal line\nüber important\n");
+      const result = store.grep("utf8-rig", "dev@utf8-rig", "é");
+      expect(result).not.toBeNull();
+      expect(result!.length).toBe(1);
+      expect(result![0]).toContain("café");
+    });
+
+    it("readTail on large file returns correct last N lines without reading entire file", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("big-rig");
+      const filePath = store.getTranscriptPath("big-rig", "dev@big-rig");
+      writeLargeTranscript(filePath, 50000, 10000);
+
+      const result = store.readTail("big-rig", "dev@big-rig", 5);
+      expect(result).not.toBeNull();
+      const lines = result!.split("\n").filter(Boolean);
+      expect(lines.length).toBeLessThanOrEqual(5);
+      expect(lines.length).toBeGreaterThan(0);
+      // Last lines should be from the end of the file
+      expect(lines[lines.length - 1]).toContain("49999");
+    });
+
+    it("grep on large file returns only matching lines without loading entire file", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("big-rig");
+      const filePath = store.getTranscriptPath("big-rig", "dev@big-rig");
+      writeLargeTranscript(filePath, 50000, 10000);
+
+      const result = store.grep("big-rig", "dev@big-rig", "MARKER_LINE");
+      expect(result).not.toBeNull();
+      // Should find markers at 10000, 20000, 30000, 40000
+      expect(result!.length).toBe(4);
+      expect(result![0]).toBe("MARKER_LINE_10000");
+      expect(result![3]).toBe("MARKER_LINE_40000");
+    });
+  });
 });

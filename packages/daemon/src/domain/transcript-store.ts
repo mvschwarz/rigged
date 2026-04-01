@@ -1,6 +1,7 @@
-import { mkdirSync, appendFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, appendFileSync, existsSync, openSync, readSync, closeSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { StringDecoder } from "node:string_decoder";
 
 export interface TranscriptStoreOpts {
   transcriptsRoot?: string;
@@ -35,6 +36,64 @@ function isPromptRedrawDuplicate(line: string, nextLine?: string): boolean {
   if (!trimmed.endsWith("%")) return false;
   const withoutPrompt = trimmed.slice(0, -1).trimEnd();
   return withoutPrompt.length > 0 && nextLine?.trim() === withoutPrompt;
+}
+
+const TAIL_CHUNK_SIZE = 16 * 1024;
+
+/**
+ * Read the last N raw lines from a file by reading backwards in chunks.
+ * Handles UTF-8 multibyte characters at chunk boundaries by adjusting
+ * the read offset to avoid splitting characters.
+ */
+function readTailChunked(filePath: string, rawLines: number): string | null {
+  const stat = statSync(filePath);
+  if (stat.size === 0) return null;
+
+  const fd = openSync(filePath, "r");
+  try {
+    let text = "";
+    let offset = stat.size;
+
+    while (offset > 0) {
+      const readSize = Math.min(TAIL_CHUNK_SIZE, offset);
+      offset -= readSize;
+      const buf = Buffer.alloc(readSize);
+      readSync(fd, buf, 0, readSize, offset);
+
+      // Adjust for split UTF-8 multibyte: if the first byte is a continuation
+      // byte (10xxxxxx = 0x80-0xBF), we've split a character. Move the offset
+      // forward past the continuation bytes so the leading char bytes will be
+      // included in the next (earlier) chunk read.
+      let skipBytes = 0;
+      while (skipBytes < buf.length && (buf[skipBytes]! & 0xC0) === 0x80) {
+        skipBytes++;
+      }
+      if (skipBytes > 0) {
+        offset += skipBytes; // push those bytes back for the next iteration
+      }
+
+      const chunk = buf.subarray(skipBytes).toString("utf-8");
+      text = chunk + text;
+
+      const newlineCount = countNewlines(text);
+      if (newlineCount >= rawLines) break;
+    }
+
+    const lines = text.split("\n");
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    const tail = lines.slice(-rawLines);
+    return tail.join("\n");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function countNewlines(s: string): number {
+  let count = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) === 10) count++;
+  }
+  return count;
 }
 
 export class TranscriptStore {
@@ -111,39 +170,100 @@ export class TranscriptStore {
     try {
       const filePath = this.getTranscriptPath(rigName, sessionName);
       if (!existsSync(filePath)) return null;
-      const content = readFileSync(filePath, "utf-8");
-      const allLines = content.split("\n");
-      // Remove trailing empty line from split
-      if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
-        allLines.pop();
+      const fileSize = statSync(filePath).size;
+      if (fileSize === 0) return "";
+
+      // Adaptive: start with a generous oversample, expand if cleanup filters too many
+      let rawMultiplier = 8;
+      const MAX_MULTIPLIER = 64;
+
+      while (rawMultiplier <= MAX_MULTIPLIER) {
+        const rawTail = readTailChunked(filePath, lines * rawMultiplier);
+        if (rawTail === null) return "";
+
+        const cleanedTail = this.cleanupTailLines(rawTail, lines);
+        if (cleanedTail.length >= lines || rawMultiplier >= MAX_MULTIPLIER) {
+          const finalTail = cleanedTail.slice(-lines);
+          return finalTail.length > 0 ? finalTail.join("\n") + "\n" : "";
+        }
+
+        // Not enough lines after cleanup — read more raw lines
+        rawMultiplier *= 2;
       }
-      const normalizedLines = this.stripAnsi(allLines.slice(-lines).join("\n"))
-        .split("\n")
-        .map((line) => stripShellPromptPrefix(line))
-        .map((line) => line.trimEnd());
-      const filtered = normalizedLines
-        .filter((line, index) => line.trim() !== "")
-        .filter((line) => !isBareShellPrompt(line));
-      const tail = filtered
-        .filter((line, index) => !isPromptRedrawDuplicate(line, filtered[index + 1]));
-      return tail.length > 0 ? tail.join("\n") + "\n" : "";
+
+      return "";
     } catch {
       return null;
     }
+  }
+
+  private cleanupTailLines(rawText: string, _requestedLines: number): string[] {
+    const normalizedLines = this.stripAnsi(rawText)
+      .split("\n")
+      .map((line) => stripShellPromptPrefix(line))
+      .map((line) => line.trimEnd());
+    const filtered = normalizedLines
+      .filter((line) => line.trim() !== "")
+      .filter((line) => !isBareShellPrompt(line));
+    return filtered
+      .filter((line, index) => !isPromptRedrawDuplicate(line, filtered[index + 1]));
   }
 
   grep(rigName: string, sessionName: string, pattern: string): string[] | null {
     try {
       const filePath = this.getTranscriptPath(rigName, sessionName);
       if (!existsSync(filePath)) return null;
-      const content = this.stripAnsi(readFileSync(filePath, "utf-8"));
-      const regex = new RegExp(pattern);
-      return content
-        .split("\n")
-        .filter((line) => regex.test(line))
-        .map((line) => stripShellPromptPrefix(line));
+      return this.grepSync(filePath, pattern);
     } catch {
       return null;
     }
+  }
+
+  private grepSync(filePath: string, pattern: string): string[] {
+    const regex = new RegExp(pattern);
+    const matches: string[] = [];
+    const fd = openSync(filePath, "r");
+    const decoder = new StringDecoder("utf-8");
+    try {
+      const stat = statSync(filePath);
+      const CHUNK_SIZE = 64 * 1024;
+      let remainder = "";
+
+      for (let offset = 0; offset < stat.size; offset += CHUNK_SIZE) {
+        const readSize = Math.min(CHUNK_SIZE, stat.size - offset);
+        const buf = Buffer.alloc(readSize);
+        readSync(fd, buf, 0, readSize, offset);
+        // StringDecoder handles incomplete multibyte sequences at chunk boundaries
+        const chunk = remainder + decoder.write(buf);
+        const lines = chunk.split("\n");
+        remainder = lines.pop() ?? "";
+
+        for (const rawLine of lines) {
+          const stripped = this.stripAnsi(rawLine);
+          for (const subLine of stripped.split("\n")) {
+            const cleaned = stripShellPromptPrefix(subLine);
+            if (cleaned && regex.test(cleaned)) {
+              matches.push(cleaned);
+            }
+          }
+        }
+      }
+
+      // Flush any remaining bytes from the decoder
+      const finalChunk = remainder + decoder.end();
+      if (finalChunk) {
+        const stripped = this.stripAnsi(finalChunk);
+        for (const subLine of stripped.split("\n")) {
+          const cleaned = stripShellPromptPrefix(subLine);
+          if (cleaned && regex.test(cleaned)) {
+            matches.push(cleaned);
+          }
+        }
+      }
+    } finally {
+      closeSync(fd);
+    }
+
+    return matches;
   }
 }

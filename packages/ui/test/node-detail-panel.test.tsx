@@ -109,11 +109,12 @@ describe("NodeDetailPanel", () => {
     mockDetail(AGENT_DETAIL);
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Full Name")).toBeDefined();
+      expect(screen.getByText("dev-impl@test-rig")).toBeDefined();
       expect(screen.getByText("dev-impl@test-rig")).toBeDefined();
       expect(screen.getByText("claude-code")).toBeDefined();
       expect(screen.getAllByText("impl").length).toBeGreaterThan(0);
     });
+    expect(screen.queryByText("Full Name")).toBeNull();
   });
 
   // Test 2: Panel shows startup status with correct color

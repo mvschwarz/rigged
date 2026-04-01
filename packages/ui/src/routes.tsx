@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client.js";
-import { AppShell } from "./components/AppShell.js";
+import { AppShell, useDrawerSelection } from "./components/AppShell.js";
 import { Dashboard } from "./components/Dashboard.js";
 import { RigGraph } from "./components/RigGraph.js";
 import { shortId } from "./lib/display-id.js";
@@ -41,6 +41,7 @@ const indexRoute = createRoute({
 // Rig detail route — Graph + SnapshotPanel
 function RigDetail() {
   const { rigId } = rigDetailRoute.useParams();
+  const { setSelection } = useDrawerSelection();
 
   // Fetch rig name from summary cache or fresh
   const { data: rigs } = useQuery({
@@ -61,7 +62,13 @@ function RigDetail() {
           &larr; RIGS
         </Link>
         <span className="text-foreground/20">/</span>
-        <span className="text-label-lg font-bold uppercase">{rigName ?? shortId(rigId, 8)}</span>
+        <button
+          type="button"
+          onClick={() => setSelection({ type: "rig", rigId })}
+          className="text-label-lg font-bold uppercase text-left hover:text-foreground-muted transition-colors"
+        >
+          {rigName ?? shortId(rigId, 8)}
+        </button>
       </div>
 
       {/* Graph fills the full width — snapshots are in the rig drawer */}

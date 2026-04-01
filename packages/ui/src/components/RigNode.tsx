@@ -157,9 +157,8 @@ export function RigNode({ data }: { data: RigNodeData }) {
       <div className="p-3 space-y-2">
         {/* Runtime info */}
         {runtimeModel && (
-          <div className="flex justify-between font-mono text-[9px] text-secondary">
-            <span>RUNTIME</span>
-            <span>{runtimeModel}</span>
+          <div className="font-mono text-[8px] text-stone-500">
+            RUNTIME: {runtimeModel}
           </div>
         )}
 

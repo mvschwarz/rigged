@@ -20,7 +20,7 @@ function PodGroupNode({ data }: { data: { podLabel?: string | null; logicalId?: 
       data-testid="pod-group-node"
       className="w-full h-full relative pointer-events-auto"
     >
-      <div className="absolute left-3 top-2 px-2 py-1 bg-white/90 border border-stone-300 font-mono text-[10px] text-stone-700 shadow-sm">
+      <div className="absolute left-4 top-3 inline-flex items-center font-mono text-[12px] font-bold leading-none tracking-[0.08em] text-stone-800">
         {`${label} pod`}
       </div>
     </div>

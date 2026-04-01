@@ -1,7 +1,7 @@
 import { useNodeDetail } from "../hooks/useNodeDetail.js";
 import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { copyText } from "../lib/copy-text.js";
-import { displayAgentName, displayPodName, inferPodName } from "../lib/display-name.js";
+import { displayPodName, inferPodName } from "../lib/display-name.js";
 
 interface NodeDetailPanelProps {
   rigId: string;
@@ -20,7 +20,7 @@ function statusColor(status: string | null): string {
 
 export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelProps) {
   const { data, isLoading, error } = useNodeDetail(rigId, logicalId);
-  const agentName = displayAgentName(logicalId);
+  const headerName = data?.canonicalSessionName ?? logicalId;
 
   const handleCopyAttach = async () => {
     if (data?.tmuxAttachCommand) await copyText(data.tmuxAttachCommand);
@@ -43,7 +43,7 @@ export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelPr
     >
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-3 border-b border-stone-200">
-        <span className="font-mono text-xs font-bold text-stone-900 truncate">{agentName}</span>
+        <span className="font-mono text-xs font-bold text-stone-900 truncate">{headerName}</span>
         <button onClick={onClose} className="text-stone-400 hover:text-stone-900 text-sm" data-testid="detail-close">&times;</button>
       </div>
 
@@ -56,7 +56,6 @@ export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelPr
           <section className="px-4 py-3 border-b border-stone-100">
             <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Identity</div>
             <div className="space-y-1 font-mono text-[10px]">
-              <div className="flex justify-between"><span className="text-stone-500">Full Name</span><span className="text-stone-900 truncate ml-2">{data.canonicalSessionName ?? "—"}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">Pod</span><span className="text-stone-900">{inferPodName(logicalId) ?? displayPodName(data.podId)}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">Runtime</span><span className="text-stone-900">{data.runtime ?? "—"}</span></div>
               {data.nodeKind !== "infrastructure" && (

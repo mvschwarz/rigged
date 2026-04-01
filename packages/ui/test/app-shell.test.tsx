@@ -3,8 +3,6 @@ import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/re
 import { createMemoryHistory, RouterProvider, createRouter } from "@tanstack/react-router";
 import { createMockEventSourceClass } from "./helpers/mock-event-source.js";
 
-import "../src/globals.css";
-
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
@@ -51,6 +49,44 @@ function mockAllApis() {
           nodes: [{ id: "n1", type: "rigNode", position: { x: 0, y: 0 }, data: { logicalId: "orchestrator", role: "orchestrator", runtime: "claude-code", model: "opus", status: "running", binding: null } }],
           edges: [],
         }),
+      });
+    }
+    if (typeof url === "string" && url.includes("/nodes/")) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          rigId: "r1",
+          rigName: "alpha",
+          logicalId: "orch.lead",
+          podId: "orch",
+          canonicalSessionName: "orch-lead@alpha",
+          nodeKind: "agent",
+          runtime: "claude-code",
+          sessionStatus: "running",
+          startupStatus: "ready",
+          restoreOutcome: "resumed",
+          tmuxAttachCommand: "tmux attach -t orch-lead@alpha",
+          resumeCommand: "claude --resume abc-123",
+          latestError: null,
+          model: "opus",
+          agentRef: "local:agents/lead",
+          profile: "default",
+          resolvedSpecName: "lead",
+          resolvedSpecVersion: "1.0.0",
+          startupFiles: [],
+          startupActions: [],
+          recentEvents: [],
+          infrastructureStartupCommand: null,
+          binding: { tmuxSession: "orch-lead@alpha" },
+        }),
+      });
+    }
+    if (typeof url === "string" && url.includes("/api/rigs/r1/nodes")) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          { rigId: "r1", rigName: "alpha", logicalId: "orch.lead", podId: "orch", nodeKind: "agent", runtime: "claude-code", startupStatus: "ready", canonicalSessionName: "orch-lead@alpha" },
+        ],
       });
     }
     if (typeof url === "string" && url.includes("/snapshots")) {
@@ -172,5 +208,20 @@ describe("App Shell + Routing", () => {
       expect(screen.getByTestId("content-area")).toBeDefined();
     });
     expect(screen.queryByTestId("snapshot-panel")).toBeNull();
+  });
+
+  it("clicking the rig breadcrumb opens the rig drawer", async () => {
+    mockAllApis();
+    await renderRealAppAt("/rigs/r1");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "alpha" })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "alpha" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rig-detail-panel")).toBeDefined();
+    });
   });
 });

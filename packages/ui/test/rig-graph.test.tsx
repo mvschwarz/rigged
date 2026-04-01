@@ -156,7 +156,12 @@ describe("RigGraph", () => {
       expect(groupNode).not.toBeNull();
     });
 
-    expect(screen.getByText("alpha pod")).toBeDefined();
+    const label = screen.getByText("alpha pod");
+    expect(label).toBeDefined();
+    expect(label.className).toContain("font-bold");
+    expect(label.className).toContain("inline-flex");
+    expect(label.className).not.toContain("bg-white");
+    expect(label.className).not.toContain("border");
   });
 
   it("clicking a pod group routes selection back to the rig drawer", async () => {
@@ -333,7 +338,7 @@ describe("RigNode", () => {
     );
 
     expect(screen.getByText("impl")).toBeDefined();
-    expect(screen.getByText(/claude-code · opus/)).toBeDefined();
+    expect(screen.getByText("RUNTIME: claude-code · opus")).toBeDefined();
     expect(screen.queryByText("WORKER")).toBeNull();
     expect(screen.getByTestId("status-dot-dev.impl").getAttribute("aria-label")).toBe("stopped");
   });

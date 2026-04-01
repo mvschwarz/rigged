@@ -15,6 +15,16 @@ export class ImportError extends Error {
   }
 }
 
+export class RestoreError extends Error {
+  code: string;
+
+  constructor(data: { code?: string; error?: string }, status: number) {
+    super(data.error ?? `HTTP ${status}`);
+    this.name = "RestoreError";
+    this.code = data.code ?? "unknown";
+  }
+}
+
 export function useCreateSnapshot(rigId: string) {
   const queryClient = useQueryClient();
 
@@ -42,7 +52,7 @@ export function useRestoreSnapshot(rigId: string) {
       const res = await fetch(`/api/rigs/${encodeURIComponent(rigId)}/restore/${encodeURIComponent(snapshotId)}`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+        throw new RestoreError(data as { code?: string; error?: string }, res.status);
       }
       return res.json();
     },

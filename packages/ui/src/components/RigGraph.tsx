@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
 import { useRigEvents } from "../hooks/useRigEvents.js";
 import { useDiscoveredSessionsConditional, type DiscoveredSession } from "../hooks/useDiscovery.js";
-import { useNodeSelection } from "./AppShell.js";
+import { useDrawerSelection, useNodeSelection } from "./AppShell.js";
 import { getEdgeStyle } from "@/lib/edge-styles";
 import { applyTreeLayout } from "@/lib/graph-layout";
 import { RigNode } from "./RigNode.js";
@@ -134,10 +134,16 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
   }, [rawNodes, rawEdges, shouldAnimate, discoveredSessions]);
 
   const { setSelectedNode } = useNodeSelection();
+  const { setSelection } = useDrawerSelection();
 
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_event, node) => {
       if (!rigId) return;
+
+      if (node.type === "group") {
+        setSelection({ type: "rig", rigId });
+        return;
+      }
 
       const nodeData = node.data as {
         logicalId: string;
@@ -176,7 +182,7 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
         showFocusMessage({ text: "Focus failed", type: "error" });
       }
     },
-    [rigId, showFocusMessage, setSelectedNode]
+    [rigId, showFocusMessage, setSelectedNode, setSelection]
   );
 
   if (rigId === null) {

@@ -116,10 +116,14 @@ export function applyTreeLayout(
         const maxX = Math.max(...children.map((c) => c.position.x + NODE_WIDTH));
         const minY = Math.min(...children.map((c) => c.position.y));
         const maxY = Math.max(...children.map((c) => c.position.y + NODE_HEIGHT));
+        const width = maxX - minX + GROUP_PADDING * 2;
+        const height = maxY - minY + GROUP_PADDING * 2;
         node.position = { x: minX - GROUP_PADDING, y: minY - GROUP_PADDING };
+        (node as any).initialWidth = width;
+        (node as any).initialHeight = height;
         (node as any).style = {
-          width: maxX - minX + GROUP_PADDING * 2,
-          height: maxY - minY + GROUP_PADDING * 2,
+          width,
+          height,
         };
         // Adjust children to be relative to group
         for (const child of children) {

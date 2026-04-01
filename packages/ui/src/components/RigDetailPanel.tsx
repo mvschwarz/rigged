@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
 import { useSnapshots } from "../hooks/useSnapshots.js";
-import { useCreateSnapshot, useRestoreSnapshot } from "../hooks/mutations.js";
+import { RestoreError, useCreateSnapshot, useRestoreSnapshot } from "../hooks/mutations.js";
 import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { shortId } from "../lib/display-id.js";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,14 @@ function formatSnapshotAge(timestamp: string | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function formatRestoreError(err: Error, rigName: string): string {
+  if (err instanceof RestoreError && err.code === "rig_not_stopped") {
+    return `Stop ${rigName} before restoring. Run rigged down ${rigName} and retry.`;
+  }
+
+  return err.message;
+}
+
 export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
   const { data: summaries } = useRigSummary();
   const { data: psEntries } = usePsEntries();
@@ -68,7 +76,7 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
         setConfirmRestore(null);
       },
       onError: (err) => {
-        setError(err.message);
+        setError(formatRestoreError(err, summary?.name ?? rigId));
         setConfirmRestore(null);
       },
     });

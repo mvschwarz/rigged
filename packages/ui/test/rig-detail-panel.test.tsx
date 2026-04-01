@@ -134,6 +134,47 @@ describe("RigDetailPanel", () => {
     expect(await screen.findByText("Confirm Restore")).toBeDefined();
   });
 
+  it("shows actionable guidance when restore requires the rig to be stopped", async () => {
+    mockFetch.mockImplementation((url: string, opts?: RequestInit) => {
+      if (url === "/api/rigs/summary") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "rig-1", name: "my-rig", nodeCount: 2, latestSnapshotAt: null, latestSnapshotId: null }],
+        });
+      }
+      if (url === "/api/ps") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ rigId: "rig-1", name: "my-rig", nodeCount: 2, runningCount: 2, status: "running", uptime: "1h", latestSnapshot: null }],
+        });
+      }
+      if (url.includes("/restore/") && opts?.method === "POST") {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: "Rig rig-1 must be stopped before restore", code: "rig_not_stopped" }),
+        });
+      }
+      if (url.includes("/snapshots")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "01HXYZ123456SNAP01", kind: "manual", createdAt: "2026-04-01T10:00:00Z" }],
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    renderPanel("rig-1");
+    await screen.findByText("my-rig");
+    const { fireEvent } = await import("@testing-library/react");
+
+    fireEvent.click(screen.getByTestId("restore-btn-01HXYZ123456SNAP01"));
+    await screen.findByText("Confirm Restore");
+    fireEvent.click(screen.getByTestId("confirm-restore-01HXYZ123456SNAP01"));
+
+    expect((await screen.findByTestId("snapshot-error")).textContent).toContain("rigged down my-rig");
+  });
+
   it("shows snapshot age when available, not 'No snapshots'", async () => {
     renderPanel("rig-1");
     // Wait for data to load

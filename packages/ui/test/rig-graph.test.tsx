@@ -4,6 +4,7 @@ import { ReactFlowProvider, MarkerType } from "@xyflow/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RigGraph } from "../src/components/RigGraph.js";
 import { RigNode } from "../src/components/RigNode.js";
+import { DrawerSelectionContext } from "../src/components/AppShell.js";
 import { createMockEventSourceClass, instances } from "./helpers/mock-event-source.js";
 import type { MockEventSourceInstance } from "./helpers/mock-event-source.js";
 
@@ -98,6 +99,123 @@ afterEach(() => {
 });
 
 describe("RigGraph", () => {
+  it("renders pod group graphs with visible group containers when pods are present", async () => {
+    mockFetch.mockResolvedValueOnce(mockGraphResponse([
+      {
+        id: "pod-alpha",
+        type: "group",
+        position: { x: 0, y: 0 },
+        data: {
+          logicalId: "alpha",
+          rigId: "rig-1",
+          role: null,
+          runtime: null,
+          model: null,
+          status: null,
+          binding: null,
+          nodeKind: "agent",
+          startupStatus: null,
+          canonicalSessionName: null,
+          podId: "alpha",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+      {
+        id: "n1",
+        type: "rigNode",
+        position: { x: 0, y: 0 },
+        parentId: "pod-alpha",
+        data: {
+          logicalId: "dev.impl",
+          rigId: "rig-1",
+          role: "worker",
+          runtime: "claude-code",
+          model: null,
+          status: "running",
+          binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+          nodeKind: "agent",
+          startupStatus: "ready",
+          canonicalSessionName: "dev-impl@test-rig",
+          podId: "alpha",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+    ], []));
+
+    const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
+
+    await waitFor(() => {
+      const groupNode = container.querySelector(".react-flow__node-group") as HTMLElement | null;
+      expect(groupNode).not.toBeNull();
+      expect(groupNode?.style.visibility).toBe("visible");
+    });
+  });
+
+  it("clicking a pod group routes selection back to the rig drawer", async () => {
+    mockFetch.mockResolvedValueOnce(mockGraphResponse([
+      {
+        id: "pod-alpha",
+        type: "group",
+        position: { x: 0, y: 0 },
+        data: {
+          logicalId: "alpha",
+          rigId: "rig-1",
+          role: null,
+          runtime: null,
+          model: null,
+          status: null,
+          binding: null,
+          nodeKind: "agent",
+          startupStatus: null,
+          canonicalSessionName: null,
+          podId: "alpha",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+      {
+        id: "n1",
+        type: "rigNode",
+        position: { x: 0, y: 0 },
+        parentId: "pod-alpha",
+        data: {
+          logicalId: "dev.impl",
+          rigId: "rig-1",
+          role: "worker",
+          runtime: "claude-code",
+          model: null,
+          status: "running",
+          binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+          nodeKind: "agent",
+          startupStatus: "ready",
+          canonicalSessionName: "dev-impl@test-rig",
+          podId: "alpha",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+    ], []));
+
+    const setSelection = vi.fn();
+    const { container } = render(
+      <QueryWrapper>
+        <DrawerSelectionContext.Provider value={{ selection: null, setSelection }}>
+          <RigGraph showDiscovered={false} rigId="rig-1" />
+        </DrawerSelectionContext.Provider>
+      </QueryWrapper>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".react-flow__node-group")).not.toBeNull();
+    });
+
+    fireEvent.click(container.querySelector(".react-flow__node-group")!);
+
+    expect(setSelection).toHaveBeenCalledWith({ type: "rig", rigId: "rig-1" });
+  });
+
   it("renders nodes from mock graph data", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 

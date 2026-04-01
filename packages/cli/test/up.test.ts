@@ -188,6 +188,55 @@ describe("Up CLI", () => {
     for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
   });
 
+  it("up from .rigbundle defaults targetRoot to current working directory", async () => {
+    let lastBody: Record<string, unknown> = {};
+    const origListeners = server.listeners("request");
+    server.removeAllListeners("request");
+    server.on("request", async (req: http.IncomingMessage, res: http.ServerResponse) => {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      if (req.url === "/api/up") {
+        lastBody = JSON.parse(body);
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "completed", runId: "r", rigId: "g", stages: [], errors: [] }));
+      }
+    });
+
+    await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rigged", "up", "/tmp/demo.rigbundle"]);
+    });
+
+    expect(lastBody.sourceRef).toBe("/tmp/demo.rigbundle");
+    expect(lastBody.targetRoot).toBe(process.cwd());
+
+    server.removeAllListeners("request");
+    for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
+  });
+
+  it("up from .rigbundle preserves explicit --target", async () => {
+    let lastBody: Record<string, unknown> = {};
+    const origListeners = server.listeners("request");
+    server.removeAllListeners("request");
+    server.on("request", async (req: http.IncomingMessage, res: http.ServerResponse) => {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      if (req.url === "/api/up") {
+        lastBody = JSON.parse(body);
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "completed", runId: "r", rigId: "g", stages: [], errors: [] }));
+      }
+    });
+
+    await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rigged", "up", "/tmp/demo.rigbundle", "--target", "/tmp/custom-root"]);
+    });
+
+    expect(lastBody.targetRoot).toBe("/tmp/custom-root");
+
+    server.removeAllListeners("request");
+    for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
+  });
+
   // NS-T14: fresh boot handoff includes dashboard URL + attach command
   it("fresh boot success shows dashboard URL and attach command", async () => {
     const { logs } = await captureLogs(async () => {

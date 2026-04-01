@@ -85,6 +85,11 @@ export class PodBundleAssembler {
         // Member startup files
         this.collectStartupFiles(member.startup, opts.rigRoot, opts.outputDir, collectedFiles);
 
+        // Terminal members are bundle-native sentinels, not vendored agents.
+        if (member.agentRef === "builtin:terminal") {
+          continue;
+        }
+
         // Resolve agent_ref
         const result = resolveAgentRef(member.agentRef, opts.rigRoot, this.fs);
         if (!result.ok) {

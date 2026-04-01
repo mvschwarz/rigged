@@ -82,12 +82,14 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
       // Detect rig name vs file path: names don't contain / and don't end in .yaml/.yml/.rigbundle
       const isRigName = !source.includes("/") && !source.match(/\.(ya?ml|rigbundle)$/i);
       const sourceRef = isRigName ? source : nodePath.resolve(source);
+      const isRigBundle = !isRigName && /\.rigbundle$/i.test(sourceRef);
+      const targetRoot = opts.target ?? (isRigBundle ? process.cwd() : undefined);
 
       const res = await client.post<Record<string, unknown>>("/api/up", {
         sourceRef,
         plan: opts.plan ?? false,
         autoApprove: opts.yes ?? false,
-        targetRoot: opts.target,
+        targetRoot,
       });
 
       if (opts.json) {

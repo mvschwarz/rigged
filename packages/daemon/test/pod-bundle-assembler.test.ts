@@ -135,6 +135,42 @@ describe("PodBundleAssembler", () => {
     expect(result.manifest.agents).toHaveLength(1);
   });
 
+  it("preserves builtin terminal members without trying to vendor them", () => {
+    const spec = makeRigSpec({
+      pods: [{
+        id: "infra",
+        label: "Infra",
+        members: [{
+          id: "daemon",
+          agentRef: "builtin:terminal",
+          profile: "none",
+          runtime: "terminal",
+          cwd: ".",
+        }],
+        edges: [],
+      }],
+    });
+    const files: Record<string, string> = {
+      [`${RIG_ROOT}/rig.yaml`]: rigSpecYaml(spec),
+    };
+    const fs = mockFs(files);
+    const assembler = new PodBundleAssembler({ fsOps: fs });
+
+    const result = assembler.assemble({
+      rigRoot: RIG_ROOT,
+      rigSpecPath: `${RIG_ROOT}/rig.yaml`,
+      outputDir: "/tmp/staging",
+      bundleName: "test",
+      bundleVersion: "1.0",
+    });
+
+    expect(result.manifest.agents).toHaveLength(0);
+    const written = (fs as unknown as { _written: Record<string, string> })._written;
+    const rewrittenRig = written["/tmp/staging/rig.yaml"]!;
+    expect(rewrittenRig).toContain("agent_ref: builtin:terminal");
+    expect(rewrittenRig).not.toContain("local:agents/");
+  });
+
   // T3: flat imports collected with correct per-import originalRef
   it("collects flat imports with correct originalRef per import", () => {
     const spec = makeRigSpec();

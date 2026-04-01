@@ -281,6 +281,38 @@ describe("Bundle API routes", () => {
     expect(fs.existsSync(outputPath)).toBe(true);
   });
 
+  it("POST /api/bundles/create accepts builtin terminal pod members", async () => {
+    const specPath = path.join(tmpDir, "terminal-rig.yaml");
+    fs.writeFileSync(specPath, [
+      'version: "0.2"',
+      'name: terminal-test-rig',
+      'pods:',
+      '  - id: infra',
+      '    label: Infra',
+      '    members:',
+      '      - id: daemon',
+      '        agent_ref: "builtin:terminal"',
+      '        profile: none',
+      '        runtime: terminal',
+      '        cwd: .',
+      '    edges: []',
+      'edges: []',
+    ].join("\n"));
+
+    const outputPath = path.join(tmpDir, "terminal.rigbundle");
+    const res = await app.request("/api/bundles/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ specPath, bundleName: "terminal-test", bundleVersion: "0.1.0", outputPath }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.schemaVersion).toBe(2);
+    expect(body.agents).toBe(0);
+    expect(fs.existsSync(outputPath)).toBe(true);
+  });
+
   // T11-AS-T12: Legacy bundle create still works (regression guard)
   it("POST /api/bundles/create with legacy spec still works", async () => {
     const { specPath } = seedPackage();

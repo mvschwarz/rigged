@@ -14,6 +14,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { RigChatPanel } from "./RigChatPanel.js";
 
 interface RestoreNodeResult {
   nodeId: string;
@@ -53,6 +54,7 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
   const createSnapshot = useCreateSnapshot(rigId);
   const restoreSnapshot = useRestoreSnapshot(rigId);
 
+  const [activeTab, setActiveTab] = useState<"info" | "chat">("info");
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [restoreResult, setRestoreResult] = useState<RestoreNodeResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +107,28 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-stone-200" data-testid="drawer-tabs">
+        <button
+          data-testid="tab-info"
+          onClick={() => setActiveTab("info")}
+          className={`flex-1 py-2 text-xs font-mono uppercase text-center ${activeTab === "info" ? "border-b-2 border-stone-800 font-bold" : "text-stone-400"}`}
+        >
+          Info
+        </button>
+        <button
+          data-testid="tab-chat"
+          onClick={() => setActiveTab("chat")}
+          className={`flex-1 py-2 text-xs font-mono uppercase text-center ${activeTab === "chat" ? "border-b-2 border-stone-800 font-bold" : "text-stone-400"}`}
+        >
+          Chat Room
+        </button>
+      </div>
+
+      {activeTab === "chat" ? (
+        <RigChatPanel rigId={rigId} />
+      ) : (
+      <>
       {/* Status */}
       <div className="p-4 space-y-3 border-b border-stone-200">
         <div>
@@ -230,6 +254,8 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </aside>
   );
 }

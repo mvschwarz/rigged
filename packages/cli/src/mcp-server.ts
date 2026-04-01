@@ -331,5 +331,68 @@ export function createMcpServer(client: DaemonClient): McpServer {
     },
   );
 
+  // 16. rigged_chatroom_send — send message to rig chatroom
+  server.tool(
+    "rigged_chatroom_send",
+    "Send a message to a rig's chatroom",
+    {
+      rigName: z.string().describe("Rig name to send message to"),
+      body: z.string().describe("Message body"),
+      sender: z.string().optional().describe("Sender name (default: mcp)"),
+    },
+    async ({ rigName, body, sender }) => {
+      try {
+        // Resolve rig name → ID
+        const summaryRes = await client.get<Array<{ id: string; name: string }>>("/api/rigs/summary");
+        const matches = (summaryRes.data ?? []).filter((r) => r.name === rigName);
+
+        if (matches.length === 0) {
+          return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Rig '${rigName}' not found` }) }], isError: true as const };
+        }
+        if (matches.length > 1) {
+          return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Rig '${rigName}' is ambiguous — ${matches.length} rigs share that name` }) }], isError: true as const };
+        }
+
+        const rigId = matches[0]!.id;
+        const res = await client.post(`/api/rigs/${encodeURIComponent(rigId)}/chat/send`, {
+          sender: sender ?? "mcp",
+          body,
+        });
+        return mapResult(res);
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: (err as Error).message }], isError: true as const };
+      }
+    },
+  );
+
+  // 17. rigged_chatroom_watch — get recent chatroom history for a rig
+  server.tool(
+    "rigged_chatroom_watch",
+    "Get recent chatroom messages for a rig (MCP returns history, not streaming)",
+    {
+      rigName: z.string().describe("Rig name"),
+    },
+    async ({ rigName }) => {
+      try {
+        // Resolve rig name → ID
+        const summaryRes = await client.get<Array<{ id: string; name: string }>>("/api/rigs/summary");
+        const matches = (summaryRes.data ?? []).filter((r) => r.name === rigName);
+
+        if (matches.length === 0) {
+          return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Rig '${rigName}' not found` }) }], isError: true as const };
+        }
+        if (matches.length > 1) {
+          return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Rig '${rigName}' is ambiguous — ${matches.length} rigs share that name` }) }], isError: true as const };
+        }
+
+        const rigId = matches[0]!.id;
+        const res = await client.get(`/api/rigs/${encodeURIComponent(rigId)}/chat/history?limit=20`);
+        return mapResult(res);
+      } catch (err) {
+        return { content: [{ type: "text" as const, text: (err as Error).message }], isError: true as const };
+      }
+    },
+  );
+
   return server;
 }

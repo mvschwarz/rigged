@@ -54,6 +54,7 @@ import { TranscriptStore } from "./domain/transcript-store.js";
 import { SessionTransport } from "./domain/session-transport.js";
 import { HistoryQuery } from "./domain/history-query.js";
 import { AskService } from "./domain/ask-service.js";
+import { ChatRepository } from "./domain/chat-repository.js";
 import { createApp, type AppDeps } from "./server.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -71,6 +72,7 @@ import { discoverySchema } from "./db/migrations/012_discovery.js";
 import { discoveryFkFix } from "./db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "./db/migrations/014_agentspec_reboot.js";
 import { startupContextSchema } from "./db/migrations/015_startup_context.js";
+import { chatMessagesSchema } from "./db/migrations/016_chat_messages.js";
 
 interface DaemonOptions {
   dbPath?: string;
@@ -89,7 +91,7 @@ interface DaemonResult {
 export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> {
   const dbPath = opts?.dbPath ?? ":memory:";
   const db = createDb(dbPath);
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema, chatMessagesSchema]);
 
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);
@@ -275,6 +277,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     runtimeAdapters: { "claude-code": claudeAdapter, "codex": codexAdapter, "terminal": new (await import("./adapters/terminal-adapter.js")).TerminalAdapter() },
     transcriptStore,
     sessionTransport: new SessionTransport({ db, rigRepo, sessionRegistry, tmuxAdapter }),
+    chatRepo: new ChatRepository(db),
     askService: (() => {
       const psProjectionService = new PsProjectionService({ db });
       const execDep = (cmd: string, args: string[]): Promise<{ stdout: string; exitCode: number }> =>
@@ -288,11 +291,18 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
             resolve({ stdout: stdout ?? "", exitCode: typeof exitCode === "number" ? exitCode : 1 });
           });
         });
+      const chatRepoForAsk = new ChatRepository(db);
       const historyQuery = new HistoryQuery({
         transcriptsRoot: transcriptStore.enabled
           ? (transcriptsPath ?? nodePath.join(os.homedir(), ".rigged", "transcripts"))
           : nodePath.join(os.homedir(), ".rigged", "transcripts"),
         exec: execDep,
+        chatSearchFn: (rigId: string, pattern: string) =>
+          chatRepoForAsk.searchChat(rigId, pattern).map((m) => ({
+            sender: m.sender,
+            body: m.body,
+            createdAt: m.createdAt,
+          })),
       });
       return new AskService({
         psProjectionService,

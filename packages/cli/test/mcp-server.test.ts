@@ -41,8 +41,8 @@ describe("MCP Server", () => {
     if (cleanup) await cleanup();
   });
 
-  // T1: MCP server lists all 15 tools
-  it("lists all 15 tools", async () => {
+  // T1: MCP server lists all 17 tools
+  it("lists all 17 tools", async () => {
     await setup();
     const result = await mcpClient.listTools();
     const names = result.tools.map((t) => t.name).sort();
@@ -50,6 +50,8 @@ describe("MCP Server", () => {
       "rigged_agent_validate",
       "rigged_bundle_inspect",
       "rigged_capture",
+      "rigged_chatroom_send",
+      "rigged_chatroom_watch",
       "rigged_claim",
       "rigged_discover",
       "rigged_down",
@@ -200,7 +202,7 @@ describe("MCP Server", () => {
 
     // Verify server is responsive
     const result = await mcpClient.listTools();
-    expect(result.tools.length).toBe(15);
+    expect(result.tools.length).toBe(17);
 
     // Clean disconnect
     await cleanup();
@@ -214,7 +216,7 @@ describe("MCP Server", () => {
     await client2.connect(ct2);
 
     const result2 = await client2.listTools();
-    expect(result2.tools.length).toBe(15);
+    expect(result2.tools.length).toBe(17);
 
     await client2.close();
     await server2.close();
@@ -346,6 +348,85 @@ describe("MCP Server", () => {
     const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
     expect(parsed.ok).toBe(true);
     expect(parsed.sessionName).toBe("dev-impl@my-rig");
+    await cleanup();
+  });
+
+  // T-chatroom-send: rigged_chatroom_send returns result
+  it("rigged_chatroom_send returns result", async () => {
+    const getFn = vi.fn(async () => ({
+      status: 200,
+      data: [{ id: "rig-1", name: "my-rig", nodeCount: 2 }],
+    }));
+    const postFn = vi.fn(async () => ({
+      status: 201,
+      data: { id: "msg-1", rigId: "rig-1", sender: "mcp", kind: "message", body: "hello", topic: null, createdAt: "2026-03-31T10:00:00Z" },
+    }));
+    await setup({ get: getFn, post: postFn });
+
+    const result = await mcpClient.callTool({
+      name: "rigged_chatroom_send",
+      arguments: { rigName: "my-rig", body: "hello" },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(parsed.sender).toBe("mcp");
+    expect(parsed.body).toBe("hello");
+    await cleanup();
+  });
+
+  // T-chatroom-watch: rigged_chatroom_watch returns recent history
+  it("rigged_chatroom_watch returns recent history", async () => {
+    const getFn = vi.fn(async (path: string) => {
+      if (path === "/api/rigs/summary") {
+        return {
+          status: 200,
+          data: [{ id: "rig-1", name: "my-rig", nodeCount: 2 }],
+        };
+      }
+      if (path.includes("/chat/history")) {
+        return {
+          status: 200,
+          data: [
+            { id: "msg-1", rigId: "rig-1", sender: "alice", kind: "message", body: "hello", topic: null, createdAt: "2026-03-31T10:00:00Z" },
+          ],
+        };
+      }
+      return { status: 200, data: {} };
+    });
+    await setup({ get: getFn });
+
+    const result = await mcpClient.callTool({
+      name: "rigged_chatroom_watch",
+      arguments: { rigName: "my-rig" },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].sender).toBe("alice");
+    await cleanup();
+  });
+
+  // T-chatroom-ambiguous: MCP rigged_chatroom_send with ambiguous rig name -> error
+  it("rigged_chatroom_send with ambiguous rig name returns error", async () => {
+    const getFn = vi.fn(async () => ({
+      status: 200,
+      data: [
+        { id: "rig-1", name: "my-rig", nodeCount: 2 },
+        { id: "rig-2", name: "my-rig", nodeCount: 1 },
+      ],
+    }));
+    await setup({ get: getFn });
+
+    const result = await mcpClient.callTool({
+      name: "rigged_chatroom_send",
+      arguments: { rigName: "my-rig", body: "hello" },
+    });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+    expect(parsed.error).toContain("ambiguous");
     await cleanup();
   });
 

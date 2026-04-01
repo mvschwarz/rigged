@@ -44,6 +44,8 @@ import { transcriptRoutes } from "./routes/transcripts.js";
 import { transportRoutes } from "./routes/transport.js";
 import { askRoutes } from "./routes/ask.js";
 import type { AskService } from "./domain/ask-service.js";
+import type { ChatRepository } from "./domain/chat-repository.js";
+import { chatRoutes } from "./routes/chat.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -76,6 +78,7 @@ export interface AppDeps {
   transcriptStore?: TranscriptStore;
   sessionTransport?: SessionTransport;
   askService?: AskService;
+  chatRepo?: ChatRepository;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -163,6 +166,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("transcriptStore" as never, deps.transcriptStore);
     c.set("sessionTransport" as never, deps.sessionTransport);
     c.set("askService" as never, deps.askService);
+    c.set("chatRepo" as never, deps.chatRepo);
     c.set("db" as never, deps.rigRepo.db);
     await next();
   });
@@ -192,6 +196,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/transcripts", transcriptRoutes());
   app.route("/api/transport", transportRoutes());
   app.route("/api/ask", askRoutes);
+  app.route("/api/rigs/:rigId/chat", chatRoutes());
 
   return app;
 }

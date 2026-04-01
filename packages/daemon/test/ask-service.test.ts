@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { AskService, type AskDeps, type AskResult } from "../src/domain/ask-service.js";
+import { AskService, type AskDeps } from "../src/domain/ask-service.js";
 import type { PsEntry } from "../src/domain/ps-projection.js";
 import type { Rig } from "../src/domain/types.js";
 import type { SearchResult } from "../src/domain/history-query.js";
@@ -22,6 +22,7 @@ function makeDeps(overrides?: Partial<AskDeps>): AskDeps {
         excerpts: ["deployment started", "deployment finished"],
         insufficient: false,
       })),
+      searchChat: vi.fn(() => []),
     },
     transcriptsEnabled: true,
     ...overrides,
@@ -91,12 +92,56 @@ describe("AskService", () => {
           excerpts: [],
           insufficient: true,
         })),
+        searchChat: vi.fn(() => []),
       },
     });
     const svc = new AskService(deps);
     const result = await svc.ask("my-rig", "what is the");
 
     expect(result.insufficient).toBe(true);
+  });
+
+  it("merges chat evidence into result via shared history-query seam", async () => {
+    const deps = makeDeps({
+      historyQuery: {
+        search: vi.fn(async (): Promise<SearchResult> => ({
+          backend: "rg",
+          excerpts: ["some transcript match"],
+          insufficient: false,
+        })),
+        searchChat: vi.fn(() => [
+          { sender: "alice", body: "deployment started in chat", createdAt: "2026-01-01T00:00:00Z" },
+        ]),
+      },
+    });
+    const svc = new AskService(deps);
+    const result = await svc.ask("my-rig", "what about deployment?");
+
+    expect(result.evidence.chatExcerpts).toBeDefined();
+    expect(result.evidence.chatExcerpts!.length).toBe(1);
+    expect(result.evidence.chatExcerpts![0]).toContain("[alice] deployment started in chat");
+    // When chat has evidence, insufficient should be false even if transcript has results
+    expect(result.insufficient).toBe(false);
+  });
+
+  it("chat evidence prevents insufficient when transcripts have no matches", async () => {
+    const deps = makeDeps({
+      historyQuery: {
+        search: vi.fn(async (): Promise<SearchResult> => ({
+          backend: "rg",
+          excerpts: [],
+          insufficient: true,
+        })),
+        searchChat: vi.fn(() => [
+          { sender: "bob", body: "deployment completed", createdAt: "2026-01-01T00:00:00Z" },
+        ]),
+      },
+    });
+    const svc = new AskService(deps);
+    const result = await svc.ask("my-rig", "what about deployment?");
+
+    expect(result.insufficient).toBe(false);
+    expect(result.evidence.chatExcerpts!.length).toBe(1);
   });
 
   it("handles no transcript directory", async () => {
@@ -108,6 +153,7 @@ describe("AskService", () => {
           insufficient: true,
           noTranscriptDir: true,
         })),
+        searchChat: vi.fn(() => []),
       },
     });
     const svc = new AskService(deps);

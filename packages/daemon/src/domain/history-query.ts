@@ -11,9 +11,16 @@ export interface SearchResult {
   error?: string;
 }
 
+export interface ChatSearchResult {
+  sender: string;
+  body: string;
+  createdAt: string;
+}
+
 interface HistoryQueryOpts {
   transcriptsRoot: string;
   exec: ExecDep;
+  chatSearchFn?: (rigId: string, pattern: string) => ChatSearchResult[];
 }
 
 const STOP_WORDS = new Set([
@@ -70,10 +77,12 @@ function stripAnsi(text: string): string {
 export class HistoryQuery {
   private readonly transcriptsRoot: string;
   private readonly exec: ExecDep;
+  private readonly chatSearchFn?: (rigId: string, pattern: string) => ChatSearchResult[];
 
   constructor(opts: HistoryQueryOpts) {
     this.transcriptsRoot = opts.transcriptsRoot;
     this.exec = opts.exec;
+    this.chatSearchFn = opts.chatSearchFn;
   }
 
   async search(rigName: string, question: string): Promise<SearchResult> {
@@ -124,6 +133,14 @@ export class HistoryQuery {
       .filter((line) => line.trim() !== "")
       .map((line) => stripAnsi(line).trim())
       .filter((line) => line !== "");
+  }
+
+  searchChat(rigId: string, question: string): ChatSearchResult[] {
+    if (!this.chatSearchFn) return [];
+    const keywords = extractKeywords(question);
+    if (keywords.length === 0) return [];
+    const pattern = keywords.join("|");
+    return this.chatSearchFn(rigId, pattern);
   }
 
   private getLogFiles(dir: string): string[] {

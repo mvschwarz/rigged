@@ -1,11 +1,16 @@
 import type { PsEntry } from "./ps-projection.js";
 import type { Rig } from "./types.js";
-import type { SearchResult } from "./history-query.js";
+import type { SearchResult, ChatSearchResult } from "./history-query.js";
+
+export type { ChatSearchResult };
 
 export interface AskDeps {
   psProjectionService: { getEntries(): PsEntry[] };
   rigRepo: { findRigsByName(name: string): Rig[] };
-  historyQuery: { search(rigName: string, question: string): Promise<SearchResult> };
+  historyQuery: {
+    search(rigName: string, question: string): Promise<SearchResult>;
+    searchChat(rigId: string, question: string): ChatSearchResult[];
+  };
   transcriptsEnabled: boolean;
 }
 
@@ -23,6 +28,7 @@ export interface AskResult {
   evidence: {
     backend: string;
     excerpts: string[];
+    chatExcerpts?: string[];
   };
   insufficient: boolean;
   guidance?: string;
@@ -80,8 +86,19 @@ export class AskService {
     // Search transcripts
     const searchResult = await this.deps.historyQuery.search(rigName, question);
 
+    // Search chat messages via the shared history-query seam
+    let chatExcerpts: string[] | undefined;
+    const rig = rigs[0]!;
+    const chatResults = this.deps.historyQuery.searchChat(rig.id, question);
+    if (chatResults.length > 0) {
+      chatExcerpts = chatResults.map((r) => `[${r.sender}] ${r.body}`);
+    }
+
     let guidance: string | undefined;
-    if (searchResult.insufficient) {
+    const hasChatEvidence = chatExcerpts && chatExcerpts.length > 0;
+    const isInsufficient = searchResult.insufficient && !hasChatEvidence;
+
+    if (isInsufficient) {
       if (searchResult.noTranscriptDir) {
         guidance = `No transcript directory for rig '${rigName}'. Transcripts start automatically on next rigged up.`;
       } else if (searchResult.error) {
@@ -102,8 +119,9 @@ export class AskService {
       evidence: {
         backend: searchResult.backend,
         excerpts: searchResult.excerpts,
+        chatExcerpts,
       },
-      insufficient: searchResult.insufficient,
+      insufficient: isInsufficient,
       guidance,
     };
   }

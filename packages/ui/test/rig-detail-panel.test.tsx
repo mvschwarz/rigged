@@ -175,6 +175,16 @@ describe("RigDetailPanel", () => {
     expect((await screen.findByTestId("snapshot-error")).textContent).toContain("rigged down my-rig");
   });
 
+  it("drawer shows Info | Chat Room tabs", async () => {
+    renderPanel("rig-1");
+    await screen.findByText("my-rig");
+    expect(screen.getByTestId("drawer-tabs")).toBeDefined();
+    expect(screen.getByTestId("tab-info")).toBeDefined();
+    expect(screen.getByTestId("tab-chat")).toBeDefined();
+    expect(screen.getByTestId("tab-info").textContent).toContain("Info");
+    expect(screen.getByTestId("tab-chat").textContent).toContain("Chat Room");
+  });
+
   it("shows snapshot age when available, not 'No snapshots'", async () => {
     renderPanel("rig-1");
     // Wait for data to load

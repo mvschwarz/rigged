@@ -122,7 +122,9 @@ export type RigEvent =
   | { type: "node.startup_ready"; rigId: string; nodeId: string }
   | { type: "node.startup_failed"; rigId: string; nodeId: string; error: string }
   | { type: "continuity.sync"; rigId: string; podId: string; nodeId: string }
-  | { type: "continuity.degraded"; rigId: string; podId: string; nodeId: string; reason: string };
+  | { type: "continuity.degraded"; rigId: string; podId: string; nodeId: string; reason: string }
+  // Chat events
+  | { type: "chat.message"; rigId: string; messageId: string; sender: string; kind: string; body: string; topic?: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;

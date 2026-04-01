@@ -75,7 +75,7 @@ pods:
           files: []
           actions:
             - type: send_text
-              value: "npm run dev"
+              value: "npm run dev -- --host 127.0.0.1"
               phase: after_ready
               idempotent: true
               applies_on: [fresh_start]

@@ -43,6 +43,17 @@ describe("Demo fixture validation", () => {
     expect(totalMembers).toBe(8);
   });
 
+  it("demo infra.ui startup binds the dev server to 127.0.0.1 for rigged ui open", () => {
+    const yaml = fs.readFileSync(path.join(DEMO_ROOT, "rig.yaml"), "utf-8");
+    const raw = RigSpecCodec.parse(yaml);
+    const spec = RigSpecSchema.normalize(raw as Record<string, unknown>);
+    const infraPod = spec.pods.find((pod) => pod.id === "infra");
+    const uiMember = infraPod?.members.find((member) => member.id === "ui");
+    const startupAction = uiMember?.startup?.actions?.[0];
+
+    expect(startupAction?.value).toBe("npm run dev -- --host 127.0.0.1");
+  });
+
   // Test 4: Demo rig-root inference resolves correctly
   it("rig-root infers to demo/ directory from rig.yaml path", () => {
     const rigYamlPath = path.join(DEMO_ROOT, "rig.yaml");

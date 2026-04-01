@@ -24,6 +24,7 @@ import { sendCommand } from "./commands/send.js";
 import { captureCommand } from "./commands/capture.js";
 import { broadcastCommand } from "./commands/broadcast.js";
 import { configCommand } from "./commands/config.js";
+import { preflightCommand } from "./commands/preflight.js";
 import type { LifecycleDeps } from "./daemon-lifecycle.js";
 
 export interface ProgramDeps {
@@ -85,6 +86,7 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(captureCommand(depsOverride?.captureDeps));
   program.addCommand(broadcastCommand(depsOverride?.broadcastDeps));
   program.addCommand(configCommand(depsOverride?.configPath));
+  program.addCommand(preflightCommand());
 
   return program;
 }

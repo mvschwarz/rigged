@@ -230,4 +230,45 @@ describe("Up CLI", () => {
     server.removeAllListeners("request");
     for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
   });
+
+  // PNS-T03: rigged up aborts on preflight failure (daemon not running, port in use)
+  it("up aborts with preflight error when daemon not running and port in use", async () => {
+    // Start a TCP server on a port to trigger port-in-use
+    const net = await import("node:net");
+    const blockingServer = net.createServer();
+    await new Promise<void>((resolve) => blockingServer.listen(0, resolve));
+    const blockedPort = (blockingServer.address() as { port: number }).port;
+
+    // Create deps where daemon is NOT running (triggers auto-start → preflight)
+    const stoppedDeps: StatusDeps = {
+      lifecycleDeps: {
+        ...mockLifecycleDeps(),
+        exists: vi.fn(() => false), // No daemon.json → stopped
+        readFile: vi.fn(() => null),
+        fetch: vi.fn(async () => { throw new Error("refused"); }),
+      },
+      clientFactory: (baseUrl) => new DaemonClient(baseUrl),
+    };
+
+    // Set RIGGED_PORT to the blocked port so preflight detects collision
+    const savedPort = process.env["RIGGED_PORT"];
+    process.env["RIGGED_PORT"] = String(blockedPort);
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(upCommand(stoppedDeps));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      try {
+        await prog.parseAsync(["node", "rigged", "up", "/tmp/test.yaml"]);
+      } catch { /* commander may throw on exitOverride */ }
+    });
+    blockingServer.close();
+    if (savedPort !== undefined) process.env["RIGGED_PORT"] = savedPort;
+    else delete process.env["RIGGED_PORT"];
+
+    const output = logs.join("\n");
+    expect(output).toContain("port");
+    expect(exitCode).toBe(1);
+  });
 });

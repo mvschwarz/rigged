@@ -8,6 +8,7 @@ import {
   readLogs,
   tailLogs,
   type LifecycleDeps,
+  RIGGED_DIR,
 } from "../daemon-lifecycle.js";
 
 export function realDeps(): LifecycleDeps {
@@ -41,11 +42,35 @@ export function daemonCommand(depsOverride?: LifecycleDeps): Command {
     .action(async (opts: { port?: string; host?: string; db?: string }) => {
       try {
         const { ConfigStore } = await import("../config-store.js");
-        const config = new ConfigStore().resolve();
+        const { SystemPreflight } = await import("../system-preflight.js");
+        const { execSync } = await import("node:child_process");
+        const configStore = new ConfigStore();
+        const config = configStore.resolve();
+        const effectivePort = opts.port ? parseInt(opts.port, 10) : config.daemon.port;
+        const effectiveHost = opts.host ?? config.daemon.host;
+
+        // Run preflight before starting
+        const preflight = new SystemPreflight({
+          exec: async (cmd) => execSync(cmd, { encoding: "utf-8" }),
+          configStore,
+          getDaemonStatus: () => getDaemonStatus(getDeps()),
+          riggedHome: RIGGED_DIR,
+        });
+        const preflightResult = await preflight.run({ port: effectivePort, host: effectiveHost });
+        if (!preflightResult.ready) {
+          for (const check of preflightResult.checks.filter((c) => !c.ok)) {
+            console.error(`✗ ${check.name}: ${check.error}`);
+            if (check.reason) console.error(`  Why: ${check.reason}`);
+            if (check.fix) console.error(`  Fix: ${check.fix}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+
         const state = await startDaemon(
           {
-            port: opts.port ? parseInt(opts.port, 10) : config.daemon.port,
-            host: opts.host ?? config.daemon.host,
+            port: effectivePort,
+            host: effectiveHost,
             db: opts.db ?? config.db.path,
             transcriptsEnabled: config.transcripts.enabled,
             transcriptsPath: config.transcripts.path,

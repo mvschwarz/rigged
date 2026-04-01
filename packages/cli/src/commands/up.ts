@@ -18,9 +18,37 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
     .action(async (source: string, opts: { plan?: boolean; yes?: boolean; target?: string; json?: boolean }) => {
       const deps = getDepsF();
 
-      // Auto-start daemon if not running
+      // Run preflight before auto-start
       let status = await getDaemonStatus(deps.lifecycleDeps);
       if (status.state !== "running") {
+        try {
+          const { ConfigStore } = await import("../config-store.js");
+          const { SystemPreflight } = await import("../system-preflight.js");
+          const { execSync } = await import("node:child_process");
+          const { RIGGED_DIR } = await import("../daemon-lifecycle.js");
+          const configStore = new ConfigStore();
+          const preflight = new SystemPreflight({
+            exec: async (cmd) => execSync(cmd, { encoding: "utf-8" }),
+            configStore,
+            getDaemonStatus: () => getDaemonStatus(deps.lifecycleDeps),
+            riggedHome: RIGGED_DIR,
+          });
+          const preflightResult = await preflight.run();
+          if (!preflightResult.ready) {
+            for (const check of preflightResult.checks.filter((c) => !c.ok)) {
+              console.error(`✗ ${check.name}: ${check.error}`);
+              if (check.reason) console.error(`  Why: ${check.reason}`);
+              if (check.fix) console.error(`  Fix: ${check.fix}`);
+            }
+            process.exitCode = 1;
+            return;
+          }
+        } catch (preErr) {
+          console.error(`Preflight error: ${preErr instanceof Error ? preErr.message : String(preErr)}`);
+          process.exitCode = 1;
+          return;
+        }
+
         try {
           await startDaemon({}, deps.lifecycleDeps);
           status = await getDaemonStatus(deps.lifecycleDeps);

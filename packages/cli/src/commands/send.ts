@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -37,7 +37,7 @@ Use --force to override mid-task safety checks.`)
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
       const res = await client.post<Record<string, unknown>>("/api/transport/send", {
         session, text, verify: opts.verify, force: opts.force,
       });

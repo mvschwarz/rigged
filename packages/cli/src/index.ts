@@ -23,6 +23,7 @@ import { transcriptCommand } from "./commands/transcript.js";
 import { sendCommand } from "./commands/send.js";
 import { captureCommand } from "./commands/capture.js";
 import { broadcastCommand } from "./commands/broadcast.js";
+import { configCommand } from "./commands/config.js";
 import type { LifecycleDeps } from "./daemon-lifecycle.js";
 
 export interface ProgramDeps {
@@ -49,6 +50,7 @@ export interface ProgramDeps {
   sendDeps?: StatusDeps;
   captureDeps?: StatusDeps;
   broadcastDeps?: StatusDeps;
+  configPath?: string;
 }
 
 export function createProgram(depsOverride?: ProgramDeps): Command {
@@ -82,6 +84,7 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(sendCommand(depsOverride?.sendDeps));
   program.addCommand(captureCommand(depsOverride?.captureDeps));
   program.addCommand(broadcastCommand(depsOverride?.broadcastDeps));
+  program.addCommand(configCommand(depsOverride?.configPath));
 
   return program;
 }

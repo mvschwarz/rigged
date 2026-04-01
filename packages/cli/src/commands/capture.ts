@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -34,7 +34,7 @@ Examples:
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
       const lines = parseInt(opts.lines ?? "20", 10);
 
       const body: Record<string, unknown> = { lines: isNaN(lines) ? 20 : lines };

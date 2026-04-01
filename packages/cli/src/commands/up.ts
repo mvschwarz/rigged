@@ -1,7 +1,7 @@
 import nodePath from "node:path";
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus, startDaemon, type LifecycleDeps } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl, startDaemon, type LifecycleDeps } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -37,7 +37,7 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
 
       // Detect rig name vs file path: names don't contain / and don't end in .yaml/.yml/.rigbundle
       const isRigName = !source.includes("/") && !source.match(/\.(ya?ml|rigbundle)$/i);

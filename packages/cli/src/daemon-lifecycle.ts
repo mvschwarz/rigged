@@ -4,6 +4,7 @@ import type { ChildProcess } from "node:child_process";
 export interface DaemonState {
   pid: number;
   port: number;
+  host?: string;
   db: string;
   startedAt: string;
 }
@@ -11,13 +12,22 @@ export interface DaemonState {
 export interface DaemonStatus {
   state: "running" | "stopped" | "stale";
   port?: number;
+  host?: string;
   pid?: number;
   healthy?: boolean;
 }
 
+/** Build the daemon HTTP URL from status. Uses persisted host or defaults to 127.0.0.1. */
+export function getDaemonUrl(status: DaemonStatus): string {
+  return `http://${status.host ?? "127.0.0.1"}:${status.port}`;
+}
+
 export interface StartOptions {
   port?: number;
+  host?: string;
   db?: string;
+  transcriptsEnabled?: boolean;
+  transcriptsPath?: string;
 }
 
 export interface LifecycleDeps {
@@ -69,8 +79,9 @@ function readState(deps: LifecycleDeps): DaemonState | null {
  *  - "dead" — PID not alive */
 async function checkPid(state: DaemonState, deps: LifecycleDeps): Promise<"rigged" | "not_rigged" | "dead"> {
   if (!deps.isProcessAlive(state.pid)) return "dead";
+  const host = state.host ?? "127.0.0.1";
   try {
-    await deps.fetch(`http://127.0.0.1:${state.port}/healthz`);
+    await deps.fetch(`http://${host}:${state.port}/healthz`);
     // Any response (ok or not) means something is listening on our port → rigged
     return "rigged";
   } catch {
@@ -92,6 +103,7 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
   }
 
   const port = opts.port ?? DEFAULT_PORT;
+  const host = opts.host ?? "127.0.0.1";
   const db = opts.db ?? DEFAULT_DB;
   const daemonEntry = path.join(getDaemonPath(), "dist/index.js");
 
@@ -104,7 +116,10 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
     env: {
       ...process.env as Record<string, string>,
       RIGGED_PORT: String(port),
+      RIGGED_HOST: host,
       RIGGED_DB: db,
+      ...(opts.transcriptsEnabled !== undefined ? { RIGGED_TRANSCRIPTS_ENABLED: String(opts.transcriptsEnabled) } : {}),
+      ...(opts.transcriptsPath ? { RIGGED_TRANSCRIPTS_PATH: opts.transcriptsPath } : {}),
     },
     stdio: ["ignore", logFd, logFd],
     detached: true,
@@ -115,7 +130,7 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
   const pid = child.pid!;
 
   // Poll healthz
-  const healthzUrl = `http://127.0.0.1:${port}/healthz`;
+  const healthzUrl = `http://${host}:${port}/healthz`;
   let healthy = false;
   for (let i = 0; i < HEALTHZ_RETRIES; i++) {
     try {
@@ -138,6 +153,7 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
   const state: DaemonState = {
     pid,
     port,
+    host,
     db,
     startedAt: new Date().toISOString(),
   };
@@ -189,7 +205,7 @@ export async function getDaemonStatus(deps: LifecycleDeps): Promise<DaemonStatus
     try {
       const res = await deps.fetch(`${riggedUrl}/healthz`);
       const url = new URL(riggedUrl);
-      return { state: "running", port: Number(url.port) || 7433, healthy: res.ok };
+      return { state: "running", port: Number(url.port) || 7433, host: url.hostname || "127.0.0.1", healthy: res.ok };
     } catch {
       return { state: "stopped" };
     }
@@ -205,16 +221,17 @@ export async function getDaemonStatus(deps: LifecycleDeps): Promise<DaemonStatus
   }
 
   // Process alive — check healthz
+  const host = state.host ?? "127.0.0.1";
   let healthy = false;
   try {
-    const res = await deps.fetch(`http://127.0.0.1:${state.port}/healthz`);
+    const res = await deps.fetch(`http://${host}:${state.port}/healthz`);
     healthy = res.ok;
   } catch {
     // healthz unreachable
   }
 
   // pid alive = running (state file preserved either way)
-  return { state: "running", port: state.port, pid: state.pid, healthy };
+  return { state: "running", port: state.port, host, pid: state.pid, healthy };
 }
 
 export function readLogs(deps: LifecycleDeps): string | null {

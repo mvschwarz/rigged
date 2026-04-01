@@ -101,8 +101,13 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     { timeoutMs: opts?.cmuxTimeoutMs ?? 5000 }
   );
 
-  // PNS-T02 will wire resolved config (transcripts.path, transcripts.enabled) here
-  const transcriptStore = new TranscriptStore();
+  // Read transcript config from env (passed by CLI via PNS-T02 config surface)
+  const transcriptsEnabled = process.env["RIGGED_TRANSCRIPTS_ENABLED"] !== "false";
+  const transcriptsPath = process.env["RIGGED_TRANSCRIPTS_PATH"] || undefined;
+  const transcriptStore = new TranscriptStore({
+    enabled: transcriptsEnabled,
+    transcriptsRoot: transcriptsPath,
+  });
 
   const nodeLauncher = new NodeLauncher({
     db,

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -34,7 +34,7 @@ export function exportCommand(depsOverride?: ExportDeps): Command {
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
       const res = await client.getText(`/api/rigs/${encodeURIComponent(rigId)}/spec`);
 
       if (res.status === 404) {

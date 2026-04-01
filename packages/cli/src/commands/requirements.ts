@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -14,7 +14,7 @@ export function requirementsCommand(depsOverride?: StatusDeps): Command {
       console.error("Daemon not running");
       return null;
     }
-    return deps.clientFactory(`http://127.0.0.1:${status.port}`);
+    return deps.clientFactory(getDaemonUrl(status));
   }
 
   cmd

@@ -2,7 +2,7 @@ import nodePath from "node:path";
 import { Command } from "commander";
 import fs from "node:fs";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -46,7 +46,7 @@ export function rigCommand(depsOverride?: RigDeps): Command {
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
 
       const res = await client.postText<{ valid?: boolean; errors?: string[]; name?: string }>("/api/rigs/import/validate", yaml);
 
@@ -109,7 +109,7 @@ export function rigCommand(depsOverride?: RigDeps): Command {
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
 
       const rigRoot = opts.rigRoot
         ? nodePath.resolve(opts.rigRoot)

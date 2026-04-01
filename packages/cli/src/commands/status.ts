@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { DaemonClient } from "../client.js";
 import {
   getDaemonStatus,
+  getDaemonUrl,
   type LifecycleDeps,
 } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
@@ -49,7 +50,7 @@ export function statusCommand(depsOverride?: StatusDeps): Command {
       return;
     }
 
-    const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+    const client = deps.clientFactory(getDaemonUrl(status));
 
     // Fetch summary + cmux status
     const [summaryRes, cmuxRes] = await Promise.all([

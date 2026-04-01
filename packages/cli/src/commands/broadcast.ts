@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -35,7 +35,7 @@ Without --rig or --pod, broadcasts to ALL running sessions across all rigs.`)
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
       const body: Record<string, unknown> = { text, force: opts.force };
       if (opts.rig) body.rig = opts.rig;
       if (opts.pod) body.pod = opts.pod;

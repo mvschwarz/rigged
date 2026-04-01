@@ -35,12 +35,21 @@ export function daemonCommand(depsOverride?: LifecycleDeps): Command {
   cmd
     .command("start")
     .description("Start the daemon")
-    .option("--port <port>", "Port to listen on", "7433")
-    .option("--db <path>", "Database path", "rigged.sqlite")
-    .action(async (opts: { port: string; db: string }) => {
+    .option("--port <port>", "Port to listen on")
+    .option("--host <host>", "Host to bind on")
+    .option("--db <path>", "Database path")
+    .action(async (opts: { port?: string; host?: string; db?: string }) => {
       try {
+        const { ConfigStore } = await import("../config-store.js");
+        const config = new ConfigStore().resolve();
         const state = await startDaemon(
-          { port: parseInt(opts.port, 10), db: opts.db },
+          {
+            port: opts.port ? parseInt(opts.port, 10) : config.daemon.port,
+            host: opts.host ?? config.daemon.host,
+            db: opts.db ?? config.db.path,
+            transcriptsEnabled: config.transcripts.enabled,
+            transcriptsPath: config.transcripts.path,
+          },
           getDeps(),
         );
         console.log(`Daemon started on port ${state.port} (pid ${state.pid})`);

@@ -1,3 +1,5 @@
+import { ConfigStore } from "./config-store.js";
+
 export class DaemonConnectionError extends Error {
   constructor(message: string) {
     super(message);
@@ -14,7 +16,15 @@ export class DaemonClient {
   readonly baseUrl: string;
 
   constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl ?? process.env["RIGGED_URL"] ?? "http://127.0.0.1:7433";
+    if (baseUrl) {
+      this.baseUrl = baseUrl;
+    } else if (process.env["RIGGED_URL"]) {
+      this.baseUrl = process.env["RIGGED_URL"];
+    } else {
+      // Resolve from config (env > file > defaults)
+      const config = new ConfigStore().resolve();
+      this.baseUrl = `http://${config.daemon.host}:${config.daemon.port}`;
+    }
   }
 
   async get<T = unknown>(path: string): Promise<DaemonResponse<T>> {

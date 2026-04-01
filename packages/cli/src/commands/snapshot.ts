@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus, type LifecycleDeps } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl, type LifecycleDeps } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -18,7 +18,7 @@ export function snapshotCommand(depsOverride?: StatusDeps): Command {
       }
       return null;
     }
-    return deps.clientFactory(`http://127.0.0.1:${status.port}`);
+    return deps.clientFactory(getDaemonUrl(status));
   }
 
   // rigged snapshot <rigId> — default action creates a snapshot

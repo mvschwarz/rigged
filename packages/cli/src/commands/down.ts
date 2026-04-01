@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { DaemonClient } from "../client.js";
-import { getDaemonStatus, type LifecycleDeps } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl, type LifecycleDeps } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
 
@@ -39,7 +39,7 @@ export function downCommand(depsOverride?: StatusDeps): Command {
         return;
       }
 
-      const client = deps.clientFactory(`http://127.0.0.1:${status.port}`);
+      const client = deps.clientFactory(getDaemonUrl(status));
 
       const res = await client.post<TeardownResult | { error: string }>("/api/down", {
         rigId,

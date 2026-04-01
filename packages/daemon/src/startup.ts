@@ -51,6 +51,7 @@ import { UpCommandRouter } from "./domain/up-command-router.js";
 import { RigTeardownOrchestrator } from "./domain/rig-teardown.js";
 import { ResumeMetadataRefresher } from "./domain/resume-metadata-refresher.js";
 import { TranscriptStore } from "./domain/transcript-store.js";
+import { SessionTransport } from "./domain/session-transport.js";
 import { createApp, type AppDeps } from "./server.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -265,6 +266,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     podBundleSourceResolver,
     runtimeAdapters: { "claude-code": claudeAdapter, "codex": codexAdapter, "terminal": new (await import("./adapters/terminal-adapter.js")).TerminalAdapter() },
     transcriptStore,
+    sessionTransport: new SessionTransport({ db, rigRepo, sessionRegistry, tmuxAdapter }),
   };
 
   const app = createApp(deps);

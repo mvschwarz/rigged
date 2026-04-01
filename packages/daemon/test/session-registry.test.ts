@@ -94,6 +94,18 @@ describe("SessionRegistry", () => {
     expect(updated!.resumeToken).toBe("abc-123-def");
   });
 
+  it("clearResumeToken clears stored resume metadata", () => {
+    const session = registry.registerSession("node-1", "r01-dev1-impl");
+    registry.updateResumeToken(session.id, "claude_id", "abc-123-def");
+
+    registry.clearResumeToken(session.id);
+
+    const sessions = registry.getSessionsForRig("rig-1");
+    const updated = sessions.find((s) => s.id === session.id);
+    expect(updated!.resumeType).toBeNull();
+    expect(updated!.resumeToken).toBeNull();
+  });
+
   it("registerSession accepts canonical session name with @", () => {
     const session = registry.registerSession("node-1", "dev-impl@auth-feats");
     expect(session.sessionName).toBe("dev-impl@auth-feats");

@@ -75,6 +75,12 @@ export class SessionRegistry {
       .run(type, token, sessionId);
   }
 
+  clearResumeToken(sessionId: string): void {
+    this.db
+      .prepare("UPDATE sessions SET resume_type = NULL, resume_token = NULL WHERE id = ?")
+      .run(sessionId);
+  }
+
   markDetached(sessionId: string): void {
     this.updateStatus(sessionId, "detached");
   }

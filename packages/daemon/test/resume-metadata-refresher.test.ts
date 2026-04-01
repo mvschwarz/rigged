@@ -130,6 +130,7 @@ describe("ResumeMetadataRefresher", () => {
   it("skips sessions that already have a resume token", async () => {
     const sessionRegistry = {
       updateResumeToken: vi.fn(),
+      clearResumeToken: vi.fn(),
     } as unknown as SessionRegistry;
     const refresher = new ResumeMetadataRefresher({
       sessionRegistry,
@@ -147,6 +148,35 @@ describe("ResumeMetadataRefresher", () => {
       },
     ]);
 
+    expect(sessionRegistry.updateResumeToken).not.toHaveBeenCalled();
+  });
+
+  it("clears Claude resume metadata when the stored token is not natively resumable", async () => {
+    const sessionRegistry = {
+      updateResumeToken: vi.fn(),
+      clearResumeToken: vi.fn(),
+    } as unknown as SessionRegistry;
+    const probeClaudeResume = vi.fn(async () => "not_resumable" as const);
+    const refresher = new ResumeMetadataRefresher({
+      sessionRegistry,
+      tmuxAdapter: mockTmux(),
+      probeClaudeResume,
+      sleep: async () => {},
+    });
+
+    await refresher.refresh([
+      {
+        sessionId: "sess-1",
+        sessionName: "dev-design@demo-rig",
+        runtime: "claude-code",
+        resumeType: "claude_id",
+        resumeToken: "abc-123",
+        cwd: "/repo",
+      },
+    ]);
+
+    expect(probeClaudeResume).toHaveBeenCalledWith("dev-design@demo-rig", "abc-123", "/repo");
+    expect(sessionRegistry.clearResumeToken).toHaveBeenCalledWith("sess-1");
     expect(sessionRegistry.updateResumeToken).not.toHaveBeenCalled();
   });
 });

@@ -393,6 +393,7 @@ export class RestoreOrchestrator {
     const restorePolicy = session?.restorePolicy ?? "resume_if_possible";
     const resumeType = session?.resumeType ?? null;
     const resumeToken = session?.resumeToken ?? null;
+    const resumeRequested = restorePolicy === "resume_if_possible" && !!resumeType && resumeType !== "none";
 
     let baseStatus: RestoreNodeResult["status"] = "fresh";
 
@@ -400,7 +401,7 @@ export class RestoreOrchestrator {
     // Legacy nodes: resume via old claude-resume/codex-resume helpers
     const isPodAware = !!node.podId;
 
-    if (restorePolicy === "resume_if_possible" && resumeType && resumeType !== "none" && !isPodAware) {
+    if (resumeRequested && !isPodAware) {
       // Legacy resume path
       if (!resumeToken) {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume requested but no token available. Restore the node manually or launch fresh with: rigged up` };
@@ -411,7 +412,7 @@ export class RestoreOrchestrator {
       } else {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: `Resume attempted but failed. Check the harness state manually or launch fresh with: rigged up` };
       }
-    } else if (restorePolicy === "resume_if_possible" && isPodAware) {
+    } else if (resumeRequested && isPodAware) {
       // Pod-aware restore must preserve the same honesty contract as legacy restore:
       // if resume was requested but continuity state is unavailable, fail loudly
       // instead of silently downgrading to a fresh launch with amnesia.
@@ -506,15 +507,15 @@ export class RestoreOrchestrator {
               startupActions: startupCtx.startupActions,
               isRestore: true,
               skipHarnessLaunch: !isPodAware, // Pod-aware: use launchHarness with resumeToken. Legacy: old helpers already handled.
-              resumeToken: isPodAware ? resumeToken ?? undefined : undefined,
+              resumeToken: (isPodAware && resumeRequested) ? resumeToken ?? undefined : undefined,
               sessionName: sessionName,
             });
             if (startupResult.ok) {
               // Pod-aware nodes with resume token: startup used launchHarness with the token → resumed
-              const finalStatus = (isPodAware && resumeToken) ? "resumed" : baseStatus;
+              const finalStatus = (isPodAware && resumeRequested) ? "resumed" : baseStatus;
               return { nodeId: node.id, logicalId: node.logicalId, status: finalStatus };
             }
-            if (isPodAware && resumeToken) {
+            if (isPodAware && resumeRequested) {
               return {
                 nodeId: node.id,
                 logicalId: node.logicalId,
@@ -524,7 +525,7 @@ export class RestoreOrchestrator {
             }
             warnings?.push(`Restore startup failed for ${node.logicalId}: ${startupResult.errors.join("; ")}`);
           } catch (err) {
-            if (isPodAware && resumeToken) {
+            if (isPodAware && resumeRequested) {
               return {
                 nodeId: node.id,
                 logicalId: node.logicalId,

@@ -114,7 +114,11 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
           }
           case "send_text": {
             if (binding.tmuxSession) {
-              await this.tmux.sendText(binding.tmuxSession, content);
+              const textResult = await this.tmux.sendText(binding.tmuxSession, content);
+              if (!textResult.ok) throw new Error(textResult.message);
+              await this.sleep(200);
+              const submitResult = await this.tmux.sendKeys(binding.tmuxSession, ["C-m"]);
+              if (!submitResult.ok) throw new Error(submitResult.message);
             }
             break;
           }

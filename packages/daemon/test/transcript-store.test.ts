@@ -150,6 +150,48 @@ describe("TranscriptStore", () => {
       expect(lines[1]).toBe("line4"); // ANSI stripped
       expect(lines[2]).toBe("line5");
     });
+
+    it("strips shell prompt prefixes from tailed transcript lines", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("my-rig");
+      const filePath = store.getTranscriptPath("my-rig", "dev@my-rig");
+      writeFileSync(
+        filePath,
+        "mschwarz@mike-air rigged % echo SEND_ALPHA_OK\nSEND_ALPHA_OK\nmschwarz@mike-air rigged % \n",
+      );
+
+      const result = store.readTail("my-rig", "dev@my-rig", 5);
+
+      expect(result).toBe("echo SEND_ALPHA_OK\nSEND_ALPHA_OK\n");
+    });
+
+    it("drops bare shell prompt lines from tailed transcript output", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("my-rig");
+      const filePath = store.getTranscriptPath("my-rig", "dev@my-rig");
+      writeFileSync(
+        filePath,
+        "echo OPS_SHELL_READY\n%\nmschwarz@mike-air rigged % \nmschwarz@mike-air rigged % echo RIG_BROADCAST_OK\nRIG_BROADCAST_OK\n",
+      );
+
+      const result = store.readTail("my-rig", "dev@my-rig", 10);
+
+      expect(result).toBe("echo OPS_SHELL_READY\necho RIG_BROADCAST_OK\nRIG_BROADCAST_OK\n");
+    });
+
+    it("normalizes carriage-return prompt redraws before filtering shell prompt lines", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("my-rig");
+      const filePath = store.getTranscriptPath("my-rig", "dev@my-rig");
+      writeFileSync(
+        filePath,
+        "echo DEV_ALPHA_READY\x1b[1m\x1b[7m%\x1b[27m\x1b[1m\x1b[0m\r  \r\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jmschwarz@mike-air rigged % \x1b[K\x1b[?2004hecho DEV_ALPHA_READY\x1b[?2004l\r\r\nDEV_ALPHA_READY\n",
+      );
+
+      const result = store.readTail("my-rig", "dev@my-rig", 10);
+
+      expect(result).toBe("echo DEV_ALPHA_READY\nDEV_ALPHA_READY\n");
+    });
   });
 
   describe("grep", () => {

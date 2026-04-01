@@ -69,7 +69,13 @@ describe("StartupOrchestrator", () => {
   afterEach(() => { db.close(); });
 
   function createOrchestrator(tmuxOverride?: TmuxAdapter): StartupOrchestrator {
-    return new StartupOrchestrator({ db, sessionRegistry, eventBus, tmuxAdapter: tmuxOverride ?? tmux });
+    return new StartupOrchestrator({
+      db,
+      sessionRegistry,
+      eventBus,
+      tmuxAdapter: tmuxOverride ?? tmux,
+      sleep: async () => {},
+    });
   }
 
   function seedSession(): { rigId: string; nodeId: string; sessionId: string } {
@@ -218,6 +224,18 @@ describe("StartupOrchestrator", () => {
     const result = await orch.startNode(makeInput(seed, { startupActions: actions, isRestore: true }));
     expect(result.ok).toBe(true);
     expect(tmux.sendText).toHaveBeenCalledWith("r01-impl", "/rename impl");
+  });
+
+  it("submits startup actions after sending text", async () => {
+    const seed = seedSession();
+    const orch = createOrchestrator();
+    const actions: StartupAction[] = [makeAction({ value: "/rename impl" })];
+
+    const result = await orch.startNode(makeInput(seed, { startupActions: actions }));
+
+    expect(result.ok).toBe(true);
+    expect(tmux.sendText).toHaveBeenCalledWith("r01-impl", "/rename impl");
+    expect(tmux.sendKeys).toHaveBeenCalledWith("r01-impl", ["C-m"]);
   });
 
   // T8: operator debug append executes after resolved startup

@@ -43,6 +43,8 @@ interface StartupOrchestratorDeps {
   tmuxAdapter: TmuxAdapter;
   /** Read file content for concrete-hint resolution. */
   readFile?: (path: string) => string;
+  /** Sleep between paste and submit for tmux-driven TUIs. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -69,6 +71,7 @@ export class StartupOrchestrator {
   private sessionRegistry: SessionRegistry;
   private eventBus: EventBus;
   private tmuxAdapter: TmuxAdapter;
+  private sleep: (ms: number) => Promise<void>;
 
   constructor(deps: StartupOrchestratorDeps) {
     if (deps.db !== deps.sessionRegistry.db) throw new Error("StartupOrchestrator: sessionRegistry must share the same db handle");
@@ -78,6 +81,7 @@ export class StartupOrchestrator {
     this.eventBus = deps.eventBus;
     this.tmuxAdapter = deps.tmuxAdapter;
     this.readFile = deps.readFile ?? (() => "");
+    this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   private readFile: (path: string) => string;
@@ -298,9 +302,16 @@ export class StartupOrchestrator {
           text = action.value; // send_text: raw text
         }
 
-        const result = await this.tmuxAdapter.sendText(input.binding.tmuxSession, text);
-        if (!result.ok) {
-          errors.push(`Action failed (${action.type}): ${(result as { message?: string }).message ?? "unknown"}`);
+        const textResult = await this.tmuxAdapter.sendText(input.binding.tmuxSession, text);
+        if (!textResult.ok) {
+          errors.push(`Action failed (${action.type}): ${(textResult as { message?: string }).message ?? "unknown"}`);
+          continue;
+        }
+
+        await this.sleep(200);
+        const submitResult = await this.tmuxAdapter.sendKeys(input.binding.tmuxSession, ["C-m"]);
+        if (!submitResult.ok) {
+          errors.push(`Action submit failed (${action.type}): ${(submitResult as { message?: string }).message ?? "unknown"}`);
         }
       } catch (err) {
         errors.push(`Action error (${action.type}): ${(err as Error).message}`);

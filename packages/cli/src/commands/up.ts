@@ -21,12 +21,18 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
       // Run preflight before auto-start
       let status = await getDaemonStatus(deps.lifecycleDeps);
       if (status.state !== "running") {
+        let resolvedConfig: {
+          daemon: { port: number; host: string };
+          db: { path: string };
+          transcripts: { enabled: boolean; path: string };
+        } | null = null;
         try {
           const { ConfigStore } = await import("../config-store.js");
           const { SystemPreflight } = await import("../system-preflight.js");
           const { execSync } = await import("node:child_process");
           const { RIGGED_DIR } = await import("../daemon-lifecycle.js");
           const configStore = new ConfigStore();
+          resolvedConfig = configStore.resolve();
           const preflight = new SystemPreflight({
             exec: async (cmd) => execSync(cmd, { encoding: "utf-8" }),
             configStore,
@@ -50,7 +56,13 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
         }
 
         try {
-          await startDaemon({}, deps.lifecycleDeps);
+          await startDaemon({
+            port: resolvedConfig?.daemon.port,
+            host: resolvedConfig?.daemon.host,
+            db: resolvedConfig?.db.path,
+            transcriptsEnabled: resolvedConfig?.transcripts.enabled,
+            transcriptsPath: resolvedConfig?.transcripts.path,
+          }, deps.lifecycleDeps);
           status = await getDaemonStatus(deps.lifecycleDeps);
         } catch {
           console.error("Failed to auto-start daemon. Start manually with: rigged daemon start");

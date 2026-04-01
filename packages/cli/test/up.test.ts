@@ -271,4 +271,57 @@ describe("Up CLI", () => {
     expect(output).toContain("port");
     expect(exitCode).toBe(1);
   });
+
+  it("auto-start uses resolved daemon port instead of default 7433", async () => {
+    const savedPort = process.env["RIGGED_PORT"];
+    process.env["RIGGED_PORT"] = "7461";
+
+    let daemonState: DaemonState | null = null;
+    let spawnedPort: string | undefined;
+    let clientBaseUrl: string | undefined;
+
+    const deps: StatusDeps = {
+      lifecycleDeps: {
+        ...mockLifecycleDeps(),
+        exists: vi.fn((p: string) => p === STATE_FILE ? daemonState !== null : false),
+        readFile: vi.fn((p: string) => p === STATE_FILE && daemonState ? JSON.stringify(daemonState) : null),
+        writeFile: vi.fn((p: string, content: string) => {
+          if (p === STATE_FILE) daemonState = JSON.parse(content) as DaemonState;
+        }),
+        openForAppend: vi.fn(() => 3),
+        mkdirp: vi.fn(),
+        spawn: vi.fn((cmd, args, opts) => {
+          spawnedPort = opts.env["RIGGED_PORT"];
+          return { pid: 321, unref: vi.fn() } as never;
+        }),
+        fetch: vi.fn(async (url: string) => ({
+          ok: url === "http://127.0.0.1:7461/healthz" || url === "http://127.0.0.1:7433/healthz",
+        })),
+      },
+      clientFactory: (baseUrl) => {
+        clientBaseUrl = baseUrl;
+        return {
+          post: vi.fn(async () => ({
+            status: 201,
+            data: { status: "completed", rigId: "rig-1", stages: [], errors: [], warnings: [] },
+          })),
+        } as unknown as DaemonClient;
+      },
+    };
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(upCommand(deps));
+
+    const { exitCode } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rigged", "up", "/tmp/test.yaml"]);
+    });
+
+    if (savedPort !== undefined) process.env["RIGGED_PORT"] = savedPort;
+    else delete process.env["RIGGED_PORT"];
+
+    expect(exitCode).toBeUndefined();
+    expect(spawnedPort).toBe("7461");
+    expect(clientBaseUrl).toBe("http://127.0.0.1:7461");
+  });
 });

@@ -86,13 +86,14 @@ describe("Claude Code runtime adapter", () => {
   it("auto falls back to send_text for generic file", async () => {
     const tmux = mockTmux();
     const fs = mockFs({ "/rig/startup/init.sh": "echo hello" });
-    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: fs });
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: fs, sleep: async () => {} });
     const file: ResolvedStartupFile = {
       path: "startup/init.sh", absolutePath: "/rig/startup/init.sh", ownerRoot: "/rig",
       deliveryHint: "auto", required: true, appliesOn: ["fresh_start", "restore"],
     };
     await adapter.deliverStartup([file], makeBinding());
     expect(tmux.sendText).toHaveBeenCalledWith("r01-impl", "echo hello");
+    expect(tmux.sendKeys).toHaveBeenCalledWith("r01-impl", ["C-m"]);
   });
 
   // T6: duplicate delivery is idempotent

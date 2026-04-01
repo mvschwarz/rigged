@@ -102,7 +102,8 @@ describe("Codex runtime adapter", () => {
   // T10: deliverStartup does NOT execute startup actions
   it("deliverStartup only handles files, no action execution", async () => {
     // Verify that the interface only accepts ResolvedStartupFile[], not StartupAction[]
-    const adapter = new CodexRuntimeAdapter({ tmux: mockTmux(), fsOps: mockFs({ "/rig/file.md": "content" }) });
+    const tmux = mockTmux();
+    const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs({ "/rig/file.md": "content" }), sleep: async () => {} });
     const file: ResolvedStartupFile = {
       path: "file.md", absolutePath: "/rig/file.md", ownerRoot: "/rig",
       deliveryHint: "guidance_merge", required: true, appliesOn: ["fresh_start"],
@@ -110,6 +111,7 @@ describe("Codex runtime adapter", () => {
     const result = await adapter.deliverStartup([file], makeBinding());
     expect(result.delivered).toBe(1);
     // No action-related methods called — only file delivery
+    expect(tmux.sendText).not.toHaveBeenCalled();
   });
 
   // T11: structured failure on delivery error
@@ -124,6 +126,24 @@ describe("Codex runtime adapter", () => {
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0]!.path).toBe("missing.md");
     expect(result.failed[0]!.error).toContain("Not found");
+  });
+
+  it("submits send_text startup files after pasting", async () => {
+    const tmux = mockTmux();
+    const adapter = new CodexRuntimeAdapter({
+      tmux,
+      fsOps: mockFs({ "/rig/startup/init.sh": "echo hello" }),
+      sleep: async () => {},
+    });
+    const file: ResolvedStartupFile = {
+      path: "startup/init.sh", absolutePath: "/rig/startup/init.sh", ownerRoot: "/rig",
+      deliveryHint: "auto", required: true, appliesOn: ["fresh_start", "restore"],
+    };
+
+    await adapter.deliverStartup([file], makeBinding());
+
+    expect(tmux.sendText).toHaveBeenCalledWith("r01-qa", "echo hello");
+    expect(tmux.sendKeys).toHaveBeenCalledWith("r01-qa", ["C-m"]);
   });
 
   // T12: replay on restore is safe for already-projected content

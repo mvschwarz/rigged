@@ -34,11 +34,13 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   private tmux: TmuxAdapter;
   private fs: ClaudeAdapterFsOps;
   private sessionIdFactory: () => string;
+  private sleep: (ms: number) => Promise<void>;
 
-  constructor(deps: { tmux: TmuxAdapter; fsOps: ClaudeAdapterFsOps; sessionIdFactory?: () => string }) {
+  constructor(deps: { tmux: TmuxAdapter; fsOps: ClaudeAdapterFsOps; sessionIdFactory?: () => string; sleep?: (ms: number) => Promise<void> }) {
     this.tmux = deps.tmux;
     this.fs = deps.fsOps;
     this.sessionIdFactory = deps.sessionIdFactory ?? randomUUID;
+    this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   async listInstalled(binding: NodeBinding): Promise<InstalledResource[]> {
@@ -97,7 +99,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
           }
           case "send_text": {
             if (binding.tmuxSession) {
-              await this.tmux.sendText(binding.tmuxSession, content);
+              const textResult = await this.tmux.sendText(binding.tmuxSession, content);
+              if (!textResult.ok) throw new Error(textResult.message);
+              await this.sleep(200);
+              const submitResult = await this.tmux.sendKeys(binding.tmuxSession, ["C-m"]);
+              if (!submitResult.ok) throw new Error(submitResult.message);
             }
             break;
           }

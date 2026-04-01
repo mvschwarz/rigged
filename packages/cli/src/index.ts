@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { daemonCommand } from "./commands/daemon.js";
 import { statusCommand, type StatusDeps } from "./commands/status.js";
 import { snapshotCommand } from "./commands/snapshot.js";
@@ -91,11 +93,17 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   return program;
 }
 
-// Only parse when executed directly (not imported for testing)
-const isDirectRun =
-  process.argv[1] &&
-  import.meta.url === `file://${process.argv[1]}`;
+export function isDirectRun(argv1 = process.argv[1], moduleUrl = import.meta.url): boolean {
+  if (!argv1) return false;
 
-if (isDirectRun) {
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+// Only parse when executed directly (not imported for testing)
+if (isDirectRun()) {
   createProgram().parse();
 }

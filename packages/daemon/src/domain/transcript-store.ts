@@ -22,7 +22,19 @@ function applyBackspaces(text: string): string {
 }
 
 function stripShellPromptPrefix(line: string): string {
-  return line.replace(/^\S+@\S+ .*? %\s+/, "");
+  return line.replace(/^\s*\S+@\S+ .*? %\s*/, "");
+}
+
+function isBareShellPrompt(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === "%" || /^\S+@\S+ .*? %$/.test(trimmed);
+}
+
+function isPromptRedrawDuplicate(line: string, nextLine?: string): boolean {
+  const trimmed = line.trimEnd();
+  if (!trimmed.endsWith("%")) return false;
+  const withoutPrompt = trimmed.slice(0, -1).trimEnd();
+  return withoutPrompt.length > 0 && nextLine?.trim() === withoutPrompt;
 }
 
 export class TranscriptStore {
@@ -105,8 +117,16 @@ export class TranscriptStore {
       if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
         allLines.pop();
       }
-      const tail = allLines.slice(-lines);
-      return tail.map((l) => this.stripAnsi(l)).join("\n") + "\n";
+      const normalizedLines = this.stripAnsi(allLines.slice(-lines).join("\n"))
+        .split("\n")
+        .map((line) => stripShellPromptPrefix(line))
+        .map((line) => line.trimEnd());
+      const filtered = normalizedLines
+        .filter((line, index) => line.trim() !== "")
+        .filter((line) => !isBareShellPrompt(line));
+      const tail = filtered
+        .filter((line, index) => !isPromptRedrawDuplicate(line, filtered[index + 1]));
+      return tail.length > 0 ? tail.join("\n") + "\n" : "";
     } catch {
       return null;
     }

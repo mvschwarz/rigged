@@ -89,6 +89,10 @@ beforeEach(() => {
   mockFetch.mockReset();
   OriginalEventSource = globalThis.EventSource;
   globalThis.EventSource = createMockEventSourceClass() as unknown as typeof EventSource;
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
 });
 
 afterEach(() => {
@@ -103,10 +107,11 @@ describe("RigGraph", () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse([
       {
         id: "pod-alpha",
-        type: "group",
+        type: "podGroup",
         position: { x: 0, y: 0 },
         data: {
           logicalId: "alpha",
+          podLabel: "Implementation",
           rigId: "rig-1",
           role: null,
           runtime: null,
@@ -127,16 +132,16 @@ describe("RigGraph", () => {
         position: { x: 0, y: 0 },
         parentId: "pod-alpha",
         data: {
-          logicalId: "dev.impl",
+          logicalId: "alpha.impl",
           rigId: "rig-1",
           role: "worker",
           runtime: "claude-code",
           model: null,
           status: "running",
-          binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+          binding: { tmuxSession: "alpha-impl@test-rig", cmuxSurface: null },
           nodeKind: "agent",
           startupStatus: "ready",
-          canonicalSessionName: "dev-impl@test-rig",
+          canonicalSessionName: "alpha-impl@test-rig",
           podId: "alpha",
           restoreOutcome: "n-a",
           resumeToken: null,
@@ -147,20 +152,22 @@ describe("RigGraph", () => {
     const { container } = render(<QueryWrapper><RigGraph showDiscovered={false} rigId="rig-1" /></QueryWrapper>);
 
     await waitFor(() => {
-      const groupNode = container.querySelector(".react-flow__node-group") as HTMLElement | null;
+      const groupNode = container.querySelector(".react-flow__node-podGroup") as HTMLElement | null;
       expect(groupNode).not.toBeNull();
-      expect(groupNode?.style.visibility).toBe("visible");
     });
+
+    expect(screen.getByText("alpha")).toBeDefined();
   });
 
   it("clicking a pod group routes selection back to the rig drawer", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse([
       {
         id: "pod-alpha",
-        type: "group",
+        type: "podGroup",
         position: { x: 0, y: 0 },
         data: {
           logicalId: "alpha",
+          podLabel: "Implementation",
           rigId: "rig-1",
           role: null,
           runtime: null,
@@ -181,16 +188,16 @@ describe("RigGraph", () => {
         position: { x: 0, y: 0 },
         parentId: "pod-alpha",
         data: {
-          logicalId: "dev.impl",
+          logicalId: "alpha.impl",
           rigId: "rig-1",
           role: "worker",
           runtime: "claude-code",
           model: null,
           status: "running",
-          binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+          binding: { tmuxSession: "alpha-impl@test-rig", cmuxSurface: null },
           nodeKind: "agent",
           startupStatus: "ready",
-          canonicalSessionName: "dev-impl@test-rig",
+          canonicalSessionName: "alpha-impl@test-rig",
           podId: "alpha",
           restoreOutcome: "n-a",
           resumeToken: null,
@@ -208,10 +215,10 @@ describe("RigGraph", () => {
     );
 
     await waitFor(() => {
-      expect(container.querySelector(".react-flow__node-group")).not.toBeNull();
+      expect(container.querySelector(".react-flow__node-podGroup")).not.toBeNull();
     });
 
-    fireEvent.click(container.querySelector(".react-flow__node-group")!);
+    fireEvent.click(container.querySelector(".react-flow__node-podGroup")!);
 
     expect(setSelection).toHaveBeenCalledWith({ type: "rig", rigId: "rig-1" });
   });
@@ -311,7 +318,7 @@ describe("RigGraph", () => {
 describe("RigNode", () => {
   it("displays logicalId, role, runtime, and status", () => {
     const data = {
-      logicalId: "dev1-impl",
+      logicalId: "dev.impl",
       role: "worker",
       runtime: "claude-code",
       model: "opus",
@@ -325,13 +332,12 @@ describe("RigNode", () => {
       </ReactFlowProvider>
     );
 
-    expect(screen.getByText("dev1-impl")).toBeDefined();
+    expect(screen.getByText("impl")).toBeDefined();
     expect(screen.getByText(/claude-code · opus/)).toBeDefined();
-    // Status badge now uses startupStatus (defaults to STOPPED when not provided)
-    expect(screen.getByText("STOPPED")).toBeDefined();
+    expect(screen.getByTestId("status-dot-dev.impl").getAttribute("aria-label")).toBe("stopped");
   });
 
-  it("shows 'UNKNOWN' status when binding is null and status is null", () => {
+  it("shows a compact stopped indicator when binding is null and status is null", () => {
     const data = {
       logicalId: "worker",
       role: "worker",
@@ -347,17 +353,16 @@ describe("RigNode", () => {
       </ReactFlowProvider>
     );
 
-    expect(screen.getByText("STOPPED")).toBeDefined();
+    expect(screen.getByTestId("status-dot-worker").getAttribute("aria-label")).toBe("stopped");
   });
 
-  // UIF-T05 Test 1: Status dot (pill badge) shows correct label and border style per status
-  it("status dot has correct border/text class per status", () => {
+  it("status dot uses color-only state on graph cards", () => {
     // NS-T12: status colors now based on startupStatus
     const statuses = [
-      { status: "running", startupStatus: "ready", expectedLabel: "READY", expectedClass: "border-green-500" },
-      { status: "running", startupStatus: "pending", expectedLabel: "LAUNCHING", expectedClass: "border-amber-500" },
-      { status: "running", startupStatus: "failed", expectedLabel: "FAILED", expectedClass: "border-red-500" },
-      { status: null, startupStatus: null, expectedLabel: "STOPPED", expectedClass: "border-stone-400" },
+      { status: "running", startupStatus: "ready", expectedLabel: "ready", expectedClass: "bg-green-500" },
+      { status: "running", startupStatus: "pending", expectedLabel: "launching", expectedClass: "bg-amber-500" },
+      { status: "running", startupStatus: "failed", expectedLabel: "failed", expectedClass: "bg-red-500" },
+      { status: null, startupStatus: null, expectedLabel: "stopped", expectedClass: "bg-stone-400" },
     ];
 
     for (const { status, startupStatus, expectedLabel, expectedClass } of statuses) {
@@ -379,13 +384,12 @@ describe("RigNode", () => {
       );
 
       const dot = screen.getByTestId("status-dot-test-node");
-      expect(dot.textContent).toBe(expectedLabel);
+      expect(dot.getAttribute("aria-label")).toBe(expectedLabel);
       expect(dot.className).toContain(expectedClass);
     }
   });
 
-  // NS-T12: toolbar actions render on hover
-  it("toolbar shows Copy tmux attach button when session name present", () => {
+  it("node actions are visible on the card surface when session commands are available", () => {
     const data = {
       logicalId: "dev.impl",
       rigId: "rig-1",
@@ -405,13 +409,71 @@ describe("RigNode", () => {
       </ReactFlowProvider>
     );
 
-    // Simulate hover to show toolbar
-    const node = screen.getByTestId("rig-node");
-    fireEvent.mouseEnter(node);
-
     expect(screen.getByTestId("toolbar-copy-attach")).toBeDefined();
     expect(screen.getByTestId("toolbar-cmux-focus")).toBeDefined();
     expect(screen.getByTestId("toolbar-copy-resume")).toBeDefined();
+  });
+
+  it("clicking the tmux action copies the attach command", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const data = {
+      logicalId: "dev.impl",
+      rigId: "rig-1",
+      role: "worker",
+      runtime: "claude-code",
+      model: null,
+      status: "running",
+      startupStatus: "ready" as const,
+      canonicalSessionName: "dev-impl@test-rig",
+      binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+      resumeToken: "abc-123",
+    };
+
+    render(
+      <ReactFlowProvider>
+        <RigNode data={data} />
+      </ReactFlowProvider>
+    );
+
+    fireEvent.click(screen.getByTestId("toolbar-copy-attach"));
+
+    expect(writeText).toHaveBeenCalledWith("tmux attach -t dev-impl@test-rig");
+  });
+
+  it("clicking the resume action copies the resume command", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const data = {
+      logicalId: "dev.impl",
+      rigId: "rig-1",
+      role: "worker",
+      runtime: "claude-code",
+      model: null,
+      status: "running",
+      startupStatus: "ready" as const,
+      canonicalSessionName: "dev-impl@test-rig",
+      binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+      resumeToken: "abc-123",
+    };
+
+    render(
+      <ReactFlowProvider>
+        <RigNode data={data} />
+      </ReactFlowProvider>
+    );
+
+    fireEvent.click(screen.getByTestId("toolbar-copy-resume"));
+
+    expect(writeText).toHaveBeenCalledWith("claude --resume abc-123");
   });
 
   it("toolbar hides resume button when no resumeToken", () => {
@@ -433,9 +495,6 @@ describe("RigNode", () => {
         <RigNode data={data} />
       </ReactFlowProvider>
     );
-
-    const node = screen.getByTestId("rig-node");
-    fireEvent.mouseEnter(node);
 
     expect(screen.getByTestId("toolbar-copy-attach")).toBeDefined();
     expect(screen.queryByTestId("toolbar-copy-resume")).toBeNull();

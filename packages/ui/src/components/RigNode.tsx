@@ -1,5 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
+import { copyText } from "../lib/copy-text.js";
+import { displayAgentName } from "../lib/display-name.js";
 
 interface RigNodeData {
   logicalId: string;
@@ -28,35 +30,25 @@ function isCore(role: string | null): boolean {
 
 function getStartupStatusLabel(startupStatus: string | null | undefined): string {
   switch (startupStatus) {
-    case "ready": return "READY";
-    case "pending": return "LAUNCHING";
-    case "failed": return "FAILED";
-    default: return "STOPPED";
+    case "ready": return "ready";
+    case "pending": return "launching";
+    case "failed": return "failed";
+    default: return "stopped";
   }
 }
 
-function getStartupStatusColor(startupStatus: string | null | undefined): string {
+function getStartupStatusColorClass(startupStatus: string | null | undefined): string {
   switch (startupStatus) {
-    case "ready": return "#22c55e"; // green-500
-    case "pending": return "#f59e0b"; // amber-500
-    case "failed": return "#ef4444"; // red-500
-    default: return "#a8a29e"; // stone-400
-  }
-}
-
-function getStartupStatusBorder(startupStatus: string | null | undefined): string {
-  switch (startupStatus) {
-    case "ready": return "border-green-500";
-    case "pending": return "border-amber-500";
-    case "failed": return "border-red-500";
-    default: return "border-stone-400";
+    case "ready": return "bg-green-500";
+    case "pending": return "bg-amber-500";
+    case "failed": return "bg-red-500";
+    default: return "bg-stone-400";
   }
 }
 
 export function RigNode({ data }: { data: RigNodeData }) {
   const prevStatusRef = useRef(data.startupStatus);
   const [statusChanged, setStatusChanged] = useState(false);
-  const [showToolbar, setShowToolbar] = useState(false);
   const core = isCore(data.role);
   const isInfra = data.nodeKind === "infrastructure";
 
@@ -71,12 +63,14 @@ export function RigNode({ data }: { data: RigNodeData }) {
   }, [data.startupStatus]);
 
   const runtimeModel = [data.runtime, data.model].filter(Boolean).join(" \u00B7 ");
-  const statusColor = getStartupStatusColor(data.startupStatus);
+  const agentName = displayAgentName(data.logicalId);
+  const statusLabel = getStartupStatusLabel(data.startupStatus);
+  const statusClass = getStartupStatusColorClass(data.startupStatus);
 
-  const handleCopyAttach = (e: React.MouseEvent) => {
+  const handleCopyAttach = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const name = data.canonicalSessionName ?? data.binding?.tmuxSession;
-    if (name) navigator.clipboard?.writeText(`tmux attach -t ${name}`);
+    if (name) await copyText(`tmux attach -t ${name}`);
   };
 
   const handleFocusCmux = async (e: React.MouseEvent) => {
@@ -87,13 +81,13 @@ export function RigNode({ data }: { data: RigNodeData }) {
     } catch { /* best-effort */ }
   };
 
-  const handleCopyResume = (e: React.MouseEvent) => {
+  const handleCopyResume = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!data.resumeToken) return;
     if (data.runtime === "claude-code") {
-      navigator.clipboard?.writeText(`claude --resume ${data.resumeToken}`);
+      await copyText(`claude --resume ${data.resumeToken}`);
     } else if (data.runtime === "codex") {
-      navigator.clipboard?.writeText(`codex resume ${data.resumeToken}`);
+      await copyText(`codex resume ${data.resumeToken}`);
     }
   };
 
@@ -101,8 +95,6 @@ export function RigNode({ data }: { data: RigNodeData }) {
     <div
       className="bg-white border border-stone-900 min-w-[200px] hard-shadow relative"
       data-testid="rig-node"
-      onMouseEnter={() => setShowToolbar(true)}
-      onMouseLeave={() => setShowToolbar(false)}
     >
       <Handle type="target" position={Position.Top} />
 
@@ -116,7 +108,6 @@ export function RigNode({ data }: { data: RigNodeData }) {
       }`}>
         <span>
           {isInfra ? "INFRA" : (data.role ?? "AGENT").toUpperCase()}
-          {data.podId && <span className="ml-2 opacity-60">{data.podId}</span>}
         </span>
         <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 0, 'wght' 300" }}>
           {core ? "settings" : "link"}
@@ -127,15 +118,15 @@ export function RigNode({ data }: { data: RigNodeData }) {
       <div className="p-3 space-y-2">
         {/* Name + status badge */}
         <div className="flex justify-between items-end border-b border-stone-100 pb-2">
-          <span className="font-headline font-bold text-sm tracking-tight uppercase">
-            {data.logicalId}
+          <span className="font-headline font-bold text-sm tracking-tight">
+            {agentName}
           </span>
           <span
-            className={`px-2 py-0.5 border font-mono text-[8px] uppercase ${getStartupStatusBorder(data.startupStatus)} ${statusChanged ? "status-changed" : ""}`}
-            style={{ "--status-color": statusColor, color: statusColor } as React.CSSProperties}
+            className={`inline-flex h-2.5 w-2.5 rounded-full ${statusClass} ${statusChanged ? "status-changed" : ""}`}
             data-testid={`status-dot-${data.logicalId}`}
+            aria-label={statusLabel}
+            title={statusLabel}
           >
-            {getStartupStatusLabel(data.startupStatus)}
           </span>
         </div>
 
@@ -174,44 +165,45 @@ export function RigNode({ data }: { data: RigNodeData }) {
             <span className="text-red-600">FAILED</span>
           </div>
         )}
-      </div>
 
-      {/* Node toolbar — appears on hover */}
-      {showToolbar && (
-        <div
-          data-testid="node-toolbar"
-          className="absolute -bottom-8 left-0 right-0 flex gap-1 justify-center"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={handleCopyAttach}
-            data-testid="toolbar-copy-attach"
-            className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
-            title={`tmux attach -t ${data.canonicalSessionName ?? data.binding?.tmuxSession ?? "?"}`}
+        {(data.canonicalSessionName ?? data.binding?.tmuxSession ?? data.resumeToken ?? data.binding?.cmuxSurface) && (
+          <div
+            data-testid="node-toolbar"
+            className="flex flex-wrap gap-1 pt-1"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
-            tmux
-          </button>
-          {data.binding?.cmuxSurface && (
-            <button
-              onClick={handleFocusCmux}
-              data-testid="toolbar-cmux-focus"
-              className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
-            >
-              cmux
-            </button>
-          )}
-          {data.resumeToken && data.runtime && data.runtime !== "terminal" && (
-            <button
-              onClick={handleCopyResume}
-              data-testid="toolbar-copy-resume"
-              className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
-            >
-              resume
-            </button>
-          )}
-        </div>
-      )}
+            {(data.canonicalSessionName ?? data.binding?.tmuxSession) && (
+              <button
+                onClick={handleCopyAttach}
+                data-testid="toolbar-copy-attach"
+                className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
+                title={`tmux attach -t ${data.canonicalSessionName ?? data.binding?.tmuxSession ?? "?"}`}
+              >
+                tmux
+              </button>
+            )}
+            {data.binding?.cmuxSurface && (
+              <button
+                onClick={handleFocusCmux}
+                data-testid="toolbar-cmux-focus"
+                className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
+              >
+                cmux
+              </button>
+            )}
+            {data.resumeToken && data.runtime && data.runtime !== "terminal" && (
+              <button
+                onClick={handleCopyResume}
+                data-testid="toolbar-copy-resume"
+                className="px-1.5 py-0.5 bg-white border border-stone-300 font-mono text-[7px] hover:bg-stone-100 uppercase"
+              >
+                resume
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <Handle type="source" position={Position.Bottom} />
     </div>

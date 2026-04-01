@@ -333,6 +333,7 @@ describe("Rig CRUD routes", () => {
     db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-1", rig.id, "Dev");
     const node = repo.addNode(rig.id, "dev.impl", { runtime: "claude-code", podId: "pod-1" });
     const session = sessionRegistry.registerSession(node.id, "dev-impl@test-rig");
+    sessionRegistry.updateStatus(session.id, "running");
     sessionRegistry.updateStartupStatus(session.id, "ready");
 
     const res = await app.request(`/api/rigs/${rig.id}/graph`);
@@ -349,7 +350,8 @@ describe("Rig CRUD routes", () => {
     // Group node for pod
     const groupNode = body.nodes.find((n: any) => n.id === "pod-pod-1");
     expect(groupNode).toBeDefined();
-    expect(groupNode.type).toBe("group");
+    expect(groupNode.type).toBe("podGroup");
+    expect(groupNode.data.podLabel).toBe("Dev");
   });
 
   // NS-T06: POST /api/rigs/:id/up — power-on from auto-pre-down snapshot

@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { projectRigToGraph } from "../src/domain/graph-projection.js";
 import type { RigGraphInput } from "../src/domain/graph-projection.js";
-import type { RigWithRelations, Session } from "../src/domain/types.js";
+import type { Pod, RigWithRelations, Session } from "../src/domain/types.js";
 
 function makeRig(
   nodes: { id: string; logicalId: string; role?: string; runtime?: string; bindingTmux?: string; cmuxSurface?: string }[],
   edges: { id: string; sourceId: string; targetId: string; kind: string }[] = [],
-  sessions: Session[] = []
+  sessions: Session[] = [],
+  pods: Pod[] = []
 ): RigGraphInput {
   const rig: RigWithRelations = {
     rig: { id: "rig-1", name: "r01", createdAt: "2026-03-23", updatedAt: "2026-03-23" },
@@ -41,7 +42,7 @@ function makeRig(
       createdAt: "2026-03-23",
     })),
   };
-  return { ...rig, sessions };
+  return { ...rig, sessions, pods };
 }
 
 function makeSession(nodeId: string, status: string, createdAt: string): Session {
@@ -229,6 +230,15 @@ describe("projectRigToGraph", () => {
     const input = makeRig([
       { id: "n1", logicalId: "dev.impl", runtime: "claude-code" },
       { id: "n2", logicalId: "dev.qa", runtime: "codex" },
+    ], [], [], [
+      {
+        id: "dev",
+        rigId: "rig-1",
+        label: "Implementation",
+        summary: null,
+        continuityPolicyJson: null,
+        createdAt: "2026-03-23",
+      },
     ]);
     // Add podId to nodes
     input.nodes[0]!.podId = "dev";
@@ -237,7 +247,8 @@ describe("projectRigToGraph", () => {
     const result = projectRigToGraph(input);
     const groupNode = result.nodes.find((n) => n.id === "pod-dev");
     expect(groupNode).toBeDefined();
-    expect(groupNode!.type).toBe("group");
+    expect(groupNode!.type).toBe("podGroup");
+    expect(groupNode!.data.podLabel).toBe("Implementation");
 
     // Child nodes should have parentId and podId in data
     const childNodes = result.nodes.filter((n) => n.parentId === "pod-dev");

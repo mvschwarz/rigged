@@ -13,7 +13,7 @@ function getNode(nodes: TestNode[], id: string): TestNode {
 function makeGroup(id: string): TestNode {
   return {
     id,
-    type: "group",
+    type: "podGroup",
     position: { x: 0, y: 0 },
     data: { logicalId: id },
   };
@@ -62,6 +62,29 @@ describe("applyTreeLayout", () => {
 
     expect(orchPod.position.y).toBeLessThan(devPod.position.y);
     expect(orchPod.position.y).toBeLessThan(qaPod.position.y);
+  });
+
+  it("keeps the overall topology in a single pod column", () => {
+    const nodes: TestNode[] = [
+      makeGroup("pod-orch"),
+      makeGroup("pod-dev"),
+      makeGroup("pod-rev"),
+      makeGroup("pod-infra"),
+      makeRigNode("orch.lead", "pod-orch"),
+      makeRigNode("dev.impl", "pod-dev"),
+      makeRigNode("rev.r1", "pod-rev"),
+      makeRigNode("infra.ui", "pod-infra"),
+    ];
+    const edges: TestEdge[] = [
+      makeDelegation("orch.lead", "dev.impl"),
+      makeDelegation("orch.lead", "rev.r1"),
+      makeDelegation("orch.lead", "infra.ui"),
+    ];
+
+    const laidOut = applyTreeLayout(nodes, edges);
+    const podXs = ["pod-orch", "pod-dev", "pod-rev", "pod-infra"].map((id) => getNode(laidOut, id).position.x);
+
+    expect(new Set(podXs).size).toBe(1);
   });
 
   it("pushes disconnected pods below the connected root flow", () => {

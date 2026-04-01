@@ -54,6 +54,8 @@ import { NodeSelectionContext } from "../src/components/AppShell.js";
 import { useState } from "react";
 
 describe("NodeDetailPanel integration with AppShell selection", () => {
+  afterEach(() => cleanup());
+
   it("NodeDetailPanel mounts when selectedNode is set via AppShell context", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (typeof url === "string" && url.includes("/nodes/dev.impl")) {
@@ -107,9 +109,10 @@ describe("NodeDetailPanel", () => {
     mockDetail(AGENT_DETAIL);
     renderPanel();
     await waitFor(() => {
+      expect(screen.getByText("Full Name")).toBeDefined();
       expect(screen.getByText("dev-impl@test-rig")).toBeDefined();
       expect(screen.getByText("claude-code")).toBeDefined();
-      expect(screen.getByText("impl")).toBeDefined();
+      expect(screen.getAllByText("impl").length).toBeGreaterThan(0);
     });
   });
 

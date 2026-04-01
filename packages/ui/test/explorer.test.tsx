@@ -93,6 +93,7 @@ describe("Explorer sidebar", () => {
 
     // Node should appear
     await waitFor(() => {
+      expect(screen.getByText("dev")).toBeDefined();
       expect(screen.getByText("impl")).toBeDefined();
     });
   });

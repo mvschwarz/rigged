@@ -1,11 +1,13 @@
-import type { RigWithRelations, Session, Binding } from "./types.js";
+import type { RigWithRelations, Session, Binding, Pod } from "./types.js";
 
 export interface RigGraphInput extends RigWithRelations {
   sessions: Session[];
+  pods?: Pod[];
 }
 
 interface RFNodeData {
   logicalId: string;
+  podLabel?: string | null;
   rigId: string;
   role: string | null;
   runtime: string | null;
@@ -50,8 +52,9 @@ export interface InventoryOverlay {
 }
 
 export function projectRigToGraph(input: RigGraphInput, inventoryOverlay?: InventoryOverlay[]): ReactFlowGraph {
-  const { nodes: rigNodes, edges: rigEdges, sessions } = input;
+  const { nodes: rigNodes, edges: rigEdges, sessions, pods = [] } = input;
   const overlayMap = new Map((inventoryOverlay ?? []).map((o) => [o.logicalId, o]));
+  const podLabelById = new Map(pods.map((pod) => [pod.id, pod.label]));
 
   // Collect unique pods for group nodes
   const podNodes = new Map<string, string[]>(); // podId → node IDs
@@ -81,6 +84,7 @@ export function projectRigToGraph(input: RigGraphInput, inventoryOverlay?: Inven
       parentId: node.podId ? `pod-${node.podId}` : undefined,
       data: {
         logicalId: node.logicalId,
+        podLabel: node.podId ? (podLabelById.get(node.podId) ?? null) : null,
         rigId: node.rigId,
         role: node.role,
         runtime: node.runtime,
@@ -102,10 +106,11 @@ export function projectRigToGraph(input: RigGraphInput, inventoryOverlay?: Inven
   for (const [podId] of podNodes) {
     groupNodes.push({
       id: `pod-${podId}`,
-      type: "group",
+      type: "podGroup",
       position: { x: 0, y: 0 },
       data: {
         logicalId: podId,
+        podLabel: podLabelById.get(podId) ?? podId,
         rigId: input.rig.id,
         role: null,
         runtime: null,

@@ -6,6 +6,7 @@ import type { SnapshotRepository } from "../domain/snapshot-repository.js";
 import type { RestoreOrchestrator } from "../domain/restore-orchestrator.js";
 import { projectRigToGraph, type InventoryOverlay } from "../domain/graph-projection.js";
 import { getNodeInventory } from "../domain/node-inventory.js";
+import type { Pod } from "../domain/types.js";
 
 export const rigsRoutes = new Hono();
 
@@ -56,13 +57,24 @@ rigsRoutes.get("/:id/graph", (c) => {
   const sessions = getSessionRegistry(c).getSessionsForRig(rigId);
   // Overlay inventory data for enriched graph fields
   const inventory = getNodeInventory(getRepo(c).db, rigId);
+  const pods = getRepo(c).db
+    .prepare("SELECT id, rig_id, label, summary, continuity_policy_json, created_at FROM pods WHERE rig_id = ? ORDER BY created_at")
+    .all(rigId) as Array<{ id: string; rig_id: string; label: string; summary: string | null; continuity_policy_json: string | null; created_at: string }>;
   const overlay: InventoryOverlay[] = inventory.map((n) => ({
     logicalId: n.logicalId,
     startupStatus: n.startupStatus,
     canonicalSessionName: n.canonicalSessionName,
     restoreOutcome: n.restoreOutcome,
   }));
-  return c.json(projectRigToGraph({ ...rig, sessions }, overlay));
+  const projectedPods: Pod[] = pods.map((pod) => ({
+    id: pod.id,
+    rigId: pod.rig_id,
+    label: pod.label,
+    summary: pod.summary,
+    continuityPolicyJson: pod.continuity_policy_json,
+    createdAt: pod.created_at,
+  }));
+  return c.json(projectRigToGraph({ ...rig, sessions, pods: projectedPods }, overlay));
 });
 
 rigsRoutes.delete("/:id", (c) => {

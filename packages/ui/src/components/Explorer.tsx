@@ -4,6 +4,7 @@ import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
 import { useNodeInventory, type NodeInventoryEntry } from "../hooks/useNodeInventory.js";
 import { cn } from "../lib/utils.js";
+import { displayAgentName, displayPodName, inferPodName } from "../lib/display-name.js";
 
 import type { DrawerSelection } from "./SharedDetailDrawer.js";
 
@@ -130,13 +131,13 @@ function RigNodes({ rigId, rigStatus, selection, onSelect }: {
       {[...pods.entries()].map(([podId, podNodes]) => (
         <div key={podId}>
           {podId !== "__ungrouped__" && (
-            <div className="px-5 py-0.5 font-mono text-[9px] text-stone-500 uppercase tracking-wider">
-              {podId}
+            <div className="px-5 py-0.5 font-mono text-[9px] text-stone-500 tracking-wider">
+              {inferPodName(podNodes[0]?.logicalId) ?? displayPodName(podId)}
             </div>
           )}
           {podNodes.map((node) => {
             const isSelected = selection?.type === "node" && selection.rigId === node.rigId && selection.logicalId === node.logicalId;
-            const memberName = node.logicalId.includes(".") ? node.logicalId.split(".").slice(1).join(".") : node.logicalId;
+            const memberName = displayAgentName(node.logicalId);
 
             return (
               <button

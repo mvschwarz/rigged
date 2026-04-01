@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
+import { useNodeInventory } from "../hooks/useNodeInventory.js";
 import { useSnapshots } from "../hooks/useSnapshots.js";
 import { RestoreError, useCreateSnapshot, useRestoreSnapshot } from "../hooks/mutations.js";
 import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { shortId } from "../lib/display-id.js";
+import { displayAgentName, displayPodName, inferPodName } from "../lib/display-name.js";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +52,7 @@ function formatRestoreError(err: Error, rigName: string): string {
 export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
   const { data: summaries } = useRigSummary();
   const { data: psEntries } = usePsEntries();
+  const { data: rawNodeInventory, isPending: nodesLoading } = useNodeInventory(rigId);
   const { data: snapshots = [], isPending: snapshotsLoading, error: snapshotsFetchError } = useSnapshots(rigId);
   const createSnapshot = useCreateSnapshot(rigId);
   const restoreSnapshot = useRestoreSnapshot(rigId);
@@ -61,6 +64,16 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
 
   const summary: RigSummary | undefined = summaries?.find((s) => s.id === rigId);
   const ps: PsEntry | undefined = psEntries?.find((p) => p.rigId === rigId);
+  const nodeInventory = Array.isArray(rawNodeInventory) ? rawNodeInventory : [];
+  const pods = Array.from(
+    nodeInventory.reduce((map, node) => {
+      const key = node.podId ?? "__ungrouped__";
+      const group = map.get(key) ?? [];
+      group.push(node);
+      map.set(key, group);
+      return map;
+    }, new Map<string, typeof nodeInventory>())
+  );
 
   const handleCreate = () => {
     setError(null);
@@ -129,6 +142,17 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
         <RigChatPanel rigId={rigId} />
       ) : (
       <>
+      {/* Identity */}
+      <div className="p-4 space-y-3 border-b border-stone-200">
+        <div>
+          <div className="text-xs font-bold uppercase text-stone-500 mb-1">Identity</div>
+          <div className="space-y-1 font-mono text-sm">
+            <div className="flex justify-between"><span className="text-stone-500">ID</span><span>{shortId(rigId)}</span></div>
+            <div className="flex justify-between gap-2"><span className="text-stone-500">Full ID</span><span className="truncate text-xs text-stone-500">{rigId}</span></div>
+          </div>
+        </div>
+      </div>
+
       {/* Status */}
       <div className="p-4 space-y-3 border-b border-stone-200">
         <div>
@@ -149,6 +173,34 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
             {formatSnapshotAge(summary?.latestSnapshotAt ?? null)}
           </div>
         </div>
+      </div>
+
+      {/* Pods */}
+      <div className="p-4 border-b border-stone-200">
+        <div className="text-xs font-bold uppercase text-stone-500 mb-3">Pods</div>
+        {nodesLoading ? (
+          <div className="font-mono text-[10px] text-stone-400">Loading pods...</div>
+        ) : pods.length === 0 ? (
+          <div className="font-mono text-[10px] text-stone-400">No nodes yet</div>
+        ) : (
+          <div className="space-y-2">
+            {pods.map(([podId, members]) => (
+              <div key={podId} className="p-2 bg-stone-50 border border-stone-200">
+                <div className="flex items-center justify-between">
+                  <div className="font-mono text-[10px] font-bold">{inferPodName(members[0]?.logicalId) ?? displayPodName(podId === "__ungrouped__" ? null : podId)}</div>
+                  <div className="font-mono text-[9px] text-stone-400">{members.length}</div>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {members.map((member) => (
+                    <span key={member.logicalId} className="font-mono text-[9px] text-stone-700 border border-stone-200 bg-white px-1.5 py-0.5">
+                      {displayAgentName(member.logicalId)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Snapshots */}

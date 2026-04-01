@@ -58,7 +58,7 @@ describe("RigDetailPanel", () => {
   it("renders rig name and ID", async () => {
     renderPanel("rig-1");
     expect(await screen.findByText("my-rig")).toBeTruthy();
-    expect(screen.getByText("rig-1")).toBeTruthy();
+    expect(screen.getByTestId("rig-full-id").textContent).toBe("rig-1");
   });
 
   it("shows node count and status", async () => {
@@ -194,5 +194,52 @@ describe("RigDetailPanel", () => {
     const text = panel.textContent ?? "";
     expect(text).not.toContain("No snapshots");
     expect(text).toMatch(/ago|< 1m/);
+  });
+
+  it("shows a pod summary with human-friendly pod names", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url === "/api/rigs/summary") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { id: "rig-1", name: "my-rig", nodeCount: 3, latestSnapshotAt: "2026-04-01T10:00:00Z", latestSnapshotId: "snap-1" },
+          ],
+        });
+      }
+      if (url === "/api/ps") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { rigId: "rig-1", name: "my-rig", nodeCount: 3, runningCount: 2, status: "running", uptime: "1h", latestSnapshot: null },
+          ],
+        });
+      }
+      if (url === "/api/rigs/rig-1/nodes") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { rigId: "rig-1", rigName: "my-rig", logicalId: "orch.lead", podId: "orch", nodeKind: "agent", runtime: "claude-code", startupStatus: "ready", canonicalSessionName: "orch-lead@my-rig" },
+            { rigId: "rig-1", rigName: "my-rig", logicalId: "dev.impl", podId: "dev", nodeKind: "agent", runtime: "claude-code", startupStatus: "ready", canonicalSessionName: "dev-impl@my-rig" },
+            { rigId: "rig-1", rigName: "my-rig", logicalId: "dev.qa", podId: "dev", nodeKind: "agent", runtime: "codex", startupStatus: "pending", canonicalSessionName: "dev-qa@my-rig" },
+          ],
+        });
+      }
+      if (url.includes("/snapshots")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "01HXYZ123456SNAP01", kind: "manual", createdAt: "2026-04-01T10:00:00Z" }],
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    renderPanel("rig-1");
+    await screen.findByText("my-rig");
+
+    expect(await screen.findByText("Pods")).toBeTruthy();
+    expect(screen.getByText("orch")).toBeTruthy();
+    expect(screen.getByText("dev")).toBeTruthy();
+    expect(screen.getByText("impl")).toBeTruthy();
+    expect(screen.getByText("qa")).toBeTruthy();
   });
 });

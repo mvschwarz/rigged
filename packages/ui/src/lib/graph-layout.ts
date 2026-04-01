@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import dagre from "dagre";
 
 interface LayoutNode {
   id: string;
@@ -31,6 +30,10 @@ interface LayoutEntity {
   members: LayoutNode[];
 }
 
+function isPodContainer(node: LayoutNode): boolean {
+  return node.type === "group" || node.type === "podGroup";
+}
+
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 160;
 const MAX_POD_COLUMNS = 3;
@@ -39,9 +42,8 @@ const POD_MEMBER_GAP_Y = 32;
 const POD_PADDING_X = 28;
 const POD_PADDING_TOP = 44;
 const POD_PADDING_BOTTOM = 28;
-const ENTITY_GAP_X = 72;
 const ENTITY_GAP_Y = 120;
-const DISCONNECTED_ROW_COLUMNS = 3;
+const SINGLE_COLUMN_X = 0;
 const HIERARCHY_EDGE_KINDS = new Set(["delegates_to", "spawned_by"]);
 
 export function applyTreeLayout(
@@ -54,7 +56,7 @@ export function applyTreeLayout(
 
   const groupedNodeIds = new Set(
     nodes
-      .filter((node) => node.type === "group")
+      .filter((node) => isPodContainer(node))
       .map((node) => node.id)
   );
 
@@ -74,7 +76,7 @@ export function applyTreeLayout(
   const containerByNodeId = new Map<string, string>();
 
   for (const node of nodes) {
-    if (node.type === "group") {
+    if (isPodContainer(node)) {
       const members = membersByGroup.get(node.id) ?? [];
       const { width, height } = measureGroup(members.length);
       entities.push({
@@ -112,41 +114,8 @@ export function applyTreeLayout(
     return nodes;
   }
 
-  const layoutGraph = new dagre.graphlib.Graph();
-  layoutGraph.setDefaultEdgeLabel(() => ({}));
-  layoutGraph.setGraph({
-    rankdir: "TB",
-    align: "UL",
-    nodesep: ENTITY_GAP_X,
-    ranksep: ENTITY_GAP_Y,
-    marginx: 0,
-    marginy: 0,
-  });
-
-  for (const entity of entities) {
-    layoutGraph.setNode(entity.id, { width: entity.width, height: entity.height });
-  }
-
   const layoutEdges = selectLayoutEdges(edges, containerByNodeId);
-  for (const edge of layoutEdges) {
-    layoutGraph.setEdge(edge.source, edge.target);
-  }
-
-  dagre.layout(layoutGraph);
-  const entityPositions = new Map<string, { x: number; y: number }>();
-  for (const entity of entities) {
-    const positioned = layoutGraph.node(entity.id);
-    if (!positioned) {
-      continue;
-    }
-
-    entityPositions.set(entity.id, {
-      x: positioned.x - entity.width / 2,
-      y: positioned.y - entity.height / 2,
-    });
-  }
-
-  repositionDisconnectedEntities(entities, layoutEdges, entityPositions);
+  const entityPositions = layoutSingleColumn(entities, layoutEdges);
 
   const laidOutById = new Map<string, LayoutNode>();
   for (const node of nodes) {
@@ -255,60 +224,114 @@ function getEdgeKind(edge: LayoutEdge): string {
   return edge.data?.kind ?? edge.label ?? "";
 }
 
-function repositionDisconnectedEntities(
+function layoutSingleColumn(
   entities: LayoutEntity[],
   edges: Array<{ source: string; target: string }>,
-  entityPositions: Map<string, { x: number; y: number }>
-): void {
-  const connected = new Set<string>();
+): Map<string, { x: number; y: number }> {
+  const entityById = new Map(entities.map((entity) => [entity.id, entity]));
+  const outgoing = new Map<string, Set<string>>();
+  const indegree = new Map<string, number>();
+  const orderedIds: string[] = [];
+  const visited = new Set<string>();
+
+  for (const entity of entities) {
+    outgoing.set(entity.id, new Set());
+    indegree.set(entity.id, 0);
+  }
+
   for (const edge of edges) {
-    connected.add(edge.source);
-    connected.add(edge.target);
-  }
-
-  if (connected.size === 0) {
-    return;
-  }
-
-  const disconnected = entities.filter((entity) => !connected.has(entity.id));
-  if (disconnected.length === 0) {
-    return;
-  }
-
-  const connectedEntities = entities.filter((entity) => connected.has(entity.id));
-  const connectedBottom = Math.max(
-    ...connectedEntities.map((entity) => {
-      const position = entityPositions.get(entity.id)!;
-      return position.y + entity.height;
-    })
-  );
-  const connectedCenter = average(
-    connectedEntities.map((entity) => {
-      const position = entityPositions.get(entity.id)!;
-      return position.x + entity.width / 2;
-    })
-  );
-
-  let nextTop = connectedBottom + ENTITY_GAP_Y;
-  for (let index = 0; index < disconnected.length; index += DISCONNECTED_ROW_COLUMNS) {
-    const row = disconnected.slice(index, index + DISCONNECTED_ROW_COLUMNS);
-    const rowWidth = row.reduce((sum, entity) => sum + entity.width, 0) +
-      Math.max(row.length - 1, 0) * ENTITY_GAP_X;
-    const rowHeight = Math.max(...row.map((entity) => entity.height));
-    let currentLeft = connectedCenter - rowWidth / 2;
-
-    for (const entity of row) {
-      entityPositions.set(entity.id, {
-        x: currentLeft,
-        y: nextTop,
-      });
-      currentLeft += entity.width + ENTITY_GAP_X;
+    if (!entityById.has(edge.source) || !entityById.has(edge.target)) {
+      continue;
     }
-
-    nextTop += rowHeight + ENTITY_GAP_Y;
+    if (outgoing.get(edge.source)!.has(edge.target)) {
+      continue;
+    }
+    outgoing.get(edge.source)!.add(edge.target);
+    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
   }
+
+  const connectedRoots = entities
+    .filter((entity) => (indegree.get(entity.id) ?? 0) === 0 && (outgoing.get(entity.id)?.size ?? 0) > 0)
+    .map((entity) => entity.id)
+    .sort((leftId, rightId) => compareEntities(leftId, rightId, outgoing, entities));
+  const disconnectedRoots = entities
+    .filter((entity) => (indegree.get(entity.id) ?? 0) === 0 && (outgoing.get(entity.id)?.size ?? 0) === 0)
+    .map((entity) => entity.id)
+    .sort((leftId, rightId) => compareEntities(leftId, rightId, outgoing, entities));
+
+  const appendReadyIds = (seedIds: string[]) => {
+    const remainingIndegree = new Map(indegree);
+    const queue = [...seedIds];
+    const queued = new Set(queue);
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) {
+        continue;
+      }
+
+      visited.add(currentId);
+      orderedIds.push(currentId);
+
+      const childIds = Array.from(outgoing.get(currentId) ?? []).sort((leftId, rightId) =>
+        compareEntities(leftId, rightId, outgoing, entities)
+      );
+
+      for (const childId of childIds) {
+        remainingIndegree.set(childId, (remainingIndegree.get(childId) ?? 1) - 1);
+      }
+
+      const nextReadyIds = childIds.filter((childId) =>
+        (remainingIndegree.get(childId) ?? 0) === 0 &&
+        !visited.has(childId) &&
+        !queued.has(childId)
+      );
+
+      for (const nextReadyId of nextReadyIds) {
+        queue.push(nextReadyId);
+        queued.add(nextReadyId);
+      }
+    }
+  };
+
+  appendReadyIds(connectedRoots);
+  appendReadyIds(disconnectedRoots);
+
+  const remainingIds = entities
+    .map((entity) => entity.id)
+    .filter((entityId) => !visited.has(entityId))
+    .sort((leftId, rightId) => compareEntities(leftId, rightId, outgoing, entities));
+
+  orderedIds.push(...remainingIds);
+
+  const positions = new Map<string, { x: number; y: number }>();
+  let nextY = 0;
+  for (const entityId of orderedIds) {
+    const entity = entityById.get(entityId);
+    if (!entity) {
+      continue;
+    }
+    positions.set(entity.id, {
+      x: SINGLE_COLUMN_X,
+      y: nextY,
+    });
+    nextY += entity.height + ENTITY_GAP_Y;
+  }
+
+  return positions;
 }
 
-function average(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+function compareEntities(
+  leftId: string,
+  rightId: string,
+  outgoing: Map<string, Set<string>>,
+  entities: LayoutEntity[]
+): number {
+  const leftOut = outgoing.get(leftId)?.size ?? 0;
+  const rightOut = outgoing.get(rightId)?.size ?? 0;
+  if (leftOut !== rightOut) {
+    return rightOut - leftOut;
+  }
+
+  return entities.findIndex((entity) => entity.id === leftId) - entities.findIndex((entity) => entity.id === rightId);
 }

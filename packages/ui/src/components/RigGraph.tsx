@@ -9,6 +9,23 @@ import { getEdgeStyle } from "@/lib/edge-styles";
 import { applyTreeLayout } from "@/lib/graph-layout";
 import { RigNode } from "./RigNode.js";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { displayPodName, inferPodName } from "../lib/display-name.js";
+import { shortId } from "../lib/display-id.js";
+
+function PodGroupNode({ data }: { data: { podLabel?: string | null; logicalId?: string | null; podId?: string | null; podDisplayName?: string | null } }) {
+  const label = data.podDisplayName ?? inferPodName(data.logicalId) ?? displayPodName(data.podId ?? data.logicalId);
+
+  return (
+    <div
+      data-testid="pod-group-node"
+      className="w-full h-full relative pointer-events-auto"
+    >
+      <div className="absolute left-3 top-2 px-2 py-1 bg-white/90 border border-stone-300 font-mono text-[10px] tracking-[0.12em] text-stone-600 shadow-sm">
+        {label}
+      </div>
+    </div>
+  );
+}
 
 /** Discovered (unmanaged) node rendered with dashed border */
 function DiscoveredNode({ data }: { data: { session: DiscoveredSession } }) {
@@ -30,6 +47,7 @@ function DiscoveredNode({ data }: { data: { session: DiscoveredSession } }) {
 const nodeTypes: NodeTypes = {
   rigNode: RigNode,
   discoveredNode: DiscoveredNode,
+  podGroup: PodGroupNode,
 };
 
 /** Wireframe ghost for empty topology */
@@ -111,9 +129,34 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
 
   // Apply tree layout + entrance animation to nodes
   const rfNodes = useMemo(() => {
+    const podDisplayNames = new Map<string, string>();
+    for (const node of rawNodes as Node[]) {
+      if (!node.parentId) {
+        continue;
+      }
+
+      const logicalId = typeof node.data === "object" && node.data !== null && "logicalId" in node.data
+        ? (node.data as { logicalId?: string | null }).logicalId
+        : null;
+      const podId = typeof node.data === "object" && node.data !== null && "podId" in node.data
+        ? (node.data as { podId?: string | null }).podId
+        : null;
+      const podDisplayName = inferPodName(logicalId) ?? displayPodName(podId);
+
+      if (podDisplayName && !podDisplayNames.has(node.parentId)) {
+        podDisplayNames.set(node.parentId, podDisplayName);
+      }
+    }
+
     const layoutNodes = applyTreeLayout(rawNodes as Node[], rawEdges as unknown as Parameters<typeof applyTreeLayout>[1]);
     const managed = layoutNodes.map((node, index) => ({
       ...node,
+      data: node.type === "podGroup" || node.type === "group"
+        ? {
+            ...(node.data ?? {}),
+            podDisplayName: podDisplayNames.get(node.id) ?? null,
+          }
+        : node.data,
       className: shouldAnimate ? "node-enter" : undefined,
       style: {
         ...(node.style ?? {}),
@@ -140,7 +183,7 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
     async (_event, node) => {
       if (!rigId) return;
 
-      if (node.type === "group") {
+      if (node.type === "podGroup" || node.type === "group") {
         setSelection({ type: "rig", rigId });
         return;
       }
@@ -227,7 +270,7 @@ export function RigGraph({ rigId, showDiscovered = true }: { rigId: string | nul
       {/* Ambient rig stamp watermark */}
       {rigId && (
         <div className="stamp-watermark text-3xl left-[20%] top-[35%]">
-          {rigId.slice(0, 12)}
+          {shortId(rigId)}
         </div>
       )}
 

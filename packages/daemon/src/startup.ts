@@ -52,7 +52,10 @@ import { RigTeardownOrchestrator } from "./domain/rig-teardown.js";
 import { ResumeMetadataRefresher } from "./domain/resume-metadata-refresher.js";
 import { TranscriptStore } from "./domain/transcript-store.js";
 import { SessionTransport } from "./domain/session-transport.js";
+import { HistoryQuery } from "./domain/history-query.js";
+import { AskService } from "./domain/ask-service.js";
 import { createApp, type AppDeps } from "./server.js";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -272,6 +275,32 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     runtimeAdapters: { "claude-code": claudeAdapter, "codex": codexAdapter, "terminal": new (await import("./adapters/terminal-adapter.js")).TerminalAdapter() },
     transcriptStore,
     sessionTransport: new SessionTransport({ db, rigRepo, sessionRegistry, tmuxAdapter }),
+    askService: (() => {
+      const psProjectionService = new PsProjectionService({ db });
+      const execDep = (cmd: string, args: string[]): Promise<{ stdout: string; exitCode: number }> =>
+        new Promise((resolve) => {
+          execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+            if (err && typeof (err as NodeJS.ErrnoException).code === "string" && (err as NodeJS.ErrnoException).code === "ENOENT") {
+              resolve({ stdout: "", exitCode: 2 });
+              return;
+            }
+            const exitCode = err ? (err as { code?: number }).code ?? 1 : 0;
+            resolve({ stdout: stdout ?? "", exitCode: typeof exitCode === "number" ? exitCode : 1 });
+          });
+        });
+      const historyQuery = new HistoryQuery({
+        transcriptsRoot: transcriptStore.enabled
+          ? (transcriptsPath ?? nodePath.join(os.homedir(), ".rigged", "transcripts"))
+          : nodePath.join(os.homedir(), ".rigged", "transcripts"),
+        exec: execDep,
+      });
+      return new AskService({
+        psProjectionService,
+        rigRepo,
+        historyQuery,
+        transcriptsEnabled: transcriptStore.enabled,
+      });
+    })(),
   };
 
   const app = createApp(deps);

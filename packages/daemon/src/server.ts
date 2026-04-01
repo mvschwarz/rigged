@@ -42,6 +42,8 @@ import type { TranscriptStore } from "./domain/transcript-store.js";
 import type { SessionTransport } from "./domain/session-transport.js";
 import { transcriptRoutes } from "./routes/transcripts.js";
 import { transportRoutes } from "./routes/transport.js";
+import { askRoutes } from "./routes/ask.js";
+import type { AskService } from "./domain/ask-service.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -73,6 +75,7 @@ export interface AppDeps {
   runtimeAdapters?: Record<string, import("./domain/runtime-adapter.js").RuntimeAdapter>;
   transcriptStore?: TranscriptStore;
   sessionTransport?: SessionTransport;
+  askService?: AskService;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -159,6 +162,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("runtimeAdapters" as never, deps.runtimeAdapters ?? {});
     c.set("transcriptStore" as never, deps.transcriptStore);
     c.set("sessionTransport" as never, deps.sessionTransport);
+    c.set("askService" as never, deps.askService);
     c.set("db" as never, deps.rigRepo.db);
     await next();
   });
@@ -187,6 +191,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/down", downRoutes);
   app.route("/api/transcripts", transcriptRoutes());
   app.route("/api/transport", transportRoutes());
+  app.route("/api/ask", askRoutes);
 
   return app;
 }

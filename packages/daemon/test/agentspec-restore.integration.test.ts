@@ -162,7 +162,7 @@ describe("AS-T09: Continuity + snapshot/restore evolution", () => {
     if (result.ok) {
       // Node should be skipped (fresh_no_checkpoint) because continuity_state=restoring
       const nodeResult = result.result.nodes.find((n) => n.nodeId === node.id);
-      expect(nodeResult!.status).toBe("fresh_no_checkpoint");
+      expect(nodeResult!.status).toBe("fresh");
       // Warnings should mention restoring
       expect(result.result.warnings.some((w) => w.includes("restoring"))).toBe(true);
       // Binding should be preserved (not cleared)
@@ -289,7 +289,7 @@ describe("AS-T09: Continuity + snapshot/restore evolution", () => {
       // Node honestly reports its restore outcome (mock resume didn't actually resume)
       const nodeResult = result.result.nodes.find((n) => n.nodeId === node.id);
       // Status reflects actual resume outcome, not assumed success
-      expect(["resumed", "fresh_no_checkpoint", "checkpoint_written"]).toContain(nodeResult!.status);
+      expect(["resumed", "fresh", "rebuilt"]).toContain(nodeResult!.status);
     }
     ctx.db.close();
   });

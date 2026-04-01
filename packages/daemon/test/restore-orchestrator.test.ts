@@ -569,7 +569,7 @@ describe("RestoreOrchestrator", () => {
 
     expect(claude.resume).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+    if (result.ok) expect(result.result.nodes[0]!.status).toBe("rebuilt");
     fs.rmSync(tmpDir, { recursive: true });
   });
 
@@ -601,7 +601,7 @@ describe("RestoreOrchestrator", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.result.nodes[0]!.status).toBe("checkpoint_written");
+      expect(result.result.nodes[0]!.status).toBe("rebuilt");
       // Verify exact file path and content
       const filePath = path.join(tmpDir, ".rigged-checkpoint.md");
       expect(fs.existsSync(filePath)).toBe(true);
@@ -628,7 +628,7 @@ describe("RestoreOrchestrator", () => {
     }
   });
 
-  it("no checkpoint -> status 'fresh_no_checkpoint'", async () => {
+  it("no checkpoint -> status 'fresh'", async () => {
     const snap = seedRigAndSnapshot({
       nodes: [{ logicalId: "worker", role: "worker", runtime: "claude-code" }],
       edges: [],
@@ -637,7 +637,7 @@ describe("RestoreOrchestrator", () => {
     const result = await orch.restore(snap.id);
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.result.nodes[0]!.status).toBe("fresh_no_checkpoint");
+    if (result.ok) expect(result.result.nodes[0]!.status).toBe("fresh");
   });
 
   it("node launch fails -> status 'failed', remaining nodes processed", async () => {

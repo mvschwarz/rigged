@@ -84,8 +84,11 @@ function deriveRestoreOutcome(db: Database.Database, rigId: string, nodeId: stri
 
     if (nodeResult.status === "resumed") return "resumed";
     if (nodeResult.status === "failed") return "failed";
-    // checkpoint_written and fresh_no_checkpoint are restore-path outcomes,
-    // not explicit fresh launches. Map to n-a until NS-T06 adds explicit fresh-launch state.
+    if (nodeResult.status === "rebuilt") return "rebuilt";
+    if (nodeResult.status === "fresh") return "fresh";
+    // Compat: old persisted events may contain pre-rename values
+    if ((nodeResult.status as string) === "checkpoint_written") return "rebuilt";
+    if ((nodeResult.status as string) === "fresh_no_checkpoint") return "fresh";
     return "n-a";
   } catch {
     return "n-a";

@@ -295,7 +295,7 @@ export class RestoreOrchestrator {
       if (continuityRow) {
         if (continuityRow.status === "restoring") {
           warnings?.push(`Node ${node.logicalId}: continuity state is 'restoring', skipping`);
-          return { nodeId, logicalId: node.logicalId, status: "fresh_no_checkpoint" };
+          return { nodeId, logicalId: node.logicalId, status: "fresh" };
         }
         if (continuityRow.status === "degraded") {
           warnings?.push(`Node ${node.logicalId}: continuity state is 'degraded', proceeding with caution`);
@@ -363,7 +363,7 @@ export class RestoreOrchestrator {
     const resumeType = session?.resumeType ?? null;
     const resumeToken = session?.resumeToken ?? null;
 
-    let baseStatus: RestoreNodeResult["status"] = "fresh_no_checkpoint";
+    let baseStatus: RestoreNodeResult["status"] = "fresh";
 
     // Pod-aware nodes: resume via launchHarness (handled in startup orchestrator with skipHarnessLaunch: false)
     // Legacy nodes: resume via old claude-resume/codex-resume helpers
@@ -382,7 +382,7 @@ export class RestoreOrchestrator {
       }
     } else if (restorePolicy === "resume_if_possible" && isPodAware) {
       // Pod-aware restore: launchHarness handles resume (with token) or fresh (without)
-      // baseStatus stays fresh_no_checkpoint — it will be updated to "resumed" after
+      // baseStatus stays fresh — it will be updated to "resumed" after
       // startup replay succeeds IF the harness resumes. Fresh launch with no token
       // is honest: the node boots but without prior context.
       if (!resumeToken) {
@@ -397,7 +397,7 @@ export class RestoreOrchestrator {
       }
       const written = this.writeCheckpointFile(node.cwd, checkpoint);
       if (written) {
-        baseStatus = "checkpoint_written";
+        baseStatus = "rebuilt";
       } else {
         return { nodeId: node.id, logicalId: node.logicalId, status: "failed", error: "Checkpoint file write failed" };
       }

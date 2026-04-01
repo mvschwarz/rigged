@@ -144,7 +144,7 @@ function createMockDaemon() {
       res.end(JSON.stringify({
         nodes: [
           { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
-          { nodeId: "n2", logicalId: "worker", status: "checkpoint_written" },
+          { nodeId: "n2", logicalId: "worker", status: "rebuilt" },
         ],
         attachCommand: "tmux attach -t orch-lead@test-rig",
       }));
@@ -225,7 +225,7 @@ describe("rigged snapshot + restore", () => {
     expect(output).toContain("orchestrator");
     expect(output).toContain("resumed");
     expect(output).toContain("worker");
-    expect(output).toContain("checkpoint_written");
+    expect(output).toContain("rebuilt");
     // NS-T14: handoff includes attach command
     expect(output).toContain("Attach:");
     expect(output).toContain("tmux attach -t orch-lead@test-rig");

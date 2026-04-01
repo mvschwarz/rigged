@@ -204,7 +204,7 @@ export interface RestoreResult {
 export interface RestoreNodeResult {
   nodeId: string;
   logicalId: string;
-  status: "resumed" | "checkpoint_written" | "fresh_no_checkpoint" | "failed";
+  status: "resumed" | "rebuilt" | "fresh" | "failed";
   error?: string;
 }
 
@@ -218,7 +218,7 @@ export type RestoreOutcome =
 
 // -- Node inventory projection (NS-T02) --
 
-export type NodeRestoreOutcome = "resumed" | "fresh-after-explicit-launch" | "failed" | "n-a";
+export type NodeRestoreOutcome = "resumed" | "rebuilt" | "fresh" | "failed" | "n-a";
 
 export interface NodeInventoryEntry {
   rigId: string;

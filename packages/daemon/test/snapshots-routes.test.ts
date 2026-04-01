@@ -277,7 +277,7 @@ describe("Restore response contract", () => {
     const res = await setup.app.request(`/api/rigs/${rig.id}/restore/${snap.id}`, { method: "POST" });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.nodes[0].status).toBe("checkpoint_written");
+    expect(body.nodes[0].status).toBe("rebuilt");
 
     db2.close();
     fs.rmSync(tmpDir, { recursive: true });

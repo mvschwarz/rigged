@@ -146,7 +146,7 @@ describe("SnapshotPanel", () => {
       if (typeof url === "string" && url.includes("/restore/") && opts?.method === "POST") {
         return Promise.resolve(mockRestoreResult([
           { nodeId: "n1", logicalId: "orchestrator", status: "resumed" },
-          { nodeId: "n2", logicalId: "worker", status: "checkpoint_written" },
+          { nodeId: "n2", logicalId: "worker", status: "rebuilt" },
         ]));
       }
       if (typeof url === "string" && url.includes("/snapshots")) {
@@ -169,7 +169,7 @@ describe("SnapshotPanel", () => {
       expect(result.textContent).toContain("orchestrator");
       expect(result.textContent).toContain("resumed");
       expect(result.textContent).toContain("worker");
-      expect(result.textContent).toContain("checkpoint_written");
+      expect(result.textContent).toContain("rebuilt");
     });
   });
 
@@ -201,9 +201,9 @@ describe("SnapshotPanel", () => {
 
     await waitFor(() => {
       const resumed = screen.getByTestId("restore-status-orchestrator");
-      expect(resumed.className).toContain("text-stone-400");
+      expect(resumed.className).toContain("text-success");
       const failed = screen.getByTestId("restore-status-worker");
-      expect(failed.className).toContain("text-tertiary");
+      expect(failed.className).toContain("text-destructive");
     });
   });
 

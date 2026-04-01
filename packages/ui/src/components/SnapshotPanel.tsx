@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSnapshots } from "../hooks/useSnapshots.js";
 import { useCreateSnapshot, useRestoreSnapshot } from "../hooks/mutations.js";
+import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,14 +36,7 @@ function formatAge(timestamp: string): string {
   return `${diffDay}d ago`;
 }
 
-function getRestoreStatusColor(status: string): string {
-  switch (status) {
-    case "launched": return "text-success";
-    case "skipped": return "text-stone-400";
-    case "failed": return "text-tertiary";
-    default: return "text-stone-400";
-  }
-}
+// Uses shared restore-status-colors.ts — single source of truth for restore vocabulary
 
 export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
   const { data: snapshots = [], isPending: loading, error: fetchError } = useSnapshots(rigId);
@@ -120,7 +114,7 @@ export function SnapshotPanel({ rigId }: SnapshotPanelProps) {
             {restoreResult.map((n) => (
               <div key={n.nodeId} className="flex items-center justify-between font-mono text-[10px]">
                 <span>{n.logicalId}</span>
-                <span className={getRestoreStatusColor(n.status)} data-testid={`restore-status-${n.logicalId}`}>
+                <span className={getRestoreStatusColorClass(n.status)} data-testid={`restore-status-${n.logicalId}`}>
                   {n.status}
                 </span>
               </div>

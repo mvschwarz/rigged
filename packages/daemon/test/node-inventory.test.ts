@@ -191,6 +191,32 @@ describe("Node Inventory Projection", () => {
     expect(infra?.restoreOutcome).toBe("failed");
   });
 
+  // Resume state naming: rebuilt and fresh outcomes from inventory
+  it("restoreOutcome maps checkpoint_written to 'rebuilt' and fresh_no_checkpoint to 'fresh'", () => {
+    seedPodAwareRig(db);
+    seedSession(db, "node-1", "dev-impl@test-rig");
+    seedSession(db, "node-2", "infra-server@test-rig");
+    seedEvent(db, "rig-1", "node-1", "restore.completed", {
+      rigId: "rig-1",
+      snapshotId: "snap-1",
+      result: {
+        snapshotId: "snap-1",
+        preRestoreSnapshotId: "snap-0",
+        nodes: [
+          { nodeId: "node-1", logicalId: "dev.impl", status: "rebuilt" },
+          { nodeId: "node-2", logicalId: "infra.server", status: "fresh" },
+        ],
+        warnings: [],
+      },
+    });
+
+    const entries = getNodeInventory(db, "rig-1");
+    const agent = entries.find((e) => e.logicalId === "dev.impl");
+    const infra = entries.find((e) => e.logicalId === "infra.server");
+    expect(agent?.restoreOutcome).toBe("rebuilt");
+    expect(infra?.restoreOutcome).toBe("fresh");
+  });
+
   // Test 9: latestError populated from startup_failed events
   it("latestError from startup_failed event", () => {
     seedPodAwareRig(db);

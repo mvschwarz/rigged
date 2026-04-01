@@ -3,7 +3,7 @@ import { probeNodeResume } from "./resume-probe-lib.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const rig = String(args["rig"] ?? "demo-rig");
+  const rig = String(args["rig"] ?? args["rig-id"] ?? "demo-rig");
   const logicalIdFilter = typeof args["logical-id"] === "string" ? String(args["logical-id"]) : null;
   const json = args["json"] === true;
   const output = typeof args["output"] === "string" ? String(args["output"]) : null;

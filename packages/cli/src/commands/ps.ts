@@ -139,13 +139,15 @@ async function handleNodes(client: DaemonClient, json: boolean): Promise<void> {
     return;
   }
 
-  const header = padNodeRow("POD", "MEMBER", "SESSION", "RUNTIME", "STATUS", "STARTUP", "RESTORE", "ERROR");
+  const header = padNodeRow("RIG", "POD", "MEMBER", "SESSION", "RUNTIME", "STATUS", "STARTUP", "RESTORE", "ERROR");
   console.log(header);
   for (const n of allNodes) {
     const parts = n.logicalId.split(".");
     const pod = parts.length > 1 ? parts[0]! : "—";
     const member = parts.length > 1 ? parts.slice(1).join(".") : n.logicalId;
+    const rig = `${n.rigName}#${n.rigId}`;
     console.log(padNodeRow(
+      rig,
       pod,
       member,
       n.canonicalSessionName ?? "—",
@@ -173,8 +175,9 @@ function padRigRow(rig: string, nodes: string, running: string, status: string, 
   ].join("");
 }
 
-function padNodeRow(pod: string, member: string, session: string, runtime: string, status: string, startup: string, restore: string, error: string): string {
+function padNodeRow(rig: string, pod: string, member: string, session: string, runtime: string, status: string, startup: string, restore: string, error: string): string {
   return [
+    rig.padEnd(22),
     pod.padEnd(10),
     member.padEnd(10),
     session.padEnd(28),

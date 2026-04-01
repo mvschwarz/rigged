@@ -16,7 +16,7 @@ interface SeedRoundResult {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const rig = String(args["rig"] ?? "demo-rig");
+  const rig = String(args["rig"] ?? args["rig-id"] ?? "demo-rig");
   const maxRounds = Number(args["max-rounds"] ?? "6");
   const waitMs = Number(args["wait-ms"] ?? "8000");
   const json = args["json"] === true;

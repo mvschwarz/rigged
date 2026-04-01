@@ -137,7 +137,7 @@ describe("Ps CLI", () => {
 
   // NS-T08: ps --nodes tests
 
-  it("ps --nodes formats table with correct columns including RESTORE", async () => {
+  it("ps --nodes formats table with rig context and restore columns", async () => {
     psData = [
       { rigId: "rig-1", name: "test-rig", nodeCount: 2, runningCount: 2, status: "running", uptime: "1h", latestSnapshot: null },
     ];
@@ -159,13 +159,44 @@ describe("Ps CLI", () => {
       await makeCmd().parseAsync(["node", "rigged", "ps", "--nodes"]);
     });
     const output = logs.join("\n");
+    expect(output).toContain("RIG");
     expect(output).toContain("POD");
     expect(output).toContain("MEMBER");
     expect(output).toContain("SESSION");
     expect(output).toContain("RUNTIME");
     expect(output).toContain("RESTORE");
+    expect(output).toContain("test-rig#rig-1");
     expect(output).toContain("dev-impl@test-rig");
     expect(output).toContain("terminal");
+  });
+
+  it("ps --nodes includes rig identifiers so duplicate rig names stay distinguishable", async () => {
+    psData = [
+      { rigId: "rig-old", name: "demo-rig", nodeCount: 1, runningCount: 0, status: "stopped", uptime: null, latestSnapshot: "1m ago" },
+      { rigId: "rig-new", name: "demo-rig", nodeCount: 1, runningCount: 1, status: "running", uptime: "10s", latestSnapshot: null },
+    ];
+    nodesData["rig-old"] = [
+      {
+        rigId: "rig-old", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-1",
+        canonicalSessionName: "dev-impl@demo-rig", nodeKind: "agent", runtime: "claude-code",
+        sessionStatus: "exited", startupStatus: "failed", restoreOutcome: "failed",
+        tmuxAttachCommand: null, resumeCommand: null, latestError: "old restore failed",
+      },
+    ];
+    nodesData["rig-new"] = [
+      {
+        rigId: "rig-new", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-2",
+        canonicalSessionName: "dev-impl@demo-rig", nodeKind: "agent", runtime: "claude-code",
+        sessionStatus: "running", startupStatus: "ready", restoreOutcome: "n-a",
+        tmuxAttachCommand: null, resumeCommand: null, latestError: null,
+      },
+    ];
+    const { logs } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rigged", "ps", "--nodes"]);
+    });
+    const output = logs.join("\n");
+    expect(output).toContain("demo-rig#rig-old");
+    expect(output).toContain("demo-rig#rig-new");
   });
 
   it("ps --nodes --json produces valid JSON array with restoreOutcome", async () => {

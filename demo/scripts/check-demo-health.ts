@@ -1,15 +1,22 @@
-import { listRigNodes, listRigSummaries, parseArgs, isAgentRuntime } from "./common.js";
+import {
+  getCurrentRigSummary,
+  listRigNodes,
+  parseArgs,
+  isAgentRuntime,
+} from "./common.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const rig = String(args["rig"] ?? "demo-rig");
+  const rig = String(args["rig"] ?? args["rig-id"] ?? "demo-rig");
   const json = args["json"] === true;
 
-  const rigSummary = listRigSummaries().find((entry) => entry.name === rig) ?? null;
+  const rigSummary = getCurrentRigSummary(rig);
   const nodes = listRigNodes(rig);
 
   const summary = {
     rig,
+    rigId: rigSummary?.rigId ?? null,
+    status: rigSummary?.status ?? null,
     exists: Boolean(rigSummary),
     nodeCount: nodes.length,
     agentCount: nodes.filter((node) => isAgentRuntime(node.runtime)).length,
@@ -34,6 +41,12 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(summary, null, 2));
   } else {
     console.log(`Demo health: ${rig}`);
+    if (summary.rigId) {
+      console.log(`- rigId: ${summary.rigId}`);
+    }
+    if (summary.status) {
+      console.log(`- status: ${summary.status}`);
+    }
     console.log(`- exists: ${summary.exists ? "yes" : "no"}`);
     console.log(`- nodes: ${summary.nodeCount}`);
     console.log(`- ready: ${summary.startupReady.length}`);

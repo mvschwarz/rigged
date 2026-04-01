@@ -80,8 +80,17 @@ export function listRigSummaries(): DemoRigSummary[] {
   return runRiggedJson<DemoRigSummary[]>(["ps", "--json"]);
 }
 
-export function listRigNodes(rigName: string): DemoNodeEntry[] {
-  const summary = selectCurrentRigSummary(listRigSummaries(), rigName);
+export function getCurrentRigSummary(rigNameOrId: string): DemoRigSummary | null {
+  const summaries = listRigSummaries();
+  const byId = summaries.find((summary) => summary.rigId === rigNameOrId);
+  if (byId) {
+    return byId;
+  }
+  return selectCurrentRigSummary(summaries, rigNameOrId);
+}
+
+export function listRigNodes(rigNameOrId: string): DemoNodeEntry[] {
+  const summary = getCurrentRigSummary(rigNameOrId);
   if (!summary) {
     return [];
   }

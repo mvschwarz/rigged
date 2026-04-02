@@ -63,10 +63,12 @@ describe("Explorer sidebar", () => {
     await waitFor(() => {
       expect(screen.getByText("auth-feats")).toBeDefined();
     });
-    expect(screen.getByText("Local")).toBeDefined();
+    expect(screen.getByText("Environment: Local")).toBeDefined();
     expect(screen.getByText("Discovery")).toBeDefined();
     expect(screen.getByText("Specs")).toBeDefined();
     expect(screen.queryByText("Import")).toBeNull();
+    expect(screen.getByTestId("environment-icon-local")).toBeDefined();
+    expect(screen.getByTestId("rig-icon-auth-feats")).toBeDefined();
   });
 
   it("renders footer actions as full-width list rows", async () => {
@@ -118,7 +120,7 @@ describe("Explorer sidebar", () => {
     renderExplorer();
 
     await waitFor(() => expect(screen.getByText("test-rig")).toBeDefined());
-    expect(screen.getByText("Local")).toBeDefined();
+    expect(screen.getByText("Environment: Local")).toBeDefined();
     expect(screen.queryByText("dev")).toBeNull();
     expect(screen.queryByText("impl")).toBeNull();
 
@@ -204,6 +206,7 @@ describe("Explorer sidebar", () => {
     fireEvent.click(screen.getByLabelText("Expand rig test-rig"));
     await waitFor(() => {
       expect(screen.getByText("INFRA")).toBeDefined();
+      expect(screen.getByTestId("node-icon-infra.server")).toBeDefined();
     });
   });
 

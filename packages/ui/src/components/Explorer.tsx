@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Boxes, ChevronLeft, ChevronRight, CircleDot, Globe, Layers3, Server } from "lucide-react";
 import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
 import { useNodeInventory, type NodeInventoryEntry } from "../hooks/useNodeInventory.js";
@@ -22,19 +22,19 @@ interface ExplorerProps {
 
 function statusColor(startupStatus: string | null): string {
   switch (startupStatus) {
-    case "ready": return "bg-green-500";
-    case "pending": return "bg-amber-400";
-    case "failed": return "bg-red-500";
-    default: return "bg-stone-400";
+    case "ready": return "text-green-600";
+    case "pending": return "text-amber-500";
+    case "failed": return "text-red-600";
+    default: return "text-stone-400";
   }
 }
 
 function rigStatusColor(status: string): string {
   switch (status) {
-    case "running": return "bg-green-500";
-    case "partial": return "bg-amber-400";
-    case "stopped": return "bg-stone-400";
-    default: return "bg-stone-400";
+    case "running": return "text-green-600";
+    case "partial": return "text-amber-500";
+    case "stopped": return "text-stone-400";
+    default: return "text-stone-400";
   }
 }
 
@@ -62,7 +62,10 @@ function TreeToggle({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
       aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
       className="inline-flex h-5 w-5 items-center justify-center text-stone-500 transition-colors hover:text-stone-900"
     >
@@ -94,6 +97,36 @@ function ExplorerActionButton({
   );
 }
 
+function ExplorerKindIcon({
+  kind,
+  statusClass,
+  testId,
+}: {
+  kind: "environment" | "rig" | "pod" | "agent" | "infrastructure";
+  statusClass: string;
+  testId?: string;
+}) {
+  const sizeClass = kind === "rig" ? "h-3.5 w-3.5" : "h-2.5 w-2.5";
+  const sharedProps = {
+    "data-testid": testId,
+    className: cn(sizeClass, "shrink-0", statusClass),
+    strokeWidth: 1.8,
+  };
+
+  switch (kind) {
+    case "environment":
+      return <Globe {...sharedProps} />;
+    case "rig":
+      return <Boxes {...sharedProps} />;
+    case "pod":
+      return <Layers3 {...sharedProps} />;
+    case "infrastructure":
+      return <Server {...sharedProps} />;
+    default:
+      return <CircleDot {...sharedProps} />;
+  }
+}
+
 function PodBranch({
   podId,
   nodes,
@@ -119,9 +152,12 @@ function PodBranch({
 
   return (
     <div data-testid={`pod-branch-${podName}`}>
-      <div className="flex items-center gap-2 px-4 py-1.5 rounded-sm hover:bg-stone-100">
+      <div
+        className="flex cursor-pointer items-center gap-2 rounded-sm px-4 py-1.5 hover:bg-stone-100"
+        onClick={() => setExpanded((value) => !value)}
+      >
         <TreeToggle expanded={expanded} label={`pod ${podName}`} onClick={() => setExpanded((value) => !value)} />
-        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(podStatus))} />
+        <ExplorerKindIcon kind="pod" statusClass={statusColor(podStatus)} testId={`pod-icon-${podName}`} />
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-600">
           {podName}
         </span>
@@ -144,7 +180,11 @@ function PodBranch({
                   isSelected && "bg-stone-200/80"
                 )}
               >
-                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(node.startupStatus))} />
+                <ExplorerKindIcon
+                  kind={node.nodeKind === "infrastructure" ? "infrastructure" : "agent"}
+                  statusClass={statusColor(node.startupStatus)}
+                  testId={`node-icon-${node.logicalId}`}
+                />
                 <span className="font-mono text-[10px] text-stone-700 truncate">{memberName}</span>
                 <span className="ml-auto shrink-0 font-mono text-[8px] uppercase text-stone-400">
                   {node.nodeKind === "infrastructure" ? "INFRA" : (node.runtime ?? "").replace("claude-code", "claude")}
@@ -224,9 +264,12 @@ function RigBranch({
 
   return (
     <div data-testid={`rig-tree-${rig.name}`}>
-      <div className={cn("flex items-center gap-2 px-4 py-1.5 rounded-sm hover:bg-stone-100", isSelected && "bg-stone-200/70")}>
+      <div
+        className={cn("flex cursor-pointer items-center gap-2 rounded-sm px-4 py-1.5 hover:bg-stone-100", isSelected && "bg-stone-200/70")}
+        onClick={() => setExpanded((value) => !value)}
+      >
         <TreeToggle expanded={expanded} label={`rig ${rig.name}`} onClick={() => setExpanded((value) => !value)} />
-        <span className={cn("h-2 w-2 rounded-full shrink-0", rigStatusColor(rigStatus))} />
+        <ExplorerKindIcon kind="rig" statusClass={rigStatusColor(rigStatus)} testId={`rig-icon-${rig.name}`} />
         <Link
           to="/rigs/$rigId"
           params={{ rigId: rig.id }}
@@ -269,7 +312,11 @@ function RigBranch({
                         isNodeSelected && "bg-stone-200/80"
                       )}
                     >
-                      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(node.startupStatus))} />
+                      <ExplorerKindIcon
+                        kind={node.nodeKind === "infrastructure" ? "infrastructure" : "agent"}
+                        statusClass={statusColor(node.startupStatus)}
+                        testId={`node-icon-${node.logicalId}`}
+                      />
                       <span className="font-mono text-[10px] text-stone-700 truncate">{memberName}</span>
                     </button>
                   );
@@ -318,14 +365,18 @@ function EnvironmentBranch({
 
   return (
     <div data-testid="environment-branch-local">
-      <div className="flex items-center gap-2 rounded-sm px-3 py-1.5 hover:bg-stone-100">
+      <div
+        className="flex cursor-pointer items-center gap-2 rounded-sm px-3 py-1.5 hover:bg-stone-100"
+        onClick={() => setExpanded((value) => !value)}
+      >
         <TreeToggle
           expanded={expanded}
           label="environment Local"
           onClick={() => setExpanded((value) => !value)}
         />
+        <ExplorerKindIcon kind="environment" statusClass="text-stone-500" testId="environment-icon-local" />
         <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-700">
-          Local
+          Environment: Local
         </span>
       </div>
 

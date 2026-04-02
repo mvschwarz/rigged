@@ -14,13 +14,25 @@ interface DrawerSelectionContextValue {
   setSelection: (sel: DrawerSelection) => void;
 }
 
+interface ExplorerVisibilityContextValue {
+  openExplorer: () => void;
+}
+
 export const DrawerSelectionContext = createContext<DrawerSelectionContextValue>({
   selection: null,
   setSelection: () => {},
 });
 
+export const ExplorerVisibilityContext = createContext<ExplorerVisibilityContextValue>({
+  openExplorer: () => {},
+});
+
 export function useDrawerSelection() {
   return useContext(DrawerSelectionContext);
+}
+
+export function useExplorerVisibility() {
+  return useContext(ExplorerVisibilityContext);
 }
 
 // Backward-compat alias for consumers that still use the old name
@@ -47,12 +59,17 @@ export function AppShell({ children }: AppShellProps) {
   const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
   const { events, feedOpen, setFeedOpen } = useActivityFeed();
   const [selection, setSelection] = useState<DrawerSelection>(null);
+  const openExplorer = () => {
+    setDesktopExplorerOpen(true);
+    setSidebarOpen(true);
+  };
 
   // Mount global SSE event listener
   useGlobalEvents();
 
   return (
     <DrawerSelectionContext.Provider value={{ selection, setSelection }}>
+      <ExplorerVisibilityContext.Provider value={{ openExplorer }}>
       <div className="h-screen flex flex-col">
         {/* Header — paper with thick bottom border */}
         <header
@@ -128,6 +145,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* Status Bar */}
         <StatusBar onToggleFeed={() => setFeedOpen(!feedOpen)} feedOpen={feedOpen} eventCount={events.length} />
       </div>
+      </ExplorerVisibilityContext.Provider>
     </DrawerSelectionContext.Provider>
   );
 }

@@ -1,6 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { useExplorerVisibility } from "./AppShell.js";
 
 export function WorkspaceHome() {
+  const { openExplorer } = useExplorerVisibility();
+
   return (
     <div
       data-testid="workspace-home"
@@ -18,6 +21,14 @@ export function WorkspaceHome() {
           and use <span className="font-mono text-stone-800">Discovery</span> to claim existing sessions.
         </p>
         <div className="flex items-center justify-center gap-3 pt-2">
+          <button
+            type="button"
+            data-testid="workspace-open-explorer"
+            onClick={openExplorer}
+            className="border border-stone-300 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100"
+          >
+            Explore
+          </button>
           <Link
             to="/packages"
             className="border border-stone-300 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100"

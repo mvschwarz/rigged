@@ -178,6 +178,29 @@ describe("App Shell + Routing", () => {
     await waitFor(() => {
       expect(screen.getByTestId("workspace-home")).toBeDefined();
       expect(screen.getByText(/Select a rig from the explorer/i)).toBeDefined();
+      expect(screen.getByTestId("workspace-open-explorer")).toBeDefined();
+    });
+  });
+
+  it("workspace Explore button reopens the explorer", async () => {
+    mockAllApis();
+    await renderRealAppAt("/");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-edge-toggle")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("explorer-edge-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer").className).toContain("lg:w-12");
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-open-explorer"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer").className).toContain("lg:w-72");
+      expect(screen.getByTestId("explorer-edge-toggle").getAttribute("aria-label")).toContain("Collapse");
     });
   });
 

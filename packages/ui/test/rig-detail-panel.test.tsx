@@ -55,47 +55,44 @@ describe("RigDetailPanel", () => {
     cleanup();
   });
 
-  it("renders rig name and ID", async () => {
+  it("renders rig name and condensed ID", async () => {
     renderPanel("rig-1");
     expect(await screen.findByText("my-rig")).toBeTruthy();
-    expect(screen.getByTestId("rig-full-id").textContent).toBe("rig-1");
+    expect(screen.getByTestId("rig-id-value").textContent).toBe("rig-1");
+    expect(screen.queryByTestId("rig-full-id")).toBeNull();
   });
 
   it("shows node count and status", async () => {
     renderPanel("rig-1");
-    expect(await screen.findByText("running")).toBeTruthy();
-    expect(screen.getByText("2/3 running")).toBeTruthy();
+    expect(await screen.findByText("2/3 running")).toBeTruthy();
     expect(screen.getByTestId("rig-uptime").textContent).toBe("1h");
   });
 
-  it("exposes export and teardown actions in the rig drawer", async () => {
+  it("exposes rig actions in the rig drawer", async () => {
     renderPanel("rig-1");
     await screen.findByText("my-rig");
     expect(screen.getByTestId("rig-export-spec")).toBeDefined();
-    expect(screen.getByTestId("rig-teardown")).toBeDefined();
+    expect(screen.getByTestId("rig-create-snapshot")).toBeDefined();
+    expect(screen.getByTestId("rig-power-action")).toBeDefined();
   });
 
-  it("renders snapshot list with short IDs and full IDs accessible", async () => {
+  it("renders the latest snapshot with a short ID", async () => {
     renderPanel("rig-1");
-    // Wait for snapshots to load
     await screen.findByText("my-rig");
-    // Short ID (ULID tail)
     expect(screen.getByTestId("snap-short-01HXYZ123456SNAP01")).toBeDefined();
-    // Full ID accessible as secondary text
-    expect(screen.getByTestId("snap-full-01HXYZ123456SNAP01")).toBeDefined();
-    expect(screen.getByTestId("snap-full-01HXYZ123456SNAP01").textContent).toBe("01HXYZ123456SNAP01");
+    expect(screen.queryByTestId("snap-full-01HXYZ123456SNAP01")).toBeNull();
   });
 
   it("Create Snapshot button is present", async () => {
     renderPanel("rig-1");
     await screen.findByText("my-rig");
-    expect(screen.getByTestId("create-snapshot")).toBeDefined();
+    expect(screen.getByTestId("rig-create-snapshot")).toBeDefined();
   });
 
-  it("full rig ID is accessible as secondary text", async () => {
+  it("emphasizes the short rig ID tail in identity", async () => {
     renderPanel("rig-1");
     await screen.findByText("my-rig");
-    expect(screen.getByTestId("rig-full-id").textContent).toBe("rig-1");
+    expect(screen.getByTestId("rig-id-tail").textContent).toBe("rig-1");
   });
 
   it("restore confirm flow triggers mutation", async () => {

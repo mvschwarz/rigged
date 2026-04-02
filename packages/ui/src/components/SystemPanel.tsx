@@ -62,14 +62,7 @@ export function SystemPanel({ onClose, events, initialTab = "log" }: SystemPanel
       className="absolute inset-y-0 right-0 z-20 w-80 border-l border-stone-300/25 bg-[rgba(250,249,245,0.035)] supports-[backdrop-filter]:bg-[rgba(250,249,245,0.018)] backdrop-blur-[14px] backdrop-saturate-75 shadow-[-6px_0_14px_rgba(46,52,46,0.04)] flex flex-col overflow-hidden"
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-stone-300/35 shrink-0">
-        <div className="min-w-0">
-          <h2 className="font-mono text-xs font-bold text-stone-900 truncate">
-            system
-          </h2>
-          <p className="text-[10px] text-stone-500 font-mono truncate">
-            status and log
-          </p>
-        </div>
+        <h2 className="min-w-0 font-mono text-xs font-bold text-stone-900 truncate">system</h2>
         <button
           data-testid="system-close"
           onClick={onClose}
@@ -102,7 +95,7 @@ export function SystemPanel({ onClose, events, initialTab = "log" }: SystemPanel
           <LogFeedList events={events} />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="system-status-tab">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4" data-testid="system-status-tab">
           <section className="border border-stone-300/28 bg-white/12 px-3 py-3">
             <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-3">Runtime</div>
             <div className="space-y-3 font-mono text-[10px]">

@@ -1,6 +1,6 @@
 import { type ReactNode, useState, createContext, useContext } from "react";
 import { useRouterState } from "@tanstack/react-router";
-import { Settings2 } from "lucide-react";
+import { Cog } from "lucide-react";
 import { Explorer } from "./Explorer.js";
 import { SharedDetailDrawer, type DrawerSelection } from "./SharedDetailDrawer.js";
 import { useActivityFeed } from "../hooks/useActivityFeed.js";
@@ -108,7 +108,7 @@ export function AppShell({ children }: AppShellProps) {
             aria-label={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
             title={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
           >
-            <Settings2 className="h-4 w-4" />
+            <Cog className="h-4 w-4" />
           </button>
         </header>
 

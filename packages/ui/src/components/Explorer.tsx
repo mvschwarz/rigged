@@ -238,30 +238,6 @@ function RigBranch({
     });
   }, [nodes]);
 
-  const actionButton = rigStatus === "stopped" ? (
-    <button
-      type="button"
-      onClick={async () => {
-        try { await fetch(`/api/rigs/${encodeURIComponent(rig.id)}/up`, { method: "POST" }); } catch { /* best-effort */ }
-      }}
-      className="mx-5 my-2 px-3 py-1.5 font-mono text-[9px] border border-stone-300 hover:bg-stone-200 uppercase tracking-[0.12em]"
-      data-testid="turn-on"
-    >
-      Turn On
-    </button>
-  ) : rigStatus === "running" || rigStatus === "partial" ? (
-    <button
-      type="button"
-      onClick={async () => {
-        try { await fetch("/api/down", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rigId: rig.id }) }); } catch { /* best-effort */ }
-      }}
-      className="mx-5 my-2 px-3 py-1.5 font-mono text-[9px] border border-stone-300 hover:bg-stone-200 uppercase tracking-[0.12em]"
-      data-testid="turn-off"
-    >
-      Turn Off
-    </button>
-  ) : null;
-
   return (
     <div data-testid={`rig-tree-${rig.name}`}>
       <div
@@ -339,7 +315,6 @@ function RigBranch({
               />
             )
           ))}
-          {actionButton}
         </div>
       )}
     </div>

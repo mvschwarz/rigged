@@ -20,7 +20,7 @@ export function LogFeedList({ events }: { events: ActivityEvent[] }) {
   return (
     <div className="relative z-10 overflow-y-auto flex-1 min-h-0">
       {events.length === 0 ? (
-        <div data-testid="feed-empty" className="px-spacing-3 py-spacing-4 font-mono text-[11px] text-stone-500 text-center">
+        <div data-testid="feed-empty" className="px-spacing-3 py-spacing-4 font-mono text-[10px] text-stone-500 text-center">
           No recent log entries
         </div>
       ) : (
@@ -38,7 +38,7 @@ export function LogFeedList({ events }: { events: ActivityEvent[] }) {
               onClick={isNavigable ? () => navigate({ to: route }) : undefined}
               onKeyDown={isNavigable ? (e) => { if (e.key === "Enter") navigate({ to: route }); } : undefined}
               className={cn(
-                "flex items-center gap-2 px-spacing-3 py-2 border-b border-stone-300/20 transition-colors duration-150 ease-tactical font-mono text-[11px] leading-5",
+                "flex items-center gap-2 px-spacing-3 py-1.5 border-b border-stone-300/20 transition-colors duration-150 ease-tactical font-mono text-[10px] leading-4",
                 isNavigable && "cursor-pointer hover:bg-white/24"
               )}
             >
@@ -49,7 +49,7 @@ export function LogFeedList({ events }: { events: ActivityEvent[] }) {
 
               <span
                 data-testid="feed-time"
-                className="shrink-0 text-[10px] text-stone-500 tabular-nums"
+                className="shrink-0 text-[9px] text-stone-500 tabular-nums"
               >
                 {formatLogTime(event.createdAt)}
               </span>

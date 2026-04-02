@@ -3,7 +3,7 @@ import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
 import { useNodeInventory } from "../hooks/useNodeInventory.js";
 import { useSnapshots } from "../hooks/useSnapshots.js";
-import { RestoreError, useCreateSnapshot, useRestoreSnapshot, useTeardownRig } from "../hooks/mutations.js";
+import { RestoreError, useCreateSnapshot, useRestoreSnapshot, useStartRig, useTeardownRig } from "../hooks/mutations.js";
 import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { shortId } from "../lib/display-id.js";
 import { displayAgentName, displayPodName, inferPodName } from "../lib/display-name.js";
@@ -49,6 +49,14 @@ function formatRestoreError(err: Error, rigName: string): string {
   return err.message;
 }
 
+function formatNodeSummary(ps: PsEntry | undefined, summary: RigSummary | undefined): string {
+  if (ps) {
+    return `${ps.runningCount}/${ps.nodeCount} running`;
+  }
+
+  return `${summary?.nodeCount ?? 0} total`;
+}
+
 export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
   const { data: summaries } = useRigSummary();
   const { data: psEntries } = usePsEntries();
@@ -56,11 +64,13 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
   const { data: snapshots = [], isPending: snapshotsLoading, error: snapshotsFetchError } = useSnapshots(rigId);
   const createSnapshot = useCreateSnapshot(rigId);
   const restoreSnapshot = useRestoreSnapshot(rigId);
+  const startRig = useStartRig(rigId);
   const teardownRig = useTeardownRig(rigId);
 
   const [activeTab, setActiveTab] = useState<"info" | "chat">("info");
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [confirmDown, setConfirmDown] = useState(false);
+  const [showSnapshotHistory, setShowSnapshotHistory] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreNodeResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -77,11 +87,19 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
       return map;
     }, new Map<string, typeof nodeInventory>())
   );
+  const orderedSnapshots = [...snapshots].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const latestSnapshot = orderedSnapshots[0] ?? null;
+  const olderSnapshots = orderedSnapshots.slice(1);
+  const latestSnapshotTail = latestSnapshot ? shortId(latestSnapshot.id) : null;
+  const rigIdTail = shortId(rigId);
+  const rigIdHead = rigId.slice(0, Math.max(0, rigId.length - rigIdTail.length));
+  const rigStatus = ps?.status ?? "stopped";
 
   const handleCreate = () => {
     setError(null);
+    setActionError(null);
     createSnapshot.mutate(undefined, {
-      onError: (err) => setError(err.message),
+      onError: (err) => setActionError(err.message),
     });
   };
 
@@ -122,6 +140,13 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
     }
   };
 
+  const handleStart = () => {
+    setActionError(null);
+    startRig.mutate(undefined, {
+      onError: (err) => setActionError(err.message),
+    });
+  };
+
   const handleTeardown = () => {
     setActionError(null);
     teardownRig.mutate(undefined, {
@@ -137,12 +162,7 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
     >
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-3 border-b border-stone-300/35 shrink-0">
-        <div className="min-w-0">
-          <h2 className="font-mono text-xs font-bold text-stone-900 truncate">
-            {summary?.name ?? rigId}
-          </h2>
-          <p data-testid="rig-full-id" className="text-[10px] text-stone-500 font-mono truncate">{rigId}</p>
-        </div>
+        <h2 className="min-w-0 font-mono text-xs font-bold text-stone-900 truncate">{summary?.name ?? rigId}</h2>
         <button
           data-testid="close-drawer"
           onClick={onClose}
@@ -180,8 +200,13 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
         <div>
           <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Identity</div>
           <div className="space-y-1 font-mono text-[10px]">
-            <div className="flex justify-between"><span className="text-stone-500">ID</span><span>{shortId(rigId)}</span></div>
-            <div className="flex justify-between gap-2"><span className="text-stone-500">Full ID</span><span className="truncate text-stone-500">{rigId}</span></div>
+            <div className="flex justify-between gap-3">
+              <span className="text-stone-500">ID</span>
+              <span data-testid="rig-id-value" className="min-w-0 truncate text-stone-900">
+                {rigIdHead && <span className="text-stone-500">{rigIdHead}</span>}
+                <span data-testid="rig-id-tail" className="font-bold">{rigIdTail}</span>
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -191,10 +216,8 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
         <div>
           <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Status</div>
           <div className="space-y-1 font-mono text-[10px]">
-            <div className="flex justify-between"><span className="text-stone-500">State</span><span>{ps?.status ?? "unknown"}</span></div>
-            <div className="flex justify-between"><span className="text-stone-500">Nodes</span><span>{ps ? `${ps.runningCount}/${ps.nodeCount} running` : `${summary?.nodeCount ?? 0} total`}</span></div>
+            <div className="flex justify-between"><span className="text-stone-500">Nodes</span><span>{formatNodeSummary(ps, summary)}</span></div>
             <div className="flex justify-between"><span className="text-stone-500">Uptime</span><span data-testid="rig-uptime">{ps?.uptime ?? "—"}</span></div>
-            <div className="flex justify-between"><span className="text-stone-500">Latest Snapshot</span><span>{formatSnapshotAge(summary?.latestSnapshotAt ?? null)}</span></div>
           </div>
         </div>
       </section>
@@ -203,12 +226,26 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
       <section className="px-4 py-3 border-b border-stone-100">
         <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-2">Actions</div>
         <div className="flex flex-col gap-1">
+          <button
+            onClick={handleCreate}
+            data-testid="rig-create-snapshot"
+            disabled={createSnapshot.isPending}
+            className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left"
+          >
+            {createSnapshot.isPending ? "Creating..." : "Create snapshot"}
+          </button>
           <button onClick={handleExport} data-testid="rig-export-spec" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left">
             Export spec
           </button>
-          <button onClick={() => setConfirmDown(true)} data-testid="rig-teardown" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left">
-            Tear down
-          </button>
+          {rigStatus === "running" || rigStatus === "partial" ? (
+            <button onClick={() => setConfirmDown(true)} data-testid="rig-power-action" className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left">
+              Turn off
+            </button>
+          ) : (
+            <button onClick={handleStart} data-testid="rig-power-action" disabled={startRig.isPending} className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left disabled:opacity-50">
+              {startRig.isPending ? "Starting..." : "Turn on"}
+            </button>
+          )}
         </div>
         {actionError && (
           <div data-testid="rig-action-error" className="mt-2 font-mono text-[9px] text-red-700">
@@ -247,18 +284,8 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
 
       {/* Snapshots */}
       <section className="px-4 py-3">
-        <div className="flex justify-between items-center mb-3">
-          <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider">
-            Snapshots ({snapshots.length})
-          </div>
-          <button
-            data-testid="create-snapshot"
-            onClick={handleCreate}
-            disabled={createSnapshot.isPending}
-            className="px-2 py-0.5 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200"
-          >
-            {createSnapshot.isPending ? "Creating..." : "Create"}
-          </button>
+        <div className="font-mono text-[8px] text-stone-400 uppercase tracking-wider mb-3">
+          Snapshots ({snapshots.length})
         </div>
 
         {/* Error */}
@@ -299,30 +326,69 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
           </div>
         ) : (
           <div className="space-y-1">
-            {snapshots.map((snap) => (
-              <div key={snap.id} className="p-2 bg-stone-50 hover:bg-stone-100 transition-colors">
+            {latestSnapshot && (
+              <div className="p-2 bg-stone-50 hover:bg-stone-100 transition-colors">
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="font-mono text-[10px] font-bold" data-testid={`snap-short-${snap.id}`}>
-                      {shortId(snap.id)}
+                    <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-stone-400">
+                      Latest
                     </div>
-                    <div className="font-mono text-[8px] text-stone-400 truncate" data-testid={`snap-full-${snap.id}`}>
-                      {snap.id}
+                    <div className="font-mono text-[10px] font-bold" data-testid={`snap-short-${latestSnapshot.id}`}>
+                      {latestSnapshotTail}
                     </div>
                     <div className="font-mono text-[9px] text-stone-400 mt-0.5">
-                      {snap.kind} · {formatSnapshotAge(snap.createdAt)}
+                      {latestSnapshot.kind} · {formatSnapshotAge(latestSnapshot.createdAt)}
                     </div>
                   </div>
                   <button
-                    data-testid={`restore-btn-${snap.id}`}
-                    onClick={() => setConfirmRestore(snap.id)}
+                    data-testid={`restore-btn-${latestSnapshot.id}`}
+                    onClick={() => setConfirmRestore(latestSnapshot.id)}
                     className="font-mono text-[8px] border border-stone-300 px-1 py-0.5 hover:bg-stone-200"
                   >
                     Restore
                   </button>
                 </div>
               </div>
-            ))}
+            )}
+
+            {olderSnapshots.length > 0 && (
+              <div className="border-t border-stone-200 pt-2">
+                <button
+                  type="button"
+                  data-testid="snapshot-history-toggle"
+                  onClick={() => setShowSnapshotHistory((value) => !value)}
+                  className="font-mono text-[8px] uppercase tracking-[0.12em] text-stone-500 hover:text-stone-900"
+                >
+                  {showSnapshotHistory ? "Hide history" : `Show history (${olderSnapshots.length})`}
+                </button>
+
+                {showSnapshotHistory && (
+                  <div className="mt-2 space-y-1">
+                    {olderSnapshots.map((snap) => (
+                      <div key={snap.id} className="p-2 bg-stone-50 hover:bg-stone-100 transition-colors">
+                        <div className="flex justify-between items-start gap-3">
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] font-bold" data-testid={`snap-short-${snap.id}`}>
+                              {shortId(snap.id)}
+                            </div>
+                            <div className="font-mono text-[9px] text-stone-400 mt-0.5">
+                              {snap.kind} · {formatSnapshotAge(snap.createdAt)}
+                            </div>
+                          </div>
+                          <button
+                            data-testid={`restore-btn-${snap.id}`}
+                            onClick={() => setConfirmRestore(snap.id)}
+                            className="shrink-0 font-mono text-[8px] border border-stone-300 px-1 py-0.5 hover:bg-stone-200"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -352,7 +418,7 @@ export function RigDetailPanel({ rigId, onClose }: RigDetailPanelProps) {
       <Dialog open={confirmDown} onOpenChange={(open) => { if (!open) setConfirmDown(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-headline text-lg font-bold uppercase">Tear Down Rig</DialogTitle>
+            <DialogTitle className="font-headline text-lg font-bold uppercase">Turn Off Rig</DialogTitle>
             <DialogDescription className="text-sm text-stone-500">
               Stop all running sessions for {summary?.name ?? rigId}?
             </DialogDescription>

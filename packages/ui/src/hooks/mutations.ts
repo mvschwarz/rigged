@@ -93,6 +93,26 @@ export function useTeardownRig(rigId: string) {
   });
 }
 
+export function useStartRig(rigId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/rigs/${encodeURIComponent(rigId)}/up`, { method: "POST" });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Start failed (HTTP ${res.status})`);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
+      queryClient.invalidateQueries({ queryKey: ["ps"] });
+      queryClient.invalidateQueries({ queryKey: ["rig", rigId] });
+    },
+  });
+}
+
 export function useImportRig() {
   const queryClient = useQueryClient();
 

@@ -229,8 +229,7 @@ describe("Explorer sidebar", () => {
     });
   });
 
-  // Test 6: Turn Off button calls POST /api/down
-  it("Turn Off button calls POST /api/down for running rig", async () => {
+  it("explorer remains navigation-only after expanding a rig", async () => {
     mockFetch.mockImplementation(async (url: string, opts?: RequestInit) => {
       if (url.includes("/api/rigs/summary")) {
         return { ok: true, json: async () => [{ id: "rig-1", name: "test-rig", nodeCount: 1, latestSnapshotAt: null, latestSnapshotId: null }] };
@@ -243,55 +242,14 @@ describe("Explorer sidebar", () => {
           { rigId: "rig-1", rigName: "test-rig", logicalId: "dev.impl", podId: "dev", nodeKind: "agent", runtime: "claude-code", startupStatus: "ready" },
         ]};
       }
-      if (url.includes("/api/down") && opts?.method === "POST") {
-        return { ok: true, json: async () => ({}) };
-      }
       return { ok: true, json: async () => [] };
     });
 
     renderExplorer();
     await waitFor(() => expect(screen.getByLabelText("Expand rig test-rig")).toBeDefined());
     fireEvent.click(screen.getByLabelText("Expand rig test-rig"));
-    await waitFor(() => expect(screen.getByTestId("turn-off")).toBeDefined());
-
-    fireEvent.click(screen.getByTestId("turn-off"));
-
-    await waitFor(() => {
-      const downCalls = mockFetch.mock.calls.filter((c: any[]) => String(c[0]).includes("/api/down"));
-      expect(downCalls.length).toBeGreaterThan(0);
-    });
-  });
-
-  // Test 7: Turn On button calls POST /api/rigs/:rigId/up
-  it("Turn On button calls POST /api/rigs/:rigId/up for stopped rig", async () => {
-    mockFetch.mockImplementation(async (url: string, opts?: RequestInit) => {
-      if (url.includes("/api/rigs/summary")) {
-        return { ok: true, json: async () => [{ id: "rig-1", name: "stopped-rig", nodeCount: 1, latestSnapshotAt: null, latestSnapshotId: null }] };
-      }
-      if (url.includes("/api/ps")) {
-        return { ok: true, json: async () => [{ rigId: "rig-1", name: "stopped-rig", nodeCount: 1, runningCount: 0, status: "stopped", uptime: null, latestSnapshot: null }] };
-      }
-      if (url.includes("/nodes")) {
-        return { ok: true, json: async () => [
-          { rigId: "rig-1", rigName: "stopped-rig", logicalId: "dev.impl", podId: "dev", nodeKind: "agent", runtime: "claude-code", startupStatus: null, sessionStatus: null },
-        ]};
-      }
-      if (url.includes("/up") && opts?.method === "POST") {
-        return { ok: true, json: async () => ({}) };
-      }
-      return { ok: true, json: async () => [] };
-    });
-
-    renderExplorer();
-    await waitFor(() => expect(screen.getByText("stopped-rig")).toBeDefined());
-    fireEvent.click(screen.getByLabelText("Expand rig stopped-rig"));
-    await waitFor(() => expect(screen.getByTestId("turn-on")).toBeDefined());
-
-    fireEvent.click(screen.getByTestId("turn-on"));
-
-    await waitFor(() => {
-      const upCalls = mockFetch.mock.calls.filter((c: any[]) => String(c[0]).includes("/up"));
-      expect(upCalls.length).toBeGreaterThan(0);
-    });
+    await waitFor(() => expect(screen.getByText("dev")).toBeDefined());
+    expect(screen.queryByTestId("turn-off")).toBeNull();
+    expect(screen.queryByTestId("turn-on")).toBeNull();
   });
 });

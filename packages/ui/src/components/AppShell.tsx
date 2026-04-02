@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState, createContext, useContext } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Cog } from "lucide-react";
+import { Cog, SquarePlus } from "lucide-react";
 import { Explorer } from "./Explorer.js";
 import { SharedDetailDrawer, type DrawerSelection } from "./SharedDetailDrawer.js";
 import type { DiscoveryPlacementTarget } from "./DiscoveryPanel.js";
@@ -82,6 +82,7 @@ function parseCurrentRigId(pathname: string): string | null {
 function resolveSurfaceTitle(pathname: string, rigId: string | null, rigName: string | null): string | null {
   if (pathname === "/") return null;
   if (rigId) return rigName ?? shortId(rigId, 8);
+  if (pathname.startsWith("/discovery")) return "Discovery";
   if (pathname.startsWith("/packages") || pathname === "/import" || pathname === "/bootstrap") return "Specs";
   if (pathname.startsWith("/bundles/inspect")) return "Bundle Inspector";
   if (pathname.startsWith("/bundles/install")) return "Bundle Install";
@@ -186,20 +187,36 @@ export function AppShell({ children }: AppShellProps) {
 
           <div className="flex-1" />
 
-          <button
-            type="button"
-            data-testid="system-toggle"
-            onClick={() => setSelection(selection?.type === "system" ? null : { type: "system", tab: "log" })}
-            className={`inline-flex h-8 w-8 items-center justify-center text-stone-700 transition-colors ${
-              selection?.type === "system"
-                ? "text-stone-950"
-                : "hover:text-stone-950"
-            }`}
-            aria-label={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
-            title={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
-          >
-            <Cog className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              data-testid="discovery-toggle"
+              onClick={() => setSelection(selection?.type === "discovery" ? null : { type: "discovery" })}
+              className={`inline-flex h-8 w-8 items-center justify-center text-stone-700 transition-colors ${
+                selection?.type === "discovery"
+                  ? "text-stone-950"
+                  : "hover:text-stone-950"
+              }`}
+              aria-label={selection?.type === "discovery" ? "Close discovery drawer" : "Open discovery drawer"}
+              title={selection?.type === "discovery" ? "Close discovery drawer" : "Open discovery drawer"}
+            >
+              <SquarePlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              data-testid="system-toggle"
+              onClick={() => setSelection(selection?.type === "system" ? null : { type: "system", tab: "log" })}
+              className={`inline-flex h-8 w-8 items-center justify-center text-stone-700 transition-colors ${
+                selection?.type === "system"
+                  ? "text-stone-950"
+                  : "hover:text-stone-950"
+              }`}
+              aria-label={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
+              title={selection?.type === "system" ? "Close system drawer" : "Open system drawer"}
+            >
+              <Cog className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
         {/* Main: Explorer + Content + Detail Panel */}

@@ -139,6 +139,7 @@ describe("App Shell + Routing", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("brand-home-link")).toBeDefined();
+      expect(screen.getByTestId("discovery-toggle")).toBeDefined();
       expect(screen.getByTestId("system-toggle")).toBeDefined();
     });
 
@@ -149,6 +150,21 @@ describe("App Shell + Routing", () => {
     const gear = screen.getByTestId("system-toggle");
     expect(gear.className).not.toContain("border");
     expect(gear.className).not.toContain("bg-white");
+  });
+
+  it("header discovery button opens the discovery drawer", async () => {
+    mockAllApis();
+    await renderRealAppAt("/rigs/r1");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discovery-toggle")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("discovery-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discovery-panel")).toBeDefined();
+    });
   });
 
   it("header no longer renders top navigation links", async () => {
@@ -290,9 +306,18 @@ describe("App Shell + Routing", () => {
     await waitFor(() => {
       expect(screen.getByTestId("discovery-panel")).toBeDefined();
       expect(screen.getByTestId("workspace-home")).toBeDefined();
+      expect(screen.getByTestId("header-surface-title").textContent).toBe("Discovery");
     });
+  });
 
-    expect(screen.queryByTestId("header-surface-title")).toBeNull();
+  it("/discovery/inventory renders the inventory workspace with a discovery title", async () => {
+    mockAllApis();
+    await renderRealAppAt("/discovery/inventory");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discovery-overlay")).toBeDefined();
+      expect(screen.getByTestId("header-surface-title").textContent).toBe("Discovery");
+    });
   });
 
   it("system status tab spells out daemon and cmux state", async () => {

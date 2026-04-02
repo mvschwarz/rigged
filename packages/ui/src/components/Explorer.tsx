@@ -428,12 +428,6 @@ function FullExplorerContents({
 
       <div className="mt-auto border-t border-stone-200">
         <div data-testid="explorer-action-stack" className="flex flex-col">
-          <ExplorerActionButton
-            label="Discovery"
-            onClose={onClose}
-            onAction={() => onSelect({ type: "discovery" })}
-            testId="explorer-action-discovery"
-          />
           <ExplorerActionButton to="/packages" label="Specs" onClose={onClose} testId="explorer-action-specs" />
         </div>
       </div>

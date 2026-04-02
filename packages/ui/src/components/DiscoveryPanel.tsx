@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/copy-text";
 import { cn } from "@/lib/utils";
+import { displayAgentName } from "../lib/display-name.js";
+import { shortId } from "../lib/display-id.js";
 import {
   useAdoptSession,
   useDiscoveredSessions,
@@ -73,6 +75,17 @@ function suggestMemberName(sessionName: string): string {
   const segments = tail.split(/[-_.]/).filter(Boolean);
   const candidate = (segments.at(-1) ?? tail).toLowerCase().replace(/[^a-z0-9_-]/g, "");
   return candidate || "member";
+}
+
+function targetNodeLabel(logicalId: string): string {
+  if (logicalId.includes(".")) {
+    return displayAgentName(logicalId);
+  }
+  return logicalId.length > 12 ? shortId(logicalId) : logicalId;
+}
+
+function targetPodLabel(target: Extract<DiscoveryPlacementTarget, { kind: "pod" }>): string {
+  return target.podLabel ?? target.podPrefix ?? shortId(target.podId);
 }
 
 function CopyActionButton({
@@ -152,11 +165,9 @@ export function DiscoveryPanel({
     }
   }, [selectedSession, placementTarget]);
 
-  const statusText = useMemo(() => {
+  const selectedCardStatus = useMemo(() => {
     if (!selectedSession) {
-      return currentRigId
-        ? "Select a discovered session, then click an available node or pod in the graph."
-        : "Open a rig in the explorer, then select a discovered session to place it in the topology.";
+      return null;
     }
 
     if (!currentRigId) {
@@ -172,10 +183,10 @@ export function DiscoveryPanel({
     }
 
     if (placementTarget.kind === "node") {
-      return `Bind ${selectedSession.tmuxSession} to ${placementTarget.logicalId}.`;
+      return `Bind ${selectedSession.tmuxSession} to ${targetNodeLabel(placementTarget.logicalId)}.`;
     }
 
-    return `Add ${selectedSession.tmuxSession} to ${placementTarget.podLabel ?? placementTarget.podPrefix ?? "selected"} pod.`;
+    return `Add ${selectedSession.tmuxSession} to ${targetPodLabel(placementTarget)} pod.`;
   }, [currentRigId, placementTarget, selectedSession]);
 
   const handleConfirm = () => {
@@ -235,61 +246,14 @@ export function DiscoveryPanel({
             {scanMutation.isPending ? "SCANNING..." : "SCAN NOW"}
           </Button>
         </div>
-        <div data-testid="discovery-placement-status" className="font-mono text-[10px] leading-5 text-stone-600">
-          {statusText}
-        </div>
-        {placementTarget && !placementTarget.eligible ? (
-          <div data-testid="discovery-target-error" className="font-mono text-[9px] text-red-600">
-            {placementTarget.reason ?? "That destination is not available."}
-          </div>
-        ) : null}
-        {selectedSession && placementTarget?.eligible ? (
-          <div className="space-y-2 border border-stone-200 bg-white/50 px-3 py-2" data-testid="discovery-target-card">
-            <div data-testid="discovery-target-summary" className="font-mono text-[10px] text-stone-800">
-              {placementTarget.kind === "node"
-                ? `Bind to ${placementTarget.logicalId}`
-                : `Add to ${(placementTarget.podLabel ?? placementTarget.podPrefix ?? "selected")} pod`}
-            </div>
-            {placementTarget.kind === "pod" ? (
-              <div className="space-y-1">
-                <label className="font-mono text-[8px] uppercase tracking-[0.16em] text-stone-500" htmlFor="discovery-member-name">
-                  Member name
-                </label>
-                <input
-                  id="discovery-member-name"
-                  data-testid="discovery-member-name-input"
-                  value={memberName}
-                  onChange={(event) => setMemberName(event.target.value)}
-                  className="w-full bg-transparent border-b border-stone-300 py-1 font-mono text-[10px] text-stone-900 focus:outline-none focus:border-stone-900"
-                />
-              </div>
-            ) : null}
-            {adoptMutation.isError ? (
-              <div data-testid="discovery-adopt-error" className="font-mono text-[9px] text-red-600">
-                {adoptMutation.error.message}
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2">
-              <Button
-                variant="tactical"
-                size="sm"
-                data-testid="discovery-confirm-adopt"
-                disabled={adoptMutation.isPending || (placementTarget.kind === "pod" && !memberName.trim())}
-                onClick={handleConfirm}
-              >
-                {adoptMutation.isPending ? "ADOPTING..." : "ADOPT"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="discovery-clear-target"
-                onClick={onClearPlacement}
-              >
-                CLEAR
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <Link
+          to="/discovery/inventory"
+          data-testid="discovery-open-inventory"
+          onClick={onClose}
+          className="inline-flex items-center border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.12em] text-stone-700 transition-colors hover:bg-stone-100 hover:text-stone-900"
+        >
+          Legacy Inventory Page
+        </Link>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
@@ -306,7 +270,7 @@ export function DiscoveryPanel({
                 data-testid={`discovery-session-${session.id}`}
                 className={cn(
                   "border border-stone-200 bg-white/60 px-3 py-3",
-                  selected && "border-stone-900 shadow-[0_6px_18px_rgba(41,37,36,0.08)]",
+                  selected && "border-emerald-500 shadow-[0_10px_24px_rgba(34,197,94,0.16)]",
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -350,6 +314,76 @@ export function DiscoveryPanel({
                     />
                   ) : null}
                 </div>
+                {selected ? (
+                  <div className="mt-3 space-y-2 border-t border-emerald-200/80 pt-3">
+                    {selectedCardStatus ? (
+                      <div
+                        data-testid="discovery-selected-session-status"
+                        className="border border-emerald-300/80 bg-white/70 px-2.5 py-2 font-mono text-[10px] leading-5 text-stone-900"
+                      >
+                        {selectedCardStatus}
+                      </div>
+                    ) : null}
+
+                    {placementTarget && !placementTarget.eligible ? (
+                      <div
+                        data-testid="discovery-target-error"
+                        className="border border-red-200 bg-red-50/80 px-2.5 py-2 font-mono text-[9px] text-red-700"
+                      >
+                        {placementTarget.reason ?? "That destination is not available."}
+                      </div>
+                    ) : null}
+
+                    {placementTarget?.eligible ? (
+                      <div className="space-y-2 border border-emerald-300/80 bg-white/70 px-3 py-2" data-testid="discovery-target-card">
+                        <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-emerald-800">Target</div>
+                        <div data-testid="discovery-target-summary" className="font-mono text-[10px] text-stone-900">
+                          {placementTarget.kind === "node"
+                            ? `${targetNodeLabel(placementTarget.logicalId)} selected`
+                            : `${targetPodLabel(placementTarget)} pod selected`}
+                        </div>
+                        {placementTarget.kind === "pod" ? (
+                          <div className="space-y-1">
+                            <label className="font-mono text-[8px] uppercase tracking-[0.16em] text-emerald-800" htmlFor="discovery-member-name">
+                              Member name
+                            </label>
+                            <input
+                              id="discovery-member-name"
+                              data-testid="discovery-member-name-input"
+                              value={memberName}
+                              onChange={(event) => setMemberName(event.target.value)}
+                              className="w-full bg-transparent border-b border-emerald-300 py-1 font-mono text-[10px] text-stone-900 focus:outline-none focus:border-emerald-700"
+                            />
+                          </div>
+                        ) : null}
+                        {adoptMutation.isError ? (
+                          <div data-testid="discovery-adopt-error" className="font-mono text-[9px] text-red-600">
+                            {adoptMutation.error.message}
+                          </div>
+                        ) : null}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="tactical"
+                            size="sm"
+                            data-testid="discovery-confirm-adopt"
+                            disabled={adoptMutation.isPending || (placementTarget.kind === "pod" && !memberName.trim())}
+                            onClick={handleConfirm}
+                          >
+                            {adoptMutation.isPending ? "ADOPTING..." : "ADOPT"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid="discovery-clear-target"
+                            onClick={onClearPlacement}
+                          >
+                            CLEAR
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             );
           })

@@ -133,9 +133,9 @@ export function RigNode({ data }: { data: RigNodeData }) {
     <div
       className={`bg-white border min-w-[200px] hard-shadow relative ${
         data.placementState === "selected"
-          ? "border-stone-950 ring-1 ring-stone-900/30"
+          ? "border-emerald-600 ring-2 ring-emerald-400/70 shadow-[0_0_0_3px_rgba(52,211,153,0.12)]"
           : data.placementState === "available"
-            ? "border-stone-500"
+            ? "border-emerald-500 ring-1 ring-emerald-300/70"
             : "border-stone-900"
       }`}
       data-testid="rig-node"
@@ -242,8 +242,8 @@ export function RigNode({ data }: { data: RigNodeData }) {
               data-testid={`placement-chip-${data.logicalId}`}
               className={`inline-flex items-center border px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.12em] ${
                 data.placementState === "selected"
-                  ? "border-stone-900 bg-stone-900 text-white"
-                  : "border-stone-300 bg-stone-100 text-stone-600"
+                  ? "border-emerald-700 bg-emerald-700 text-white"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-800"
               }`}
             >
               {placementChipLabel}

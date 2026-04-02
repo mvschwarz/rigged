@@ -17,6 +17,7 @@ import { PackageDetail } from "./components/PackageDetail.js";
 import { BootstrapWizard } from "./components/BootstrapWizard.js";
 import { BundleInspector } from "./components/BundleInspector.js";
 import { BundleInstallFlow } from "./components/BundleInstallFlow.js";
+import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
 import { useRigSummary } from "./hooks/useRigSummary.js";
 import { useDrawerSelection } from "./components/AppShell.js";
 
@@ -104,6 +105,12 @@ const discoveryRoute = createRoute({
   component: DiscoveryRouteBridge,
 });
 
+const discoveryInventoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/discovery/inventory",
+  component: DiscoveryOverlay,
+});
+
 // Bundle routes
 const bundleInspectRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -125,7 +132,7 @@ const packageDetailRoute = createRoute({
 });
 
 // Route tree
-const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute, discoveryRoute, bundleInspectRoute, bundleInstallRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, rigDetailRoute, importRoute, packagesRoute, packageInstallRoute, packageDetailRoute, bootstrapRoute, discoveryRoute, discoveryInventoryRoute, bundleInspectRoute, bundleInstallRoute]);
 
 // Router
 export const router = createRouter({ routeTree });

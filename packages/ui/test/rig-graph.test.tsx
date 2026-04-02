@@ -362,7 +362,7 @@ describe("RigGraph", () => {
       rigId: "rig-1",
       podId: "dev",
       podPrefix: "dev",
-      podLabel: "dev",
+      podLabel: "Development",
       eligible: true,
     });
   });

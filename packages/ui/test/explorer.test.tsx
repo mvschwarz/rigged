@@ -64,14 +64,13 @@ describe("Explorer sidebar", () => {
       expect(screen.getByText("auth-feats")).toBeDefined();
     });
     expect(screen.getByText("env: local")).toBeDefined();
-    expect(screen.getByText("Discovery")).toBeDefined();
     expect(screen.getByText("Specs")).toBeDefined();
     expect(screen.queryByText("Import")).toBeNull();
     expect(screen.getByTestId("environment-icon-local")).toBeDefined();
     expect(screen.getByTestId("rig-icon-auth-feats")).toBeDefined();
   });
 
-  it("renders footer actions as full-width list rows", async () => {
+  it("renders only Specs in the explorer footer", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url.includes("/api/rigs/summary")) {
         return { ok: true, json: async () => [{ id: "rig-1", name: "auth-feats", nodeCount: 2, latestSnapshotAt: null, latestSnapshotId: null }] };
@@ -91,36 +90,11 @@ describe("Explorer sidebar", () => {
     const stack = screen.getByTestId("explorer-action-stack");
     expect(stack.className).toContain("flex-col");
 
-    const discovery = screen.getByTestId("explorer-action-discovery");
     const specs = screen.getByTestId("explorer-action-specs");
-    expect(discovery.className).toContain("w-full");
     expect(specs.className).toContain("w-full");
-    expect(discovery.className).toContain("border-t");
     expect(specs.className).toContain("border-t");
+    expect(screen.queryByTestId("explorer-action-discovery")).toBeNull();
     expect(screen.queryByTestId("explorer-action-import")).toBeNull();
-  });
-
-  it("clicking Discovery opens the discovery drawer selection", async () => {
-    const onSelect = vi.fn();
-    mockFetch.mockImplementation(async (url: string) => {
-      if (url.includes("/api/rigs/summary")) {
-        return { ok: true, json: async () => [{ id: "rig-1", name: "auth-feats", nodeCount: 2, latestSnapshotAt: null, latestSnapshotId: null }] };
-      }
-      if (url.includes("/api/ps")) {
-        return { ok: true, json: async () => [{ rigId: "rig-1", name: "auth-feats", nodeCount: 2, runningCount: 2, status: "running", uptime: "1h", latestSnapshot: null }] };
-      }
-      return { ok: true, json: async () => [] };
-    });
-
-    renderExplorer({ onSelect });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("explorer-action-discovery")).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByTestId("explorer-action-discovery"));
-
-    expect(onSelect).toHaveBeenCalledWith({ type: "discovery" });
   });
 
   // Test 2: Home view shows local expanded with rigs collapsed by default

@@ -30,9 +30,9 @@ function PodGroupNode({
       data-testid="pod-group-node"
       className={`w-full h-full relative pointer-events-auto ${
         data.placementState === "selected"
-          ? "ring-1 ring-stone-900/30"
+          ? "ring-2 ring-emerald-500/80 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]"
           : data.placementState === "available"
-            ? "ring-1 ring-stone-400/20"
+            ? "ring-1 ring-emerald-300/80"
             : ""
       }`}
     >
@@ -155,7 +155,14 @@ export function RigGraph({
   const podMetaById = useMemo(() => {
     const meta = new Map<string, { displayName: string | null; prefix: string | null }>();
     for (const node of rawNodes as Node[]) {
-      const nodeData = node.data as { logicalId?: string | null; podId?: string | null } | undefined;
+      const nodeData = node.data as { logicalId?: string | null; podId?: string | null; podLabel?: string | null } | undefined;
+      if ((node.type === "podGroup" || node.type === "group") && nodeData?.podId) {
+        meta.set(nodeData.podId, {
+          displayName: nodeData.podLabel ?? inferPodName(nodeData.logicalId) ?? displayPodName(nodeData.podId),
+          prefix: inferPodName(nodeData.logicalId) ?? nodeData.logicalId ?? null,
+        });
+        continue;
+      }
       const podId = nodeData?.podId ?? null;
       if (!podId) continue;
       const prefix = inferPodName(nodeData?.logicalId) ?? null;
@@ -400,9 +407,9 @@ export function RigGraph({
       {placementMode && (
         <div
           data-testid="graph-placement-banner"
-          className="absolute top-spacing-4 left-1/2 z-20 -translate-x-1/2 border border-stone-300/70 bg-[rgba(250,249,245,0.9)] px-3 py-1.5 font-mono text-[10px] text-stone-700 shadow-sm backdrop-blur-sm"
+          className="absolute top-spacing-4 left-1/2 z-20 -translate-x-1/2 border border-emerald-300/90 bg-[rgba(236,253,245,0.92)] px-3.5 py-2 font-mono text-[10px] text-emerald-950 shadow-[0_12px_28px_rgba(34,197,94,0.14)] backdrop-blur-sm"
         >
-          Click an available node to bind, or click a pod to add a new node.
+          PLACEMENT MODE · click an available node to bind, or click a pod to add a new node.
         </div>
       )}
       <ReactFlow

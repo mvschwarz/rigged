@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import { useRigGraph } from "../hooks/useRigGraph.js";
 import { useRigEvents } from "../hooks/useRigEvents.js";
 import { useDiscoveredSessionsConditional, type DiscoveredSession } from "../hooks/useDiscovery.js";
-import { useDrawerSelection, useNodeSelection } from "./AppShell.js";
+import { useDiscoveryPlacement, useDrawerSelection, useNodeSelection } from "./AppShell.js";
 import { getEdgeStyle } from "@/lib/edge-styles";
 import { applyTreeLayout } from "@/lib/graph-layout";
 import { RigNode } from "./RigNode.js";
@@ -12,13 +12,29 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { displayPodName, inferPodName } from "../lib/display-name.js";
 import { shortId } from "../lib/display-id.js";
 
-function PodGroupNode({ data }: { data: { podLabel?: string | null; logicalId?: string | null; podId?: string | null; podDisplayName?: string | null } }) {
+function PodGroupNode({
+  data,
+}: {
+  data: {
+    podLabel?: string | null;
+    logicalId?: string | null;
+    podId?: string | null;
+    podDisplayName?: string | null;
+    placementState?: "available" | "selected" | null;
+  };
+}) {
   const label = data.podDisplayName ?? inferPodName(data.logicalId) ?? displayPodName(data.podId ?? data.logicalId);
 
   return (
     <div
       data-testid="pod-group-node"
-      className="w-full h-full relative pointer-events-auto"
+      className={`w-full h-full relative pointer-events-auto ${
+        data.placementState === "selected"
+          ? "ring-1 ring-stone-900/30"
+          : data.placementState === "available"
+            ? "ring-1 ring-stone-400/20"
+            : ""
+      }`}
     >
       <div className="absolute left-4 top-3 inline-flex items-center font-mono text-[12px] font-bold leading-none tracking-[0.08em] text-stone-800">
         {`${label} pod`}
@@ -136,6 +152,25 @@ export function RigGraph({
   }, [rawEdges, shouldAnimate, rawNodes.length]);
 
   // Apply tree layout + entrance animation to nodes
+  const podMetaById = useMemo(() => {
+    const meta = new Map<string, { displayName: string | null; prefix: string | null }>();
+    for (const node of rawNodes as Node[]) {
+      const nodeData = node.data as { logicalId?: string | null; podId?: string | null } | undefined;
+      const podId = nodeData?.podId ?? null;
+      if (!podId) continue;
+      const prefix = inferPodName(nodeData?.logicalId) ?? null;
+      const displayName = prefix ?? displayPodName(podId);
+      if (!meta.has(podId)) {
+        meta.set(podId, { displayName, prefix });
+      }
+    }
+    return meta;
+  }, [rawNodes]);
+
+  const { selection, setSelection } = useDrawerSelection();
+  const { selectedDiscoveredId, placementTarget, setPlacementTarget } = useDiscoveryPlacement();
+  const placementMode = selection?.type === "discovery" && Boolean(selectedDiscoveredId);
+
   const rfNodes = useMemo(() => {
     const podDisplayNames = new Map<string, string>();
     for (const node of rawNodes as Node[]) {
@@ -159,12 +194,40 @@ export function RigGraph({
     const layoutNodes = applyTreeLayout(rawNodes as Node[], rawEdges as unknown as Parameters<typeof applyTreeLayout>[1]);
     const managed = layoutNodes.map((node, index) => ({
       ...node,
-      data: node.type === "podGroup" || node.type === "group"
-        ? {
+      data: (() => {
+        if (node.type === "podGroup" || node.type === "group") {
+          const podData = node.data as { podId?: string | null };
+          const podId = podData?.podId ?? null;
+          const selectedPod =
+            placementTarget?.kind === "pod" && podId !== null && placementTarget.podId === podId;
+          return {
             ...(node.data ?? {}),
             podDisplayName: podDisplayNames.get(node.id) ?? null,
-          }
-        : node.data,
+            placementState: placementMode ? (selectedPod ? "selected" : "available") : null,
+          };
+        }
+
+        if (node.type === "rigNode") {
+          const nodeData = node.data as {
+            logicalId?: string | null;
+            binding?: { tmuxSession?: string | null } | null;
+            canonicalSessionName?: string | null;
+          };
+          const available = !nodeData?.binding && !nodeData?.canonicalSessionName;
+          const selectedNode =
+            placementTarget?.kind === "node" &&
+            nodeData?.logicalId !== undefined &&
+            placementTarget.logicalId === nodeData.logicalId;
+          return {
+            ...(node.data ?? {}),
+            placementState: placementMode
+              ? (selectedNode ? "selected" : available ? "available" : null)
+              : null,
+          };
+        }
+
+        return node.data;
+      })(),
       className: shouldAnimate ? "node-enter" : undefined,
       style: {
         ...(node.style ?? {}),
@@ -182,15 +245,50 @@ export function RigGraph({
     }));
 
     return [...managed, ...discovered] as Node[];
-  }, [rawNodes, rawEdges, shouldAnimate, discoveredSessions]);
+  }, [rawNodes, rawEdges, shouldAnimate, discoveredSessions, placementMode, placementTarget]);
 
   const { setSelectedNode } = useNodeSelection();
-  const { setSelection } = useDrawerSelection();
   const rigStamp = rigName?.trim() ? rigName : (rigId ? shortId(rigId) : null);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_event, node) => {
       if (!rigId) return;
+
+      if (placementMode) {
+        if (node.type === "podGroup" || node.type === "group") {
+          const podData = node.data as { podId?: string | null };
+          const podId = podData?.podId ?? null;
+          const podMeta = podId ? podMetaById.get(podId) : null;
+          const eligible = Boolean(podId && podMeta?.prefix);
+          setPlacementTarget({
+            kind: "pod",
+            rigId,
+            podId: podId ?? "",
+            podPrefix: podMeta?.prefix ?? null,
+            podLabel: podMeta?.displayName ?? null,
+            eligible,
+            ...(eligible ? {} : { reason: "This pod cannot receive a new node yet." }),
+          });
+          return;
+        }
+
+        if (node.type === "rigNode") {
+          const nodeData = node.data as {
+            logicalId: string;
+            binding: { tmuxSession?: string | null; cmuxSurface?: string | null } | null;
+            canonicalSessionName?: string | null;
+          };
+          const available = !nodeData.binding && !nodeData.canonicalSessionName;
+          setPlacementTarget({
+            kind: "node",
+            rigId,
+            logicalId: nodeData.logicalId,
+            eligible: available,
+            ...(available ? {} : { reason: "This node is already claimed." }),
+          });
+          return;
+        }
+      }
 
       if (node.type === "podGroup" || node.type === "group") {
         setSelection({ type: "rig", rigId });
@@ -234,7 +332,7 @@ export function RigGraph({
         showFocusMessage({ text: "Focus failed", type: "error" });
       }
     },
-    [rigId, showFocusMessage, setSelectedNode, setSelection]
+    [placementMode, podMetaById, rigId, setPlacementTarget, setSelectedNode, setSelection, showFocusMessage]
   );
 
   if (rigId === null) {
@@ -297,6 +395,14 @@ export function RigGraph({
           "bg-white border-stone-300 text-stone-600"
         }`}>
           {focusMessage.text}
+        </div>
+      )}
+      {placementMode && (
+        <div
+          data-testid="graph-placement-banner"
+          className="absolute top-spacing-4 left-1/2 z-20 -translate-x-1/2 border border-stone-300/70 bg-[rgba(250,249,245,0.9)] px-3 py-1.5 font-mono text-[10px] text-stone-700 shadow-sm backdrop-blur-sm"
+        >
+          Click an available node to bind, or click a pod to add a new node.
         </div>
       )}
       <ReactFlow

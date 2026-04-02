@@ -4,7 +4,7 @@ import { ReactFlowProvider, MarkerType } from "@xyflow/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RigGraph } from "../src/components/RigGraph.js";
 import { RigNode } from "../src/components/RigNode.js";
-import { DrawerSelectionContext } from "../src/components/AppShell.js";
+import { DiscoveryPlacementContext, DrawerSelectionContext } from "../src/components/AppShell.js";
 import { createMockEventSourceClass, instances } from "./helpers/mock-event-source.js";
 import type { MockEventSourceInstance } from "./helpers/mock-event-source.js";
 
@@ -228,6 +228,145 @@ describe("RigGraph", () => {
     expect(setSelection).toHaveBeenCalledWith({ type: "rig", rigId: "rig-1" });
   });
 
+  it("clicking an unbound node in discovery placement mode selects it as a bind target", async () => {
+    mockFetch.mockResolvedValueOnce(mockGraphResponse([
+      {
+        id: "n1",
+        type: "rigNode",
+        position: { x: 0, y: 0 },
+        data: {
+          logicalId: "dev.impl",
+          rigId: "rig-1",
+          role: "worker",
+          runtime: "claude-code",
+          model: null,
+          status: null,
+          binding: null,
+          nodeKind: "agent",
+          startupStatus: null,
+          canonicalSessionName: null,
+          podId: "dev",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+    ], []));
+
+    const setPlacementTarget = vi.fn();
+
+    const { container } = render(
+      <QueryWrapper>
+        <DrawerSelectionContext.Provider value={{ selection: { type: "discovery" }, setSelection: vi.fn() }}>
+          <DiscoveryPlacementContext.Provider
+            value={{
+              selectedDiscoveredId: "disc-1",
+              setSelectedDiscoveredId: vi.fn(),
+              placementTarget: null,
+              setPlacementTarget,
+              clearPlacement: vi.fn(),
+            }}
+          >
+            <RigGraph showDiscovered={false} rigId="rig-1" />
+          </DiscoveryPlacementContext.Provider>
+        </DrawerSelectionContext.Provider>
+      </QueryWrapper>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".react-flow__node-rigNode")).not.toBeNull();
+    });
+
+    fireEvent.click(container.querySelector(".react-flow__node-rigNode")!);
+
+    expect(setPlacementTarget).toHaveBeenCalledWith({
+      kind: "node",
+      rigId: "rig-1",
+      logicalId: "dev.impl",
+      eligible: true,
+    });
+  });
+
+  it("clicking a pod group in discovery placement mode selects it as an add-to-pod target", async () => {
+    mockFetch.mockResolvedValueOnce(mockGraphResponse([
+      {
+        id: "pod-dev",
+        type: "podGroup",
+        position: { x: 0, y: 0 },
+        data: {
+          logicalId: "dev",
+          podLabel: "Development",
+          rigId: "rig-1",
+          role: null,
+          runtime: null,
+          model: null,
+          status: null,
+          binding: null,
+          nodeKind: "agent",
+          startupStatus: null,
+          canonicalSessionName: null,
+          podId: "dev",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+      {
+        id: "n1",
+        type: "rigNode",
+        position: { x: 0, y: 0 },
+        parentId: "pod-dev",
+        data: {
+          logicalId: "dev.impl",
+          rigId: "rig-1",
+          role: "worker",
+          runtime: "claude-code",
+          model: null,
+          status: "running",
+          binding: { tmuxSession: "dev-impl@test-rig", cmuxSurface: null },
+          nodeKind: "agent",
+          startupStatus: "ready",
+          canonicalSessionName: "dev-impl@test-rig",
+          podId: "dev",
+          restoreOutcome: "n-a",
+          resumeToken: null,
+        },
+      },
+    ], []));
+
+    const setPlacementTarget = vi.fn();
+    const { container } = render(
+      <QueryWrapper>
+        <DrawerSelectionContext.Provider value={{ selection: { type: "discovery" }, setSelection: vi.fn() }}>
+          <DiscoveryPlacementContext.Provider
+            value={{
+              selectedDiscoveredId: "disc-1",
+              setSelectedDiscoveredId: vi.fn(),
+              placementTarget: null,
+              setPlacementTarget,
+              clearPlacement: vi.fn(),
+            }}
+          >
+            <RigGraph showDiscovered={false} rigId="rig-1" />
+          </DiscoveryPlacementContext.Provider>
+        </DrawerSelectionContext.Provider>
+      </QueryWrapper>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".react-flow__node-podGroup")).not.toBeNull();
+    });
+
+    fireEvent.click(container.querySelector(".react-flow__node-podGroup")!);
+
+    expect(setPlacementTarget).toHaveBeenCalledWith({
+      kind: "pod",
+      rigId: "rig-1",
+      podId: "dev",
+      podPrefix: "dev",
+      podLabel: "dev",
+      eligible: true,
+    });
+  });
+
   it("renders nodes from mock graph data", async () => {
     mockFetch.mockResolvedValueOnce(mockGraphResponse(sampleNodes(), sampleEdges()));
 
@@ -428,6 +567,29 @@ describe("RigNode", () => {
     expect(screen.getByTestId("toolbar-copy-attach")).toBeDefined();
     expect(screen.getByTestId("toolbar-cmux-focus")).toBeDefined();
     expect(screen.getByTestId("toolbar-copy-resume")).toBeDefined();
+  });
+
+  it("shows an availability marker when the node can receive a discovered session", () => {
+    const data = {
+      logicalId: "dev.impl",
+      rigId: "rig-1",
+      role: "worker",
+      runtime: "claude-code",
+      model: null,
+      status: null,
+      startupStatus: null,
+      canonicalSessionName: null,
+      binding: null,
+      placementState: "available" as const,
+    };
+
+    render(
+      <ReactFlowProvider>
+        <RigNode data={data} />
+      </ReactFlowProvider>
+    );
+
+    expect(screen.getByTestId("placement-chip-dev.impl").textContent).toBe("avail");
   });
 
   it("copy actions show copied feedback after click", async () => {

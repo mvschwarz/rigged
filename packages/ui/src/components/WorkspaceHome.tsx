@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { useExplorerVisibility } from "./AppShell.js";
+import { useDrawerSelection, useExplorerVisibility } from "./AppShell.js";
 
 export function WorkspaceHome() {
   const { openExplorer } = useExplorerVisibility();
+  const { setSelection } = useDrawerSelection();
 
   return (
     <div
@@ -18,7 +19,7 @@ export function WorkspaceHome() {
         </h1>
         <p className="text-sm text-stone-600">
           Use <span className="font-mono text-stone-800">Specs</span> to import a rig spec or run bootstrap,
-          and use <span className="font-mono text-stone-800">Discovery</span> to claim existing sessions.
+          and use the <span className="font-mono text-stone-800">Discovery</span> drawer to place running sessions.
         </p>
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
@@ -35,12 +36,14 @@ export function WorkspaceHome() {
           >
             Open Specs
           </Link>
-          <Link
-            to="/discovery"
+          <button
+            type="button"
+            data-testid="workspace-open-discovery"
+            onClick={() => setSelection({ type: "discovery" })}
             className="border border-stone-300 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-stone-700 transition-colors hover:bg-stone-100"
           >
             Open Discovery
-          </Link>
+          </button>
         </div>
       </div>
     </div>

@@ -75,25 +75,43 @@ function TreeToggle({
 }
 
 function ExplorerActionButton({
-  to,
   label,
   onClose,
+  to,
+  onAction,
   testId,
 }: {
-  to: string;
   label: string;
   onClose: () => void;
+  to?: string;
+  onAction?: () => void;
   testId?: string;
 }) {
+  if (to) {
+    return (
+      <Link
+        to={to}
+        data-testid={testId}
+        onClick={onClose}
+        className="block w-full border-t border-stone-200 px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-stone-700 transition-colors hover:bg-stone-100"
+      >
+        {label}
+      </Link>
+    );
+  }
+
   return (
-    <Link
-      to={to}
+    <button
+      type="button"
       data-testid={testId}
-      onClick={onClose}
+      onClick={() => {
+        onAction?.();
+        onClose();
+      }}
       className="block w-full border-t border-stone-200 px-4 py-3 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-stone-700 transition-colors hover:bg-stone-100"
     >
       {label}
-    </Link>
+    </button>
   );
 }
 
@@ -250,7 +268,9 @@ function RigBranch({
           to="/rigs/$rigId"
           params={{ rigId: rig.id }}
           onClick={() => {
-            onSelect({ type: "rig", rigId: rig.id });
+            if (selection?.type !== "discovery") {
+              onSelect({ type: "rig", rigId: rig.id });
+            }
             onClose();
           }}
           className={cn(
@@ -408,7 +428,12 @@ function FullExplorerContents({
 
       <div className="mt-auto border-t border-stone-200">
         <div data-testid="explorer-action-stack" className="flex flex-col">
-          <ExplorerActionButton to="/discovery" label="Discovery" onClose={onClose} testId="explorer-action-discovery" />
+          <ExplorerActionButton
+            label="Discovery"
+            onClose={onClose}
+            onAction={() => onSelect({ type: "discovery" })}
+            testId="explorer-action-discovery"
+          />
           <ExplorerActionButton to="/packages" label="Specs" onClose={onClose} testId="explorer-action-specs" />
         </div>
       </div>

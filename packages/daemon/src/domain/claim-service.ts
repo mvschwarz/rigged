@@ -28,6 +28,14 @@ interface BindOptions {
   logicalId: string;
 }
 
+interface CreateAndBindToPodOptions {
+  discoveredId: string;
+  rigId: string;
+  podId: string;
+  podPrefix: string;
+  memberName: string;
+}
+
 /**
  * Adopts a discovered session into a managed rig.
  * Creates node + binding + session record atomically.
@@ -197,6 +205,90 @@ export class ClaimService {
           rigId: opts.rigId,
           nodeId,
           logicalId: opts.logicalId,
+          discoveredId: discovered.id,
+          seq: event.seq,
+          createdAt: event.created_at,
+        });
+      }
+      return { ok: true, nodeId, sessionId };
+    } catch (err) {
+      return { ok: false, code: "claim_error", error: (err as Error).message };
+    }
+  }
+
+  createAndBindToPod(opts: CreateAndBindToPodOptions): ClaimResult {
+    const discovered = this.discoveryRepo.getDiscoveredSession(opts.discoveredId);
+    if (!discovered) {
+      return { ok: false, code: "not_found", error: "Discovery record not found" };
+    }
+    if (discovered.status !== "active") {
+      return { ok: false, code: "not_active", error: `Discovery record is ${discovered.status}, not active` };
+    }
+
+    const rig = this.rigRepo.getRig(opts.rigId);
+    if (!rig) {
+      return { ok: false, code: "rig_not_found", error: "Target rig not found" };
+    }
+
+    const podRow = this.db
+      .prepare("SELECT rig_id FROM pods WHERE id = ?")
+      .get(opts.podId) as { rig_id: string } | undefined;
+    if (!podRow || podRow.rig_id !== opts.rigId) {
+      return { ok: false, code: "pod_not_found", error: "Target pod not found in rig" };
+    }
+
+    const memberName = opts.memberName.trim();
+    const podPrefix = opts.podPrefix.trim();
+    if (!memberName) {
+      return { ok: false, code: "invalid_member_name", error: "memberName is required" };
+    }
+    if (!podPrefix) {
+      return { ok: false, code: "invalid_pod_prefix", error: "podPrefix is required" };
+    }
+
+    const logicalId = `${podPrefix}.${memberName}`;
+    if (rig.nodes.some((n) => n.logicalId === logicalId)) {
+      return { ok: false, code: "duplicate_logical_id", error: `Logical ID '${logicalId}' already exists in rig` };
+    }
+
+    const claimTx = this.db.transaction(() => {
+      const runtime = discovered.runtimeHint === "unknown" || discovered.runtimeHint === "terminal"
+        ? undefined
+        : discovered.runtimeHint;
+      const node = this.rigRepo.addNode(opts.rigId, logicalId, {
+        runtime,
+        cwd: discovered.cwd ?? undefined,
+        podId: opts.podId,
+      });
+
+      this.sessionRegistry.updateBinding(node.id, {
+        tmuxSession: discovered.tmuxSession,
+        tmuxWindow: discovered.tmuxWindow ?? undefined,
+        tmuxPane: discovered.tmuxPane ?? undefined,
+      });
+
+      const session = this.sessionRegistry.registerClaimedSession(node.id, discovered.tmuxSession);
+      this.discoveryRepo.markClaimed(discovered.id, node.id);
+      this.eventBus.persistWithinTransaction({
+        type: "node.claimed",
+        rigId: opts.rigId,
+        nodeId: node.id,
+        logicalId,
+        discoveredId: discovered.id,
+      });
+
+      return { nodeId: node.id, sessionId: session.id };
+    });
+
+    try {
+      const { nodeId, sessionId } = claimTx();
+      const event = this.db.prepare("SELECT * FROM events ORDER BY seq DESC LIMIT 1").get() as { seq: number; type: string; rig_id: string; node_id: string; payload: string; created_at: string };
+      if (event) {
+        this.eventBus.notifySubscribers({
+          type: "node.claimed",
+          rigId: opts.rigId,
+          nodeId,
+          logicalId,
           discoveredId: discovered.id,
           seq: event.seq,
           createdAt: event.created_at,

@@ -100,6 +100,29 @@ describe("Explorer sidebar", () => {
     expect(screen.queryByTestId("explorer-action-import")).toBeNull();
   });
 
+  it("clicking Discovery opens the discovery drawer selection", async () => {
+    const onSelect = vi.fn();
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/api/rigs/summary")) {
+        return { ok: true, json: async () => [{ id: "rig-1", name: "auth-feats", nodeCount: 2, latestSnapshotAt: null, latestSnapshotId: null }] };
+      }
+      if (url.includes("/api/ps")) {
+        return { ok: true, json: async () => [{ rigId: "rig-1", name: "auth-feats", nodeCount: 2, runningCount: 2, status: "running", uptime: "1h", latestSnapshot: null }] };
+      }
+      return { ok: true, json: async () => [] };
+    });
+
+    renderExplorer({ onSelect });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-action-discovery")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("explorer-action-discovery"));
+
+    expect(onSelect).toHaveBeenCalledWith({ type: "discovery" });
+  });
+
   // Test 2: Home view shows local expanded with rigs collapsed by default
   it("shows rigs collapsed by default on the home view", async () => {
     mockFetch.mockImplementation(async (url: string) => {

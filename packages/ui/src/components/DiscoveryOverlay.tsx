@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { copyText } from "@/lib/copy-text";
 import {
   Dialog,
   DialogContent,
@@ -11,68 +12,166 @@ import {
 } from "@/components/ui/dialog";
 import {
   useDiscoveredSessions,
+  useDiscoveryScan,
   useClaimSession,
-  useDiscoveryPoll,
+  useBindSession,
   type DiscoveredSession,
 } from "../hooks/useDiscovery.js";
 import { useRigSummary } from "../hooks/useRigSummary.js";
 
-function confidenceColor(confidence: string): string {
-  switch (confidence) {
-    case "highest": return "text-success";
-    case "high": return "text-success";
-    case "medium": return "text-warning";
-    case "low": return "text-foreground-muted";
+function runtimeAccent(hint: string): string {
+  switch (hint) {
+    case "claude-code": return "text-primary";
+    case "codex": return "text-accent";
+    case "terminal": return "text-foreground";
     default: return "text-foreground-muted";
   }
 }
 
-function runtimeColor(hint: string): string {
+function runtimeLabel(hint: string): string {
   switch (hint) {
-    case "claude-code": return "bg-primary";
-    case "codex": return "bg-accent";
-    case "terminal": return "bg-foreground-muted";
-    default: return "bg-foreground-muted";
+    case "claude-code": return "Claude Code";
+    case "codex": return "Codex";
+    case "terminal": return "Terminal";
+    default: return "Unknown";
   }
 }
 
-function DiscoveredSessionCard({ session, onClaim }: { session: DiscoveredSession; onClaim: (id: string) => void }) {
-  const isDimmed = session.status === "vanished";
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
+function attachCommand(session: DiscoveredSession): string {
+  const target = session.tmuxWindow ? `${session.tmuxSession}:${session.tmuxWindow}` : session.tmuxSession;
+  return `tmux attach -t ${shellQuote(target)}`;
+}
+
+function DiscoveryActionButton({
+  label,
+  activeLabel,
+  onClick,
+  testId,
+}: {
+  label: string;
+  activeLabel: string;
+  onClick: () => boolean | Promise<boolean>;
+  testId?: string;
+}) {
+  const [active, setActive] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleClick = async () => {
+    const result = await onClick();
+    if (!result) return;
+    setActive(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setActive(false);
+      timerRef.current = null;
+    }, 900);
+  };
+
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={() => { void handleClick(); }}
+      className={cn(
+        "px-spacing-2 py-1 border font-mono text-[10px] uppercase transition-colors duration-150 ease-tactical",
+        active
+          ? "bg-stone-900 text-white border-stone-900"
+          : "bg-white text-stone-900 border-stone-300 hover:bg-stone-100",
+      )}
+    >
+      {active ? activeLabel : label}
+    </button>
+  );
+}
+
+function DiscoveredSessionCard({ session, onAdopt }: { session: DiscoveredSession; onAdopt: (id: string) => void }) {
   return (
     <div
       data-testid="discovered-node"
       className={cn(
-        "border-dashed border border-foreground/20 p-spacing-4 mb-spacing-2",
-        isDimmed ? "opacity-40" : "",
+        "border-dashed border border-foreground/20 bg-[rgba(255,255,255,0.72)] px-spacing-4 py-spacing-3 mb-spacing-2 shadow-[0_10px_28px_rgba(20,20,20,0.04)] backdrop-blur-sm",
       )}
     >
-      <div className="flex items-center gap-spacing-3 mb-spacing-1">
-        <span data-testid="runtime-badge" className={cn("px-spacing-2 py-px text-label-sm uppercase", runtimeColor(session.runtimeHint))}>
-          {session.runtimeHint}
-        </span>
-        <span data-testid="confidence-badge" className={cn("text-label-sm font-mono", confidenceColor(session.confidence))}>
-          {session.confidence}
-        </span>
-        {isDimmed && <span className="text-label-sm text-destructive uppercase">VANISHED</span>}
+      <div className="flex flex-col gap-spacing-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-spacing-3 gap-y-spacing-1">
+            <div
+              data-testid="runtime-badge"
+              className={cn("text-[10px] uppercase tracking-[0.08em]", runtimeAccent(session.runtimeHint))}
+            >
+              {runtimeLabel(session.runtimeHint)}
+            </div>
+            <div
+              data-testid="session-name"
+              className="font-mono text-[13px] leading-5 text-foreground"
+              title={session.tmuxSession}
+            >
+              {session.tmuxSession}
+            </div>
+            {session.confidence === "medium" ? (
+              <div
+                data-testid="runtime-inferred-note"
+                className="text-[10px] uppercase tracking-[0.08em] text-foreground-muted"
+              >
+                runtime inferred
+              </div>
+            ) : null}
+          </div>
+          {session.cwd ? (
+            <div className="mt-spacing-2 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
+                cwd
+              </div>
+              <div
+                className="font-mono text-[12px] leading-5 text-foreground-muted truncate"
+                title={session.cwd}
+              >
+                {session.cwd}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-spacing-2 lg:justify-end">
+        <DiscoveryActionButton
+          label="copy tmux"
+          activeLabel="copied"
+          testId="copy-tmux-btn"
+          onClick={async () => {
+            const ok = await copyText(attachCommand(session));
+            return ok;
+          }}
+        />
+        {session.cwd ? (
+          <DiscoveryActionButton
+            label="copy cwd"
+            activeLabel="copied"
+            testId="copy-cwd-btn"
+            onClick={async () => {
+              const ok = await copyText(session.cwd ?? "");
+              return ok;
+            }}
+          />
+        ) : null}
+          <Button
+            variant="tactical"
+            size="sm"
+            data-testid="adopt-btn"
+            onClick={() => onAdopt(session.id)}
+          >
+            ADOPT
+          </Button>
+        </div>
       </div>
-      <div className="text-label-sm font-mono text-foreground-muted">
-        {session.tmuxSession}:{session.tmuxPane}
-      </div>
-      {session.cwd && (
-        <div className="text-label-sm font-mono text-foreground-muted truncate">{session.cwd}</div>
-      )}
-      {session.status === "active" && (
-        <Button
-          variant="tactical"
-          size="sm"
-          data-testid="claim-btn"
-          className="mt-spacing-2"
-          onClick={() => onClaim(session.id)}
-        >
-          CLAIM
-        </Button>
-      )}
     </div>
   );
 }
@@ -140,68 +239,114 @@ export function GenerateDraftSection() {
 }
 
 export function DiscoveryOverlay() {
-  const { data: sessions = [] } = useDiscoveredSessions();
-  useDiscoveryPoll(30_000);
+  const { data: sessions = [] } = useDiscoveredSessions({
+    status: "active",
+    runtimeHint: ["claude-code", "codex"],
+    minConfidence: "medium",
+  });
+  const scanMutation = useDiscoveryScan();
   const { data: rigs = [] } = useRigSummary();
   const claimMutation = useClaimSession();
-  const visibleSessions = sessions.filter((session) => session.status !== "claimed");
+  const bindMutation = useBindSession();
+  const visibleSessions = sessions;
 
-  const [claimTarget, setClaimTarget] = useState<string | null>(null);
+  const [adoptTarget, setAdoptTarget] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rigId, setRigId] = useState("");
   const [logicalId, setLogicalId] = useState("");
 
-  const handleClaimClick = (discoveredId: string) => {
-    setClaimTarget(discoveredId);
+  const handleAdoptClick = (discoveredId: string) => {
+    setAdoptTarget(discoveredId);
     setDialogOpen(true);
     setRigId("");
     setLogicalId("");
     claimMutation.reset();
+    bindMutation.reset();
   };
 
-  const handleClaimConfirm = () => {
-    if (!claimTarget || !rigId) return;
+  const finishAdopt = () => {
+    setDialogOpen(false);
+    setAdoptTarget(null);
+  };
+
+  const handleAdoptConfirm = () => {
+    if (!adoptTarget || !rigId) return;
+    if (logicalId.trim()) {
+      bindMutation.mutate(
+        { discoveredId: adoptTarget, rigId, logicalId: logicalId.trim() },
+        { onSuccess: finishAdopt },
+      );
+      return;
+    }
     claimMutation.mutate(
-      { discoveredId: claimTarget, rigId, logicalId: logicalId || undefined },
-      {
-        onSuccess: () => {
-          setDialogOpen(false);
-          setClaimTarget(null);
-        },
-      },
+      { discoveredId: adoptTarget, rigId, logicalId: undefined },
+      { onSuccess: finishAdopt },
     );
   };
 
-  if (visibleSessions.length === 0) {
-    return (
-      <div className="p-spacing-6" data-testid="discovery-empty">
-        <p className="text-body-md text-foreground-muted">No discovered sessions</p>
-      </div>
-    );
-  }
+  const adoptError = bindMutation.error?.message ?? claimMutation.error?.message ?? null;
+  const adoptPending = bindMutation.isPending || claimMutation.isPending;
 
   return (
     <div className="p-spacing-6" data-testid="discovery-overlay">
-      <h3 className="text-headline-md uppercase mb-spacing-4">DISCOVERED SESSIONS</h3>
+        <div className="mx-auto max-w-[920px]">
+        <div className="flex flex-col gap-spacing-4 border-b border-foreground/10 pb-spacing-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-[620px]">
+            <h2 className="text-headline-lg uppercase">DISCOVERY</h2>
+            <p className="mt-spacing-1 text-body-md text-foreground-muted">
+              Running agent sessions currently visible on this machine. Copy a tmux attach command,
+              review the working directory, or adopt the session into a rig.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="scan-now-btn"
+            disabled={scanMutation.isPending}
+            onClick={() => scanMutation.mutate()}
+          >
+            {scanMutation.isPending ? "SCANNING..." : "SCAN NOW"}
+          </Button>
+        </div>
 
-      {visibleSessions.map((s) => (
-        <DiscoveredSessionCard key={s.id} session={s} onClaim={handleClaimClick} />
-      ))}
+        {scanMutation.isError ? (
+          <div className="mt-spacing-4 text-label-sm text-destructive" data-testid="scan-error">
+            Discovery scan failed: {scanMutation.error?.message}
+          </div>
+        ) : null}
 
-      {/* Generate Draft Rig Spec */}
-      <GenerateDraftSection />
+        {visibleSessions.length === 0 ? (
+          <div className="py-spacing-8" data-testid="discovery-empty">
+            <p className="text-body-md text-foreground-muted">No running Claude or Codex sessions are currently visible.</p>
+          </div>
+        ) : (
+          <div className="mt-spacing-6 space-y-spacing-3" data-testid="discovery-active-section">
+            <div className="mb-spacing-2">
+              <h3 className="text-headline-sm uppercase">Running agents</h3>
+              <p className="text-label-md text-foreground-muted">
+                {visibleSessions.length} session{visibleSessions.length !== 1 ? "s" : ""} available to inspect or adopt
+              </p>
+            </div>
+            {visibleSessions.map((session) => (
+              <DiscoveredSessionCard key={session.id} session={session} onAdopt={handleAdoptClick} />
+            ))}
+          </div>
+        )}
+
+        <GenerateDraftSection />
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent data-testid="claim-dialog">
+        <DialogContent data-testid="adopt-dialog">
           <DialogHeader>
-            <DialogTitle className="text-headline-md uppercase">CLAIM SESSION</DialogTitle>
-            <DialogDescription>Adopt this session into a managed rig.</DialogDescription>
+            <DialogTitle className="text-headline-md uppercase">ADOPT SESSION</DialogTitle>
+            <DialogDescription>Bind into an existing logical node or create a new managed node.</DialogDescription>
           </DialogHeader>
           <div className="space-y-spacing-3">
             <div>
               <label className="text-label-sm uppercase block mb-spacing-1">RIG</label>
               <select
-                data-testid="claim-rig-input"
+                data-testid="adopt-rig-input"
                 value={rigId}
                 onChange={(e) => setRigId(e.target.value)}
                 className="w-full bg-white border-b border-outline py-spacing-1 text-body-md font-mono focus:outline-none focus:border-stone-900 appearance-none cursor-pointer"
@@ -213,30 +358,33 @@ export function DiscoveryOverlay() {
               </select>
             </div>
             <div>
-              <label className="text-label-sm uppercase block mb-spacing-1">LOGICAL ID (optional)</label>
+              <label className="text-label-sm uppercase block mb-spacing-1">EXISTING LOGICAL ID (optional)</label>
               <input
-                data-testid="claim-logical-input"
+                data-testid="adopt-logical-input"
                 type="text"
                 value={logicalId}
                 onChange={(e) => setLogicalId(e.target.value)}
                 className="w-full bg-transparent border-b border-foreground/20 py-spacing-1 text-body-md font-mono focus:outline-none focus:border-primary"
               />
+              <p className="mt-spacing-1 text-label-sm text-foreground-muted">
+                Leave blank to create a new managed node. Fill this in to bind an existing logical node.
+              </p>
             </div>
           </div>
-          {claimMutation.isError && (
-            <p className="text-destructive text-label-sm" data-testid="claim-error">
-              {claimMutation.error?.message}
+          {adoptError && (
+            <p className="text-destructive text-label-sm" data-testid="adopt-error">
+              {adoptError}
             </p>
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDialogOpen(false)}>CANCEL</Button>
             <Button
               variant="tactical"
-              onClick={handleClaimConfirm}
-              disabled={!rigId || claimMutation.isPending}
-              data-testid="claim-confirm"
+              onClick={handleAdoptConfirm}
+              disabled={!rigId || adoptPending}
+              data-testid="adopt-confirm"
             >
-              {claimMutation.isPending ? "CLAIMING..." : "CLAIM"}
+              {adoptPending ? "ADOPTING..." : "ADOPT"}
             </Button>
           </DialogFooter>
         </DialogContent>

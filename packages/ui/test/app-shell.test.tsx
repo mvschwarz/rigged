@@ -222,6 +222,21 @@ describe("App Shell + Routing", () => {
     });
   });
 
+  it("workspace discovery button opens the discovery drawer instead of routing away", async () => {
+    mockAllApis();
+    await renderRealAppAt("/");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-open-discovery")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-open-discovery"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discovery-panel")).toBeDefined();
+    });
+  });
+
   it("/rigs/:rigId renders without standalone SnapshotPanel", async () => {
     mockAllApis();
     await renderRealAppAt("/rigs/r1");
@@ -266,6 +281,18 @@ describe("App Shell + Routing", () => {
       expect(screen.getByTestId("system-log-tab")).toBeDefined();
       expect(screen.getByTestId("system-tab-log").className).toContain("font-bold");
     });
+  });
+
+  it("/discovery opens the discovery drawer over the workspace shell", async () => {
+    mockAllApis();
+    await renderRealAppAt("/discovery");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discovery-panel")).toBeDefined();
+      expect(screen.getByTestId("workspace-home")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("header-surface-title")).toBeNull();
   });
 
   it("system status tab spells out daemon and cmux state", async () => {

@@ -152,6 +152,53 @@ describe("Discovery API routes", () => {
     expect(body.nodeId).toBeTruthy();
   });
 
+  it("POST /api/discovery/:id/adopt binds into an existing managed node target", async () => {
+    const id = seedDiscovery();
+    const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/workspace" });
+
+    const res = await app.request(`/api/discovery/${id}/adopt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rigId: rig.id,
+        target: { kind: "node", logicalId: "orch.lead" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("bind");
+    expect(body.logicalId).toBe("orch.lead");
+  });
+
+  it("POST /api/discovery/:id/adopt creates a new node inside a pod target and binds it", async () => {
+    const id = seedDiscovery("research-scout", "%2");
+    const rig = seedRig();
+    db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-research", rig.id, "Research");
+    setup.rigRepo.addNode(rig.id, "research.mapper", { runtime: "claude-code", podId: "pod-research" });
+
+    const res = await app.request(`/api/discovery/${id}/adopt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rigId: rig.id,
+        target: { kind: "pod", podId: "pod-research", podPrefix: "research", memberName: "scout" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("create_and_bind");
+    expect(body.logicalId).toBe("research.scout");
+
+    const claimedNode = setup.rigRepo.getRig(rig.id)?.nodes.find((node) => node.logicalId === "research.scout");
+    expect(claimedNode?.podId).toBe("pod-research");
+    expect(claimedNode?.binding?.tmuxSession).toBe("research-scout");
+  });
+
   // T5a: Claim nonexistent discovery -> 404
   it("claim nonexistent discovery returns 404", async () => {
     const rig = seedRig();

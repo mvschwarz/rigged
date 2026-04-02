@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -14,10 +15,10 @@ import { PackageList } from "./components/PackageList.js";
 import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
 import { PackageDetail } from "./components/PackageDetail.js";
 import { BootstrapWizard } from "./components/BootstrapWizard.js";
-import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
 import { BundleInspector } from "./components/BundleInspector.js";
 import { BundleInstallFlow } from "./components/BundleInstallFlow.js";
 import { useRigSummary } from "./hooks/useRigSummary.js";
+import { useDrawerSelection } from "./components/AppShell.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -86,11 +87,21 @@ const bootstrapRoute = createRoute({
   component: BootstrapWizard,
 });
 
+function DiscoveryRouteBridge() {
+  const { setSelection } = useDrawerSelection();
+
+  useEffect(() => {
+    setSelection({ type: "discovery" });
+  }, [setSelection]);
+
+  return <WorkspaceHome />;
+}
+
 // Discovery route
 const discoveryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discovery",
-  component: DiscoveryOverlay,
+  component: DiscoveryRouteBridge,
 });
 
 // Bundle routes

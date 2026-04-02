@@ -21,6 +21,7 @@ interface RigNodeData {
     tmuxSession?: string | null;
     cmuxSurface?: string | null;
   } | null;
+  placementState?: "available" | "selected" | null;
 }
 
 /** Core roles get dark header stripe, workers get light */
@@ -76,6 +77,7 @@ export function RigNode({ data }: { data: RigNodeData }) {
   const agentName = displayAgentName(data.logicalId);
   const statusLabel = getStartupStatusLabel(data.startupStatus);
   const statusClass = getStartupStatusColorClass(data.startupStatus);
+  const placementChipLabel = data.placementState === "selected" ? "target" : data.placementState === "available" ? "avail" : null;
 
   const flashFeedback = (kind: "attach" | "resume" | "cmux") => {
     if (feedbackTimerRef.current) {
@@ -129,7 +131,13 @@ export function RigNode({ data }: { data: RigNodeData }) {
 
   return (
     <div
-      className="bg-white border border-stone-900 min-w-[200px] hard-shadow relative"
+      className={`bg-white border min-w-[200px] hard-shadow relative ${
+        data.placementState === "selected"
+          ? "border-stone-950 ring-1 ring-stone-900/30"
+          : data.placementState === "available"
+            ? "border-stone-500"
+            : "border-stone-900"
+      }`}
       data-testid="rig-node"
     >
       <Handle type="target" position={Position.Top} />
@@ -225,6 +233,21 @@ export function RigNode({ data }: { data: RigNodeData }) {
                 {actionFeedback === "resume" ? "copied" : "resume"}
               </button>
             )}
+          </div>
+        )}
+
+        {placementChipLabel && (
+          <div className="pt-1">
+            <span
+              data-testid={`placement-chip-${data.logicalId}`}
+              className={`inline-flex items-center border px-1.5 py-0.5 font-mono text-[7px] uppercase tracking-[0.12em] ${
+                data.placementState === "selected"
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 bg-stone-100 text-stone-600"
+              }`}
+            >
+              {placementChipLabel}
+            </span>
           </div>
         )}
       </div>

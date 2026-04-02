@@ -1,8 +1,9 @@
-import { type ReactNode, useState, createContext, useContext } from "react";
+import { type ReactNode, useCallback, useEffect, useState, createContext, useContext } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Cog } from "lucide-react";
 import { Explorer } from "./Explorer.js";
 import { SharedDetailDrawer, type DrawerSelection } from "./SharedDetailDrawer.js";
+import type { DiscoveryPlacementTarget } from "./DiscoveryPanel.js";
 import { useActivityFeed } from "../hooks/useActivityFeed.js";
 import { useGlobalEvents } from "../hooks/useGlobalEvents.js";
 import { useRigSummary } from "../hooks/useRigSummary.js";
@@ -19,6 +20,14 @@ interface ExplorerVisibilityContextValue {
   openExplorer: () => void;
 }
 
+interface DiscoveryPlacementContextValue {
+  selectedDiscoveredId: string | null;
+  setSelectedDiscoveredId: (id: string | null) => void;
+  placementTarget: DiscoveryPlacementTarget;
+  setPlacementTarget: (target: DiscoveryPlacementTarget) => void;
+  clearPlacement: () => void;
+}
+
 export const DrawerSelectionContext = createContext<DrawerSelectionContextValue>({
   selection: null,
   setSelection: () => {},
@@ -28,12 +37,24 @@ export const ExplorerVisibilityContext = createContext<ExplorerVisibilityContext
   openExplorer: () => {},
 });
 
+export const DiscoveryPlacementContext = createContext<DiscoveryPlacementContextValue>({
+  selectedDiscoveredId: null,
+  setSelectedDiscoveredId: () => {},
+  placementTarget: null,
+  setPlacementTarget: () => {},
+  clearPlacement: () => {},
+});
+
 export function useDrawerSelection() {
   return useContext(DrawerSelectionContext);
 }
 
 export function useExplorerVisibility() {
   return useContext(ExplorerVisibilityContext);
+}
+
+export function useDiscoveryPlacement() {
+  return useContext(DiscoveryPlacementContext);
 }
 
 // Backward-compat alias for consumers that still use the old name
@@ -62,7 +83,6 @@ function resolveSurfaceTitle(pathname: string, rigId: string | null, rigName: st
   if (pathname === "/") return null;
   if (rigId) return rigName ?? shortId(rigId, 8);
   if (pathname.startsWith("/packages") || pathname === "/import" || pathname === "/bootstrap") return "Specs";
-  if (pathname.startsWith("/discovery")) return "Discovery";
   if (pathname.startsWith("/bundles/inspect")) return "Bundle Inspector";
   if (pathname.startsWith("/bundles/install")) return "Bundle Install";
   return null;
@@ -77,18 +97,53 @@ export function AppShell({ children }: AppShellProps) {
   const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
   const { events } = useActivityFeed();
   const [selection, setSelection] = useState<DrawerSelection>(null);
+  const [selectedDiscoveredId, setSelectedDiscoveredIdState] = useState<string | null>(null);
+  const [placementTarget, setPlacementTargetState] = useState<DiscoveryPlacementTarget>(null);
   const currentRigName = currentRigId ? (rigs?.find((rig) => rig.id === currentRigId)?.name ?? null) : null;
   const surfaceTitle = resolveSurfaceTitle(pathname, currentRigId, currentRigName);
   const openExplorer = () => {
     setDesktopExplorerOpen(true);
     setSidebarOpen(true);
   };
+  const clearPlacement = useCallback(() => {
+    setSelectedDiscoveredIdState(null);
+    setPlacementTargetState(null);
+  }, []);
+  const setSelectedDiscoveredId = useCallback((id: string | null) => {
+    setSelectedDiscoveredIdState(id);
+    setPlacementTargetState(null);
+  }, []);
+
+  useEffect(() => {
+    if (selection?.type !== "discovery") {
+      clearPlacement();
+    }
+  }, [selection, clearPlacement]);
+
+  useEffect(() => {
+    if (
+      selection?.type === "discovery" &&
+      placementTarget &&
+      currentRigId !== placementTarget.rigId
+    ) {
+      setPlacementTargetState(null);
+    }
+  }, [currentRigId, placementTarget, selection]);
 
   // Mount global SSE event listener
   useGlobalEvents();
 
   return (
     <DrawerSelectionContext.Provider value={{ selection, setSelection }}>
+      <DiscoveryPlacementContext.Provider
+        value={{
+          selectedDiscoveredId,
+          setSelectedDiscoveredId,
+          placementTarget,
+          setPlacementTarget: setPlacementTargetState,
+          clearPlacement,
+        }}
+      >
       <ExplorerVisibilityContext.Provider value={{ openExplorer }}>
       <div className="h-screen flex flex-col">
         {/* Header — paper with thick bottom border */}
@@ -175,10 +230,15 @@ export function AppShell({ children }: AppShellProps) {
             selection={selection}
             onClose={() => setSelection(null)}
             events={events}
+            selectedDiscoveredId={selectedDiscoveredId}
+            onSelectDiscoveredId={setSelectedDiscoveredId}
+            placementTarget={placementTarget}
+            onClearPlacement={clearPlacement}
           />
         </div>
       </div>
       </ExplorerVisibilityContext.Provider>
+      </DiscoveryPlacementContext.Provider>
     </DrawerSelectionContext.Provider>
   );
 }

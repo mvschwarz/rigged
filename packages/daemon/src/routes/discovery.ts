@@ -136,3 +136,86 @@ discoveryRoutes.post("/:id/bind", async (c) => {
       return c.json(result, 500);
   }
 });
+
+// POST /api/discovery/:id/adopt — UI-friendly composite adopt route
+discoveryRoutes.post("/:id/adopt", async (c) => {
+  const { claimService } = getDeps(c);
+  const id = c.req.param("id")!;
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const rigId = typeof body["rigId"] === "string" ? body["rigId"] : "";
+  const target = body["target"] && typeof body["target"] === "object" ? body["target"] as Record<string, unknown> : null;
+
+  if (!rigId) {
+    return c.json({ error: "rigId is required" }, 400);
+  }
+  if (!target) {
+    return c.json({ error: "target is required" }, 400);
+  }
+
+  const kind = typeof target["kind"] === "string" ? target["kind"] : "";
+  if (kind === "node") {
+    const logicalId = typeof target["logicalId"] === "string" ? target["logicalId"] : "";
+    if (!logicalId) {
+      return c.json({ error: "target.logicalId is required" }, 400);
+    }
+    const result = claimService.bind({ discoveredId: id, rigId, logicalId });
+    if (result.ok) {
+      return c.json({ ...result, action: "bind", logicalId }, 201);
+    }
+
+    switch (result.code) {
+      case "not_found":
+      case "rig_not_found":
+      case "node_not_found":
+        return c.json(result, 404);
+      case "not_active":
+      case "already_bound":
+      case "runtime_mismatch":
+        return c.json(result, 409);
+      default:
+        return c.json(result, 500);
+    }
+  }
+
+  if (kind === "pod") {
+    const podId = typeof target["podId"] === "string" ? target["podId"] : "";
+    const podPrefix = typeof target["podPrefix"] === "string" ? target["podPrefix"] : "";
+    const memberName = typeof target["memberName"] === "string" ? target["memberName"] : "";
+    if (!podId) {
+      return c.json({ error: "target.podId is required" }, 400);
+    }
+    if (!podPrefix) {
+      return c.json({ error: "target.podPrefix is required" }, 400);
+    }
+    if (!memberName) {
+      return c.json({ error: "target.memberName is required" }, 400);
+    }
+
+    const result = claimService.createAndBindToPod({
+      discoveredId: id,
+      rigId,
+      podId,
+      podPrefix,
+      memberName,
+    });
+    if (result.ok) {
+      return c.json({ ...result, action: "create_and_bind", logicalId: `${podPrefix}.${memberName}` }, 201);
+    }
+
+    switch (result.code) {
+      case "not_found":
+      case "rig_not_found":
+      case "pod_not_found":
+        return c.json(result, 404);
+      case "not_active":
+      case "duplicate_logical_id":
+      case "invalid_member_name":
+      case "invalid_pod_prefix":
+        return c.json(result, 409);
+      default:
+        return c.json(result, 500);
+    }
+  }
+
+  return c.json({ error: `Unsupported target kind "${kind}"` }, 400);
+});

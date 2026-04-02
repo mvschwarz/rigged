@@ -3,14 +3,12 @@ import {
   createRoute,
   createRouter,
   Outlet,
-  Link,
 } from "@tanstack/react-router";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/query-client.js";
-import { AppShell, useDrawerSelection } from "./components/AppShell.js";
+import { AppShell } from "./components/AppShell.js";
 import { RigGraph } from "./components/RigGraph.js";
 import { WorkspaceHome } from "./components/WorkspaceHome.js";
-import { shortId } from "./lib/display-id.js";
 import { ImportFlow } from "./components/ImportFlow.js";
 import { PackageList } from "./components/PackageList.js";
 import { PackageInstallFlow } from "./components/PackageInstallFlow.js";
@@ -19,6 +17,7 @@ import { BootstrapWizard } from "./components/BootstrapWizard.js";
 import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
 import { BundleInspector } from "./components/BundleInspector.js";
 import { BundleInstallFlow } from "./components/BundleInstallFlow.js";
+import { useRigSummary } from "./hooks/useRigSummary.js";
 
 // Root route — wraps everything in AppShell
 const rootRoute = createRootRoute({
@@ -41,37 +40,11 @@ const indexRoute = createRoute({
 // Rig detail route — Graph + SnapshotPanel
 function RigDetail() {
   const { rigId } = rigDetailRoute.useParams();
-  const { setSelection } = useDrawerSelection();
-
-  // Fetch rig name from summary cache or fresh
-  const { data: rigs } = useQuery({
-    queryKey: ["rigs", "summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/rigs/summary");
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
+  const { data: rigs } = useRigSummary();
   const rigName = rigs?.find((r: { id: string; name: string }) => r.id === rigId)?.name;
 
   return (
     <div className="flex flex-col flex-1 h-full">
-      {/* Rig header bar */}
-      <div className="flex items-center gap-spacing-3 px-spacing-4 py-spacing-2 bg-background border-b border-foreground/6 shrink-0">
-        <Link to="/" className="text-label-md text-foreground-muted hover:text-foreground transition-colors">
-          &larr; RIGS
-        </Link>
-        <span className="text-foreground/20">/</span>
-        <button
-          type="button"
-          onClick={() => setSelection({ type: "rig", rigId })}
-          className="text-label-lg font-bold uppercase text-left hover:text-foreground-muted transition-colors"
-        >
-          {rigName ?? shortId(rigId, 8)}
-        </button>
-      </div>
-
-      {/* Graph fills the full width — snapshots are in the rig drawer */}
       <div className="flex-1 min-h-[400px] relative">
         <RigGraph rigId={rigId} rigName={rigName ?? null} showDiscovered={false} />
       </div>

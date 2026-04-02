@@ -222,6 +222,7 @@ describe("App Shell + Routing", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("import-flow")).toBeDefined();
+      expect(screen.getByTestId("header-surface-title").textContent).toBe("Specs");
     });
   });
 
@@ -275,22 +276,19 @@ describe("App Shell + Routing", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("content-area")).toBeDefined();
+      expect(screen.getByTestId("header-surface-title").textContent).toBe("alpha");
     });
     expect(screen.queryByTestId("snapshot-panel")).toBeNull();
   });
 
-  it("clicking the rig breadcrumb opens the rig drawer", async () => {
+  it("home route leaves the header title blank", async () => {
     mockAllApis();
-    await renderRealAppAt("/rigs/r1");
+    await renderRealAppAt("/");
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "alpha" })).toBeDefined();
+      expect(screen.getByTestId("app-header")).toBeDefined();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "alpha" }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("rig-detail-panel")).toBeDefined();
-    });
+    expect(screen.queryByTestId("header-surface-title")).toBeNull();
   });
 });

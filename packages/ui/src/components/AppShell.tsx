@@ -5,6 +5,8 @@ import { Explorer } from "./Explorer.js";
 import { SharedDetailDrawer, type DrawerSelection } from "./SharedDetailDrawer.js";
 import { useActivityFeed } from "../hooks/useActivityFeed.js";
 import { useGlobalEvents } from "../hooks/useGlobalEvents.js";
+import { useRigSummary } from "../hooks/useRigSummary.js";
+import { shortId } from "../lib/display-id.js";
 
 // -- Shared drawer selection context --
 
@@ -51,13 +53,32 @@ interface AppShellProps {
   children: ReactNode;
 }
 
+function parseCurrentRigId(pathname: string): string | null {
+  const match = pathname.match(/^\/rigs\/([^/]+)/);
+  return match?.[1] ?? null;
+}
+
+function resolveSurfaceTitle(pathname: string, rigId: string | null, rigName: string | null): string | null {
+  if (pathname === "/") return null;
+  if (rigId) return rigName ?? shortId(rigId, 8);
+  if (pathname.startsWith("/packages") || pathname === "/import" || pathname === "/bootstrap") return "Specs";
+  if (pathname.startsWith("/discovery")) return "Discovery";
+  if (pathname.startsWith("/bundles/inspect")) return "Bundle Inspector";
+  if (pathname.startsWith("/bundles/install")) return "Bundle Install";
+  return null;
+}
+
 export function AppShell({ children }: AppShellProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const currentRigId = parseCurrentRigId(pathname);
+  const { data: rigs } = useRigSummary();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
   const { events } = useActivityFeed();
   const [selection, setSelection] = useState<DrawerSelection>(null);
+  const currentRigName = currentRigId ? (rigs?.find((rig) => rig.id === currentRigId)?.name ?? null) : null;
+  const surfaceTitle = resolveSurfaceTitle(pathname, currentRigId, currentRigName);
   const openExplorer = () => {
     setDesktopExplorerOpen(true);
     setSidebarOpen(true);
@@ -75,6 +96,17 @@ export function AppShell({ children }: AppShellProps) {
           data-testid="app-header"
           className="h-14 flex items-center justify-between px-spacing-6 bg-background border-b-2 border-stone-900 shrink-0 relative z-30"
         >
+          {surfaceTitle && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-28">
+              <div
+                data-testid="header-surface-title"
+                className="truncate font-mono text-sm font-semibold uppercase tracking-[0.12em] text-stone-700"
+              >
+                {surfaceTitle}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-spacing-4">
             {/* Hamburger — narrow viewports only */}
             <button

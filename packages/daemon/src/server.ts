@@ -1,4 +1,7 @@
 import { Hono } from "hono";
+import fs from "node:fs";
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RigRepository } from "./domain/rig-repository.js";
 import type { SessionRegistry } from "./domain/session-registry.js";
 import type { EventBus } from "./domain/event-bus.js";
@@ -79,6 +82,43 @@ export interface AppDeps {
   sessionTransport?: SessionTransport;
   askService?: AskService;
   chatRepo?: ChatRepository;
+  uiDistDir?: string | null;
+}
+
+const MIME_TYPES: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+function resolveDefaultUiDistDir(): string {
+  return nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), "..", "..", "ui", "dist");
+}
+
+function safeResolveUiPath(uiDistDir: string, requestPath: string): string | null {
+  const relativePath = requestPath.replace(/^\/+/, "") || "index.html";
+  const resolvedPath = nodePath.resolve(uiDistDir, relativePath);
+  const normalizedRoot = uiDistDir.endsWith(nodePath.sep) ? uiDistDir : `${uiDistDir}${nodePath.sep}`;
+  if (resolvedPath !== uiDistDir && !resolvedPath.startsWith(normalizedRoot)) {
+    return null;
+  }
+  return resolvedPath;
+}
+
+function fileResponse(filePath: string): Response {
+  const ext = nodePath.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+  const body = fs.readFileSync(filePath);
+  return new Response(body, {
+    headers: {
+      "content-type": contentType,
+    },
+  });
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -197,6 +237,33 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/transport", transportRoutes());
   app.route("/api/ask", askRoutes);
   app.route("/api/rigs/:rigId/chat", chatRoutes());
+
+  const uiDistDir = deps.uiDistDir ?? resolveDefaultUiDistDir();
+  const uiIndexPath = nodePath.join(uiDistDir, "index.html");
+  const hasUiBundle = !!uiDistDir && fs.existsSync(uiIndexPath);
+
+  app.get("*", (c) => {
+    const requestPath = c.req.path;
+
+    if (requestPath === "/healthz" || requestPath.startsWith("/api/")) {
+      return c.notFound();
+    }
+
+    if (!hasUiBundle) {
+      return c.notFound();
+    }
+
+    const requestedFile = safeResolveUiPath(uiDistDir, requestPath);
+    if (requestedFile && fs.existsSync(requestedFile) && fs.statSync(requestedFile).isFile()) {
+      return fileResponse(requestedFile);
+    }
+
+    if (nodePath.extname(requestPath)) {
+      return c.notFound();
+    }
+
+    return fileResponse(uiIndexPath);
+  });
 
   return app;
 }

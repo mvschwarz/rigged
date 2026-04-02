@@ -44,6 +44,7 @@ export function AppShell({ children }: AppShellProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
   const { events, feedOpen, setFeedOpen } = useActivityFeed();
   const [selection, setSelection] = useState<DrawerSelection>(null);
 
@@ -77,31 +78,7 @@ export function AppShell({ children }: AppShellProps) {
             </div>
           </div>
 
-          {/* Center nav — hidden on narrow */}
-          <nav className="hidden md:flex gap-spacing-8">
-            {[
-              { path: "/", label: "RIGS" },
-              { path: "/packages", label: "SPECS" },
-              { path: "/discovery", label: "DISCOVERY" },
-            ].map((item) => {
-              const isActive = item.path === "/"
-                ? pathname === "/" || pathname.startsWith("/rigs")
-                : pathname.startsWith(item.path);
-              return (
-                <a
-                  key={item.path}
-                  href={item.path}
-                  className={`font-headline tracking-tight uppercase text-sm font-bold transition-colors ${
-                    isActive
-                      ? "text-stone-900 border-b-2 border-stone-900 pb-0.5"
-                      : "text-stone-500 hover:bg-stone-200"
-                  }`}
-                >
-                  {item.label}
-                </a>
-              );
-            })}
-          </nav>
+          <div className="flex-1" />
 
           {/* Right side — icons */}
           <div className="flex items-center gap-spacing-2">
@@ -130,6 +107,8 @@ export function AppShell({ children }: AppShellProps) {
             onClose={() => setSidebarOpen(false)}
             selection={selection}
             onSelect={setSelection}
+            desktopMode={desktopExplorerOpen ? "full" : "hidden"}
+            onDesktopToggle={() => setDesktopExplorerOpen((open) => !open)}
           />
 
           <main data-testid="content-area" className="flex-1 flex flex-col overflow-auto relative">

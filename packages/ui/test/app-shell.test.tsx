@@ -133,6 +133,44 @@ describe("App Shell + Routing", () => {
     });
   });
 
+  it("header no longer renders top navigation links", async () => {
+    mockAllApis();
+    await renderRealAppAt("/");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("app-header")).toBeDefined();
+    });
+
+    const header = screen.getByTestId("app-header");
+    expect(header.textContent).not.toContain("RIGS");
+    expect(header.textContent).not.toContain("SPECS");
+    expect(header.textContent).not.toContain("DISCOVERY");
+  });
+
+  it("desktop explorer is controlled by a single edge toggle", async () => {
+    mockAllApis();
+    await renderRealAppAt("/");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-edge-toggle")).toBeDefined();
+      expect(screen.getByTestId("explorer")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("explorer-edge-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer").className).toContain("lg:w-12");
+      expect(screen.getByTestId("explorer-edge-toggle").getAttribute("aria-label")).toContain("Expand");
+    });
+
+    fireEvent.click(screen.getByTestId("explorer-edge-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer").className).not.toContain("lg:hidden");
+      expect(screen.getByTestId("explorer-edge-toggle").getAttribute("aria-label")).toContain("Collapse");
+    });
+  });
+
   it("/ renders dashboard content", async () => {
     mockAllApis();
     await renderRealAppAt("/");

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRigSummary, type RigSummary } from "../hooks/useRigSummary.js";
 import { usePsEntries, type PsEntry } from "../hooks/usePsEntries.js";
 import { useNodeInventory, type NodeInventoryEntry } from "../hooks/useNodeInventory.js";
@@ -8,11 +9,15 @@ import { displayAgentName, displayPodName, inferPodName } from "../lib/display-n
 
 import type { DrawerSelection } from "./SharedDetailDrawer.js";
 
+export type ExplorerDesktopMode = "full" | "hidden";
+
 interface ExplorerProps {
   open: boolean;
   onClose: () => void;
   selection: DrawerSelection;
   onSelect: (sel: DrawerSelection) => void;
+  desktopMode?: ExplorerDesktopMode;
+  onDesktopToggle?: () => void;
 }
 
 function statusColor(startupStatus: string | null): string {
@@ -33,93 +38,184 @@ function rigStatusColor(status: string): string {
   }
 }
 
-function RigTree({ rig, ps, selection, onSelect, onClose }: {
-  rig: RigSummary;
-  ps: PsEntry | undefined;
-  selection: ExplorerProps["selection"];
-  onSelect: ExplorerProps["onSelect"];
-  onClose: () => void;
+function aggregateStatus(nodes: NodeInventoryEntry[]): "ready" | "pending" | "failed" | null {
+  if (nodes.some((node) => node.startupStatus === "failed")) return "failed";
+  if (nodes.some((node) => node.startupStatus === "pending")) return "pending";
+  if (nodes.some((node) => node.startupStatus === "ready")) return "ready";
+  return null;
+}
+
+function parseCurrentRigId(pathname: string): string | null {
+  const match = pathname.match(/^\/rigs\/([^/]+)/);
+  return match?.[1] ?? null;
+}
+
+function TreeToggle({
+  expanded,
+  label,
+  onClick,
+}: {
+  expanded: boolean;
+  label: string;
+  onClick: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const rigStatus = ps?.status ?? "stopped";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+      className="inline-flex h-5 w-5 items-center justify-center text-stone-500 transition-colors hover:text-stone-900"
+    >
+      <ChevronRight className={cn("h-4 w-4 transition-transform duration-150", expanded && "rotate-90")} />
+    </button>
+  );
+}
+
+function ExplorerActionButton({
+  to,
+  label,
+  onClose,
+  testId,
+}: {
+  to: string;
+  label: string;
+  onClose: () => void;
+  testId?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      data-testid={testId}
+      onClick={onClose}
+      className="w-full rounded-sm border border-stone-300 px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.16em] text-stone-700 transition-colors hover:bg-stone-200"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function PodBranch({
+  podId,
+  nodes,
+  selection,
+  onSelect,
+  autoExpand,
+}: {
+  podId: string;
+  nodes: NodeInventoryEntry[];
+  selection: DrawerSelection;
+  onSelect: (sel: DrawerSelection) => void;
+  autoExpand: boolean;
+}) {
+  const [expanded, setExpanded] = useState(autoExpand);
+  const podName = inferPodName(nodes[0]?.logicalId) ?? displayPodName(podId);
+  const podStatus = aggregateStatus(nodes);
+
+  useEffect(() => {
+    if (autoExpand) setExpanded(true);
+  }, [autoExpand]);
+
+  const sortedNodes = [...nodes].sort((a, b) => displayAgentName(a.logicalId).localeCompare(displayAgentName(b.logicalId)));
 
   return (
-    <div data-testid={`rig-tree-${rig.name}`}>
-      {/* Rig header */}
-      <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-stone-200 cursor-pointer group">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-[10px] text-stone-400 w-3"
-          aria-label={expanded ? "Collapse" : "Expand"}
-        >
-          {expanded ? "▾" : "▸"}
-        </button>
-        <span className={cn("w-2 h-2 rounded-full shrink-0", rigStatusColor(rigStatus))} />
-        <Link
-          to="/rigs/$rigId"
-          params={{ rigId: rig.id }}
-          onClick={() => {
-            onSelect({ type: "rig", rigId: rig.id });
-            onClose();
-          }}
-          className="font-mono text-xs font-bold text-stone-900 truncate flex-1"
-        >
-          {rig.name}
-        </Link>
-        <span className="font-mono text-[9px] text-stone-400 uppercase hidden group-hover:inline">
-          {rigStatus}
+    <div data-testid={`pod-branch-${podName}`}>
+      <div className="flex items-center gap-2 px-4 py-1.5 rounded-sm hover:bg-stone-100">
+        <TreeToggle expanded={expanded} label={`pod ${podName}`} onClick={() => setExpanded((value) => !value)} />
+        <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(podStatus))} />
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-600">
+          {podName}
         </span>
       </div>
 
-      {/* Expanded: node inventory */}
       {expanded && (
-        <RigNodes
-          rigId={rig.id}
-          rigStatus={rigStatus}
-          selection={selection}
-          onSelect={onSelect}
-        />
+        <div className="ml-4 border-l border-stone-200">
+          {sortedNodes.map((node) => {
+            const isSelected = selection?.type === "node" && selection.rigId === node.rigId && selection.logicalId === node.logicalId;
+            const memberName = displayAgentName(node.logicalId);
+
+            return (
+              <button
+                key={node.logicalId}
+                type="button"
+                onClick={() => onSelect({ type: "node", rigId: node.rigId, logicalId: node.logicalId })}
+                data-testid={`node-${node.logicalId}`}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-sm px-4 py-1.5 text-left transition-colors hover:bg-stone-100",
+                  isSelected && "bg-stone-200/80"
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(node.startupStatus))} />
+                <span className="font-mono text-[10px] text-stone-700 truncate">{memberName}</span>
+                <span className="ml-auto shrink-0 font-mono text-[8px] uppercase text-stone-400">
+                  {node.nodeKind === "infrastructure" ? "INFRA" : (node.runtime ?? "").replace("claude-code", "claude")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
-function RigNodes({ rigId, rigStatus, selection, onSelect }: {
-  rigId: string;
-  rigStatus: string;
-  selection: ExplorerProps["selection"];
-  onSelect: ExplorerProps["onSelect"];
+function RigBranch({
+  rig,
+  ps,
+  selection,
+  onSelect,
+  onClose,
+  autoExpand,
+}: {
+  rig: RigSummary;
+  ps: PsEntry | undefined;
+  selection: DrawerSelection;
+  onSelect: (sel: DrawerSelection) => void;
+  onClose: () => void;
+  autoExpand: boolean;
 }) {
-  const { data: nodes, isLoading } = useNodeInventory(rigId);
+  const [expanded, setExpanded] = useState(autoExpand);
+  const rigStatus = ps?.status ?? "stopped";
+  const { data: nodes, isLoading } = useNodeInventory(expanded ? rig.id : null);
+  const isSelected = selection?.type === "rig" && selection.rigId === rig.id;
 
-  if (isLoading) return <div className="px-8 py-1 font-mono text-[9px] text-stone-400">Loading...</div>;
-  if (!nodes || nodes.length === 0) return <div className="px-8 py-1 font-mono text-[9px] text-stone-400">No nodes</div>;
+  useEffect(() => {
+    if (autoExpand) setExpanded(true);
+  }, [autoExpand]);
 
-  // Group by podId
-  const pods = new Map<string, NodeInventoryEntry[]>();
-  for (const node of nodes) {
-    const key = node.podId ?? "__ungrouped__";
-    if (!pods.has(key)) pods.set(key, []);
-    pods.get(key)!.push(node);
-  }
+  const podEntries = useMemo(() => {
+    if (!nodes || nodes.length === 0) return [];
+    const pods = new Map<string, NodeInventoryEntry[]>();
+    for (const node of nodes) {
+      const key = node.podId ?? "__ungrouped__";
+      if (!pods.has(key)) pods.set(key, []);
+      pods.get(key)!.push(node);
+    }
 
-  // Turn On / Turn Off buttons
+    return [...pods.entries()].sort(([leftId, leftNodes], [rightId, rightNodes]) => {
+      const leftName = leftId === "__ungrouped__" ? "ungrouped" : (inferPodName(leftNodes[0]?.logicalId) ?? displayPodName(leftId));
+      const rightName = rightId === "__ungrouped__" ? "ungrouped" : (inferPodName(rightNodes[0]?.logicalId) ?? displayPodName(rightId));
+      return leftName.localeCompare(rightName);
+    });
+  }, [nodes]);
+
   const actionButton = rigStatus === "stopped" ? (
     <button
+      type="button"
       onClick={async () => {
-        try { await fetch(`/api/rigs/${encodeURIComponent(rigId)}/up`, { method: "POST" }); } catch { /* best-effort */ }
+        try { await fetch(`/api/rigs/${encodeURIComponent(rig.id)}/up`, { method: "POST" }); } catch { /* best-effort */ }
       }}
-      className="mx-8 my-1 px-2 py-0.5 font-mono text-[8px] border border-stone-300 hover:bg-stone-200 uppercase"
+      className="mx-5 my-2 px-3 py-1.5 font-mono text-[9px] border border-stone-300 hover:bg-stone-200 uppercase tracking-[0.12em]"
       data-testid="turn-on"
     >
       Turn On
     </button>
   ) : rigStatus === "running" || rigStatus === "partial" ? (
     <button
+      type="button"
       onClick={async () => {
-        try { await fetch("/api/down", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rigId }) }); } catch { /* best-effort */ }
+        try { await fetch("/api/down", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rigId: rig.id }) }); } catch { /* best-effort */ }
       }}
-      className="mx-8 my-1 px-2 py-0.5 font-mono text-[8px] border border-stone-300 hover:bg-stone-200 uppercase"
+      className="mx-5 my-2 px-3 py-1.5 font-mono text-[9px] border border-stone-300 hover:bg-stone-200 uppercase tracking-[0.12em]"
       data-testid="turn-off"
     >
       Turn Off
@@ -127,87 +223,222 @@ function RigNodes({ rigId, rigStatus, selection, onSelect }: {
   ) : null;
 
   return (
-    <div className="ml-3 border-l border-stone-200">
-      {[...pods.entries()].map(([podId, podNodes]) => (
-        <div key={podId}>
-          {podId !== "__ungrouped__" && (
-            <div className="px-5 py-0.5 font-mono text-[9px] text-stone-500 tracking-wider">
-              {inferPodName(podNodes[0]?.logicalId) ?? displayPodName(podId)}
-            </div>
+    <div data-testid={`rig-tree-${rig.name}`}>
+      <div className={cn("flex items-center gap-2 px-4 py-1.5 rounded-sm hover:bg-stone-100", isSelected && "bg-stone-200/70")}>
+        <TreeToggle expanded={expanded} label={`rig ${rig.name}`} onClick={() => setExpanded((value) => !value)} />
+        <span className={cn("h-2 w-2 rounded-full shrink-0", rigStatusColor(rigStatus))} />
+        <Link
+          to="/rigs/$rigId"
+          params={{ rigId: rig.id }}
+          onClick={() => {
+            onSelect({ type: "rig", rigId: rig.id });
+            onClose();
+          }}
+          className={cn(
+            "flex-1 truncate font-mono text-[11px] font-semibold text-stone-900",
+            isSelected && "underline underline-offset-2"
           )}
-          {podNodes.map((node) => {
-            const isSelected = selection?.type === "node" && selection.rigId === node.rigId && selection.logicalId === node.logicalId;
-            const memberName = displayAgentName(node.logicalId);
+        >
+          {rig.name}
+        </Link>
+      </div>
 
-            return (
-              <button
-                key={node.logicalId}
-                onClick={() => onSelect({ type: "node", rigId: node.rigId, logicalId: node.logicalId })}
-                data-testid={`node-${node.logicalId}`}
-                className={cn(
-                  "flex items-center gap-2 w-full px-7 py-1 text-left hover:bg-stone-100 transition-colors",
-                  isSelected && "bg-stone-200 border-l-2 border-l-stone-900",
-                )}
-              >
-                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor(node.startupStatus))} />
-                <span className="font-mono text-[10px] text-stone-700 truncate">{memberName}</span>
-                <span className="font-mono text-[8px] text-stone-400 ml-auto shrink-0">
-                  {node.nodeKind === "infrastructure" ? "INFRA" : (node.runtime ?? "").replace("claude-code", "claude")}
-                </span>
-              </button>
-            );
-          })}
+      {expanded && (
+        <div className="ml-4 border-l border-stone-200">
+          {isLoading && (
+            <div className="px-4 py-1.5 font-mono text-[9px] text-stone-400">Loading...</div>
+          )}
+          {!isLoading && podEntries.length === 0 && (
+            <div className="px-4 py-1.5 font-mono text-[9px] text-stone-400">No nodes</div>
+          )}
+          {podEntries.map(([podId, podNodes]) => (
+            podId === "__ungrouped__" ? (
+              <div key={podId}>
+                {podNodes.map((node) => {
+                  const isNodeSelected = selection?.type === "node" && selection.rigId === node.rigId && selection.logicalId === node.logicalId;
+                  const memberName = displayAgentName(node.logicalId);
+
+                  return (
+                    <button
+                    key={node.logicalId}
+                    type="button"
+                    onClick={() => onSelect({ type: "node", rigId: node.rigId, logicalId: node.logicalId })}
+                    data-testid={`node-${node.logicalId}`}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-sm px-4 py-1.5 text-left transition-colors hover:bg-stone-100",
+                        isNodeSelected && "bg-stone-200/80"
+                      )}
+                    >
+                      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", statusColor(node.startupStatus))} />
+                      <span className="font-mono text-[10px] text-stone-700 truncate">{memberName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <PodBranch
+                key={podId}
+                podId={podId}
+                nodes={podNodes}
+                selection={selection}
+                onSelect={onSelect}
+                autoExpand
+              />
+            )
+          ))}
+          {actionButton}
         </div>
-      ))}
-      {actionButton}
+      )}
     </div>
   );
 }
 
-export function Explorer({ open, onClose, selection, onSelect }: ExplorerProps) {
+function EnvironmentBranch({
+  rigs,
+  psMap,
+  selection,
+  onSelect,
+  onClose,
+  currentRigId,
+}: {
+  rigs: RigSummary[] | undefined;
+  psMap: Map<string, PsEntry>;
+  selection: DrawerSelection;
+  onSelect: (sel: DrawerSelection) => void;
+  onClose: () => void;
+  currentRigId: string | null;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div data-testid="environment-branch-local">
+      <div className="flex items-center gap-2 rounded-sm px-3 py-1.5 hover:bg-stone-100">
+        <TreeToggle
+          expanded={expanded}
+          label="environment Local"
+          onClick={() => setExpanded((value) => !value)}
+        />
+        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-700">
+          Local
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="ml-4 border-l border-stone-200">
+          {!rigs || rigs.length === 0 ? (
+            <div className="px-4 py-3 font-mono text-[10px] text-stone-400">No rigs</div>
+          ) : (
+            rigs.map((rig, index) => (
+              <RigBranch
+                key={rig.id}
+                rig={rig}
+                ps={psMap.get(rig.id)}
+                selection={selection}
+                onSelect={onSelect}
+                onClose={onClose}
+                autoExpand={rig.id === currentRigId || rigs.length === 1 || index === 0}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FullExplorerContents({
+  rigs,
+  psMap,
+  selection,
+  onSelect,
+  onClose,
+  currentRigId,
+}: {
+  rigs: RigSummary[] | undefined;
+  psMap: Map<string, PsEntry>;
+  selection: DrawerSelection;
+  onSelect: (sel: DrawerSelection) => void;
+  onClose: () => void;
+  currentRigId: string | null;
+}) {
+  return (
+    <>
+      <div className="flex-1 overflow-y-auto py-2">
+        <EnvironmentBranch
+          rigs={rigs}
+          psMap={psMap}
+          selection={selection}
+          onSelect={onSelect}
+          onClose={onClose}
+          currentRigId={currentRigId}
+        />
+      </div>
+
+      <div className="border-t border-stone-200 p-3">
+        <div data-testid="explorer-action-stack" className="flex flex-col gap-2">
+          <ExplorerActionButton to="/discovery" label="Discovery" onClose={onClose} testId="explorer-action-discovery" />
+          <ExplorerActionButton to="/packages" label="Specs" onClose={onClose} testId="explorer-action-specs" />
+          <ExplorerActionButton to="/import" label="Import" onClose={onClose} testId="explorer-action-import" />
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function Explorer({
+  open,
+  onClose,
+  selection,
+  onSelect,
+  desktopMode = "full",
+  onDesktopToggle = () => {},
+}: ExplorerProps) {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
+  const currentRigId = parseCurrentRigId(currentPath);
   const { data: rigs } = useRigSummary();
   const { data: psEntries } = usePsEntries();
 
-  const psMap = new Map((psEntries ?? []).map((e) => [e.rigId, e]));
+  const psMap = new Map((psEntries ?? []).map((entry) => [entry.rigId, entry]));
 
   return (
     <aside
       data-testid="explorer"
       className={cn(
-        "w-64 bg-stone-50 border-r border-stone-300 flex flex-col shrink-0 z-20 overflow-y-auto",
-        "fixed top-14 bottom-0 left-0 transition-transform duration-200 ease-tactical lg:relative lg:top-0 lg:translate-x-0",
-        open ? "translate-x-0" : "-translate-x-full"
+        "bg-stone-50 border-r border-stone-300 flex shrink-0 z-20 overflow-hidden",
+        "fixed top-14 bottom-0 left-0 transition-transform duration-200 ease-tactical w-72 max-w-[80vw]",
+        open ? "translate-x-0" : "-translate-x-full",
+        desktopMode === "full" && "lg:relative lg:top-0 lg:w-72 lg:max-w-none lg:translate-x-0",
+        desktopMode === "hidden" && "lg:relative lg:top-0 lg:w-12 lg:max-w-none lg:translate-x-0"
       )}
     >
-      {/* Local environment header */}
-      <div className="px-3 py-2 border-b border-stone-200">
-        <span className="font-mono text-[9px] text-stone-500 tracking-widest uppercase">Local</span>
-      </div>
+      <div className="relative flex h-full w-full flex-col">
+        <button
+          type="button"
+          data-testid="explorer-edge-toggle"
+          aria-label={desktopMode === "full" ? "Collapse explorer" : "Expand explorer"}
+          onClick={onDesktopToggle}
+          className={cn(
+            "hidden lg:flex absolute z-10 h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-background/90 text-stone-700",
+            "shadow-[0_2px_8px_rgba(41,37,36,0.08)] backdrop-blur-sm transition-colors hover:bg-stone-100 hover:text-stone-900",
+            desktopMode === "full" ? "right-2 top-3" : "left-1/2 top-3 -translate-x-1/2"
+          )}
+        >
+          {desktopMode === "full" ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
 
-      {/* Rig tree */}
-      <div className="flex-1 py-1">
-        {(!rigs || rigs.length === 0) ? (
-          <div className="px-3 py-4 font-mono text-[10px] text-stone-400 text-center">No rigs</div>
+        {desktopMode === "full" ? (
+          <FullExplorerContents
+            rigs={rigs}
+            psMap={psMap}
+            selection={selection}
+            onSelect={onSelect}
+            onClose={onClose}
+            currentRigId={currentRigId}
+          />
         ) : (
-          rigs.map((rig) => (
-            <RigTree
-              key={rig.id}
-              rig={rig}
-              ps={psMap.get(rig.id)}
-              selection={selection}
-              onSelect={onSelect}
-              onClose={onClose}
-            />
-          ))
+          <div className="hidden h-full w-full lg:block" />
         )}
-      </div>
-
-      {/* Footer actions */}
-      <div className="border-t border-stone-200 p-2 flex gap-2">
-        <Link to="/import" onClick={onClose} className="font-mono text-[8px] text-stone-500 hover:text-stone-900 uppercase">Import</Link>
-        <Link to="/discovery" onClick={onClose} className="font-mono text-[8px] text-stone-500 hover:text-stone-900 uppercase">Discovery</Link>
       </div>
     </aside>
   );

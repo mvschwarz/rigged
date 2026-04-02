@@ -87,6 +87,26 @@ describe("Discovery API routes", () => {
     expect(body).toHaveLength(2);
   });
 
+  it("GET /api/discovery filters by runtime hint and minimum confidence", async () => {
+    db.prepare(
+      "INSERT INTO discovered_sessions (id, tmux_session, tmux_pane, runtime_hint, confidence) VALUES (?, ?, ?, ?, ?)"
+    ).run("ds-claude", "claude-team", "%0", "claude-code", "high");
+    db.prepare(
+      "INSERT INTO discovered_sessions (id, tmux_session, tmux_pane, runtime_hint, confidence) VALUES (?, ?, ?, ?, ?)"
+    ).run("ds-codex", "codex-team", "%0", "codex", "medium");
+    db.prepare(
+      "INSERT INTO discovered_sessions (id, tmux_session, tmux_pane, runtime_hint, confidence) VALUES (?, ?, ?, ?, ?)"
+    ).run("ds-shell", "shell", "%0", "terminal", "high");
+    db.prepare(
+      "INSERT INTO discovered_sessions (id, tmux_session, tmux_pane, runtime_hint, confidence) VALUES (?, ?, ?, ?, ?)"
+    ).run("ds-weak", "weak", "%0", "claude-code", "low");
+
+    const res = await app.request("/api/discovery?status=active&runtimeHint=claude-code,codex&minConfidence=medium");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.map((row: { id: string }) => row.id)).toEqual(["ds-claude", "ds-codex"]);
+  });
+
   // T3: GET /:id returns detail
   it("GET /api/discovery/:id returns session detail", async () => {
     const id = seedDiscovery();
@@ -107,6 +127,23 @@ describe("Discovery API routes", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rigId: rig.id }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.nodeId).toBeTruthy();
+  });
+
+  it("POST /api/discovery/:id/bind binds into an existing managed node", async () => {
+    const id = seedDiscovery();
+    const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/workspace" });
+
+    const res = await app.request(`/api/discovery/${id}/bind`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rigId: rig.id, logicalId: "orch.lead" }),
     });
 
     expect(res.status).toBe(201);
@@ -144,6 +181,17 @@ describe("Discovery API routes", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("bind with missing logicalId returns 400", async () => {
+    const id = seedDiscovery();
+    const rig = seedRig();
+    const res = await app.request(`/api/discovery/${id}/bind`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rigId: rig.id }),
     });
     expect(res.status).toBe(400);
   });

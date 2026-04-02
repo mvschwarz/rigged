@@ -127,6 +127,8 @@ export interface RigPreflightInput {
   rigSpecYaml: string;
   rigRoot: string;
   fsOps: AgentResolverFsOps;
+  rigNameOverride?: string;
+  externalQualifiedIds?: Iterable<string>;
 }
 
 /**
@@ -144,7 +146,7 @@ export function rigPreflight(input: RigPreflightInput): PreflightResult {
   let rigSpec: PodRigSpec;
   try {
     const raw = RigSpecCodec.parse(input.rigSpecYaml);
-    const validation = RigSpecSchema.validate(raw);
+    const validation = RigSpecSchema.validate(raw, { externalQualifiedIds: input.externalQualifiedIds });
     if (!validation.valid) {
       return { ready: false, errors: validation.errors, warnings };
     }
@@ -154,9 +156,10 @@ export function rigPreflight(input: RigPreflightInput): PreflightResult {
   }
 
   // 2. Validate session name components for all pod members
+  const effectiveRigName = input.rigNameOverride ?? rigSpec.name;
   for (const pod of rigSpec.pods) {
     for (const member of pod.members) {
-      const nameErrors = validateSessionComponents(pod.id, member.id, rigSpec.name);
+      const nameErrors = validateSessionComponents(pod.id, member.id, effectiveRigName);
       for (const err of nameErrors) {
         errors.push(`${pod.id}.${member.id}: ${err}`);
       }

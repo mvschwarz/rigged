@@ -111,6 +111,40 @@ rigspecImportRoutes.post("/", async (c) => {
   return c.json(outcome.result, 201);
 });
 
+// POST /api/rigs/import/materialize -> create rig topology without launching
+rigspecImportRoutes.post("/materialize", async (c) => {
+  const { podInstantiator } = getDeps(c);
+  const body = await c.req.text();
+
+  let raw: unknown;
+  try {
+    raw = RigSpecCodec.parse(body);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message, errors: [message] }, 400);
+  }
+
+  const isPodAware = raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).pods);
+  if (!isPodAware) {
+    return c.json({ error: "materialize-only requires a pod-aware RigSpec", code: "pod_aware_required" }, 400);
+  }
+
+  const rigRoot = c.req.header("X-Rig-Root");
+  if (!rigRoot) return c.json({ error: "X-Rig-Root header required for pod-aware specs", code: "missing_rig_root" }, 400);
+
+  const targetRigId = c.req.header("X-Target-Rig-Id") ?? undefined;
+  const outcome = await podInstantiator.materialize(body, rigRoot, { targetRigId });
+  if (!outcome.ok) {
+    const status = outcome.code === "validation_failed" ? 400
+      : outcome.code === "preflight_failed" ? 409
+      : outcome.code === "target_rig_not_found" ? 404
+      : outcome.code === "materialize_conflict" ? 409
+      : 500;
+    return c.json(outcome, status);
+  }
+  return c.json(outcome.result, 201);
+});
+
 // POST /api/rigs/import/validate -> validate only (auto-detects format)
 rigspecImportRoutes.post("/validate", async (c) => {
   const body = await c.req.text();

@@ -22,6 +22,12 @@ interface ClaimOptions {
   logicalId?: string;
 }
 
+interface BindOptions {
+  discoveredId: string;
+  rigId: string;
+  logicalId: string;
+}
+
 /**
  * Adopts a discovered session into a managed rig.
  * Creates node + binding + session record atomically.
@@ -116,6 +122,81 @@ export class ClaimService {
           rigId: opts.rigId,
           nodeId,
           logicalId,
+          discoveredId: discovered.id,
+          seq: event.seq,
+          createdAt: event.created_at,
+        });
+      }
+      return { ok: true, nodeId, sessionId };
+    } catch (err) {
+      return { ok: false, code: "claim_error", error: (err as Error).message };
+    }
+  }
+
+  bind(opts: BindOptions): ClaimResult {
+    const discovered = this.discoveryRepo.getDiscoveredSession(opts.discoveredId);
+    if (!discovered) {
+      return { ok: false, code: "not_found", error: "Discovery record not found" };
+    }
+    if (discovered.status !== "active") {
+      return { ok: false, code: "not_active", error: `Discovery record is ${discovered.status}, not active` };
+    }
+
+    const rig = this.rigRepo.getRig(opts.rigId);
+    if (!rig) {
+      return { ok: false, code: "rig_not_found", error: "Target rig not found" };
+    }
+
+    const node = rig.nodes.find((candidate) => candidate.logicalId === opts.logicalId);
+    if (!node) {
+      return { ok: false, code: "node_not_found", error: `Logical ID '${opts.logicalId}' does not exist in rig` };
+    }
+
+    const existingBinding = this.sessionRegistry.getBindingForNode(node.id);
+    if (existingBinding?.tmuxSession) {
+      return { ok: false, code: "already_bound", error: `Logical ID '${opts.logicalId}' is already bound` };
+    }
+
+    const discoveredRuntime = discovered.runtimeHint === "unknown" || discovered.runtimeHint === "terminal"
+      ? null
+      : discovered.runtimeHint;
+    if (node.runtime && discoveredRuntime && node.runtime !== discoveredRuntime) {
+      return {
+        ok: false,
+        code: "runtime_mismatch",
+        error: `Logical ID '${opts.logicalId}' expects runtime '${node.runtime}', but discovery resolved '${discoveredRuntime}'`,
+      };
+    }
+
+    const bindTx = this.db.transaction(() => {
+      this.sessionRegistry.updateBinding(node.id, {
+        tmuxSession: discovered.tmuxSession,
+        tmuxWindow: discovered.tmuxWindow ?? undefined,
+        tmuxPane: discovered.tmuxPane ?? undefined,
+      });
+
+      const session = this.sessionRegistry.registerClaimedSession(node.id, discovered.tmuxSession);
+      this.discoveryRepo.markClaimed(discovered.id, node.id);
+      this.eventBus.persistWithinTransaction({
+        type: "node.claimed",
+        rigId: opts.rigId,
+        nodeId: node.id,
+        logicalId: opts.logicalId,
+        discoveredId: discovered.id,
+      });
+
+      return { nodeId: node.id, sessionId: session.id };
+    });
+
+    try {
+      const { nodeId, sessionId } = bindTx();
+      const event = this.db.prepare("SELECT * FROM events ORDER BY seq DESC LIMIT 1").get() as { seq: number; type: string; rig_id: string; node_id: string; payload: string; created_at: string };
+      if (event) {
+        this.eventBus.notifySubscribers({
+          type: "node.claimed",
+          rigId: opts.rigId,
+          nodeId,
+          logicalId: opts.logicalId,
           discoveredId: discovered.id,
           seq: event.seq,
           createdAt: event.created_at,

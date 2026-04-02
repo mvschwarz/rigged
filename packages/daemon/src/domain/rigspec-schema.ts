@@ -18,7 +18,7 @@ export class RigSpecSchema {
    * @param raw - parsed YAML object
    * @returns validation result
    */
-  static validate(raw: unknown): ValidationResult {
+  static validate(raw: unknown, opts?: { externalQualifiedIds?: Iterable<string> }): ValidationResult {
     const errors: string[] = [];
 
     if (!raw || typeof raw !== "object") {
@@ -60,7 +60,7 @@ export class RigSpecSchema {
       }
 
       // Cross-pod edge validation
-      const allQualifiedIds = new Set<string>();
+      const allQualifiedIds = new Set<string>(opts?.externalQualifiedIds ?? []);
       for (const pod of pods) {
         const podId = pod["id"] as string;
         const members = pod["members"] as Record<string, unknown>[] | undefined;

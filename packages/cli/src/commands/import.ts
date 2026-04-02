@@ -21,9 +21,11 @@ export function importCommand(depsOverride?: ImportDeps): Command {
   cmd
     .argument("<path>", "Path to YAML rig spec file")
     .option("--instantiate", "Instantiate the rig after import")
+    .option("--materialize-only", "Create rig topology without launching sessions")
     .option("--preflight", "Run preflight checks")
+    .option("--target-rig <rigId>", "Target existing rig for additive materialization")
     .option("--rig-root <root>", "Root directory for pod-aware resolution")
-    .action(async (filePath: string, opts: { instantiate?: boolean; preflight?: boolean; rigRoot?: string }) => {
+    .action(async (filePath: string, opts: { instantiate?: boolean; materializeOnly?: boolean; preflight?: boolean; targetRig?: string; rigRoot?: string }) => {
       const deps = getDeps();
 
       // Read local file first (before daemon check — fail fast on missing file)
@@ -57,6 +59,12 @@ export function importCommand(depsOverride?: ImportDeps): Command {
         : undefined;
       const extraHeaders = rigRoot ? { "X-Rig-Root": rigRoot } : undefined;
 
+      if (opts.instantiate && opts.materializeOnly) {
+        console.error("Choose either --instantiate or --materialize-only, not both.");
+        process.exitCode = 1;
+        return;
+      }
+
       if (opts.preflight) {
         const res = await client.postText<{ ready?: boolean; warnings?: string[]; errors?: string[] }>("/api/rigs/import/preflight", yaml, "text/yaml", extraHeaders);
         if (res.status >= 400) {
@@ -76,6 +84,37 @@ export function importCommand(depsOverride?: ImportDeps): Command {
         } else {
           console.error("Preflight not ready. Fix: resolve the errors above and retry.");
           process.exitCode = 1;
+        }
+        return;
+      }
+
+      if (opts.materializeOnly) {
+        if (!podAware) {
+          console.error("Materialize-only requires a pod-aware RigSpec with pods.");
+          process.exitCode = 1;
+          return;
+        }
+        const headers = {
+          ...(extraHeaders ?? {}),
+          ...(opts.targetRig ? { "X-Target-Rig-Id": opts.targetRig } : {}),
+        };
+        const res = await client.postText<{ rigId: string; specName: string; specVersion: string; nodes: Array<{ logicalId: string; status: string }> } | { ok: false; code: string; errors?: string[]; message?: string }>("/api/rigs/import/materialize", yaml, "text/yaml", headers);
+        if (res.status === 409 || res.status === 400 || res.status === 404) {
+          const data = res.data as { ok?: false; code?: string; errors?: string[]; message?: string; error?: string };
+          const detail = data.errors?.join("\n  ") ?? data.message ?? data.error ?? `status ${res.status}`;
+          console.error(`Materialize failed:\n  ${detail}\nFix: update your spec or target rig and retry.`);
+          process.exitCode = 1;
+          return;
+        }
+        if (res.status >= 400) {
+          console.error(`Materialize failed (HTTP ${res.status}). Check spec and daemon logs.`);
+          process.exitCode = 1;
+          return;
+        }
+        const data = res.data as { rigId: string; specName: string; specVersion: string; nodes: Array<{ logicalId: string; status: string }> };
+        console.log(`Rig materialized: ${data.specName} (${data.rigId})`);
+        for (const n of data.nodes) {
+          console.log(`  ${n.logicalId}: ${n.status}`);
         }
         return;
       }

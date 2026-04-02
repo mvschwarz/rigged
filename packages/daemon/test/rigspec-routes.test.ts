@@ -304,6 +304,41 @@ pods:
 edges: []
 `;
 
+const MATERIALIZE_POD_YAML = `
+version: "0.2"
+name: live-topology
+pods:
+  - id: research
+    label: Research
+    members:
+      - id: scout
+        agent_ref: "builtin:terminal"
+        profile: none
+        runtime: terminal
+        cwd: /tmp
+    edges: []
+edges: []
+`;
+
+const MATERIALIZE_FRAGMENT_YAML = `
+version: "0.2"
+name: research-fragment
+pods:
+  - id: research
+    label: Research
+    members:
+      - id: scout
+        agent_ref: "builtin:terminal"
+        profile: none
+        runtime: terminal
+        cwd: /tmp
+    edges: []
+edges:
+  - kind: delegates_to
+    from: orch.lead
+    to: research.scout
+`;
+
 describe("Rigspec import routes (pod-aware dual-stack)", () => {
   let db: Database.Database;
   let app: Hono;
@@ -391,6 +426,38 @@ describe("Rigspec import routes (pod-aware dual-stack)", () => {
     const body = await res.json();
     expect(body.rigId).toBeDefined();
     expect(body.specName).toBe("r99");
+  });
+
+  it("POST /api/rigs/import/materialize creates rig structure without launching", async () => {
+    const res = await app.request("/api/rigs/import/materialize", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain", "X-Rig-Root": "/tmp" },
+      body: MATERIALIZE_POD_YAML,
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.rigId).toBeDefined();
+    expect(body.nodes).toEqual([{ logicalId: "research.scout", status: "materialized" }]);
+  });
+
+  it("POST /api/rigs/import/materialize can target an existing rig", async () => {
+    const setup = createTestApp(db);
+    const rig = setup.rigRepo.createRig("host-rig");
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/tmp" });
+
+    const res = await setup.app.request("/api/rigs/import/materialize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain",
+        "X-Rig-Root": "/tmp",
+        "X-Target-Rig-Id": rig.id,
+      },
+      body: MATERIALIZE_FRAGMENT_YAML,
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.rigId).toBe(rig.id);
+    expect(body.nodes).toEqual([{ logicalId: "research.scout", status: "materialized" }]);
   });
 });
 

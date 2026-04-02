@@ -136,6 +136,22 @@ function createMockDaemon() {
       return;
     }
 
+    // POST /api/rigs/import/materialize
+    if (req.method === "POST" && url.pathname === "/api/rigs/import/materialize") {
+      capturedImportHeaders = {
+        "x-rig-root": req.headers["x-rig-root"],
+        "x-target-rig-id": req.headers["x-target-rig-id"],
+      };
+      res.writeHead(201, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        rigId: req.headers["x-target-rig-id"] ?? "rig-new",
+        specName: "imported-rig",
+        specVersion: "0.2",
+        nodes: [{ logicalId: "research.scout", status: "materialized" }],
+      }));
+      return;
+    }
+
     // healthz
     if (url.pathname === "/healthz") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -259,6 +275,24 @@ describe("rigged export + import", () => {
     const output = logs.join("\n");
     expect(output).toContain("cmux unavailable");
     expect(output).toContain("rig name exists");
+  });
+
+  it("import --materialize-only prints materialized nodes", async () => {
+    const deps = importDeps(`version: "0.2"\nname: test\npods: []\n`);
+    const program = new Command();
+    program.addCommand(importCommand(deps));
+    const logs = await captureLogs(() => program.parseAsync(["node", "rigged", "import", "rig.yaml", "--materialize-only", "--rig-root", "/tmp"]));
+    const output = logs.join("\n");
+    expect(output).toContain("imported-rig");
+    expect(output).toMatch(/research\.scout: materialized/);
+  });
+
+  it("import --materialize-only with --target-rig forwards target header", async () => {
+    const deps = importDeps(`version: "0.2"\nname: test\npods: []\n`);
+    const program = new Command();
+    program.addCommand(importCommand(deps));
+    await captureLogs(() => program.parseAsync(["node", "rigged", "import", "rig.yaml", "--materialize-only", "--target-rig", "rig-123", "--rig-root", "/tmp"]));
+    expect(capturedImportHeaders["x-target-rig-id"]).toBe("rig-123");
   });
 
   // Test 8: import --instantiate with preflight fail (409)

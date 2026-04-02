@@ -3,6 +3,7 @@ import http from "node:http";
 import { Command } from "commander";
 import { discoverCommand } from "../src/commands/discover.js";
 import { claimCommand } from "../src/commands/claim.js";
+import { bindCommand } from "../src/commands/bind.js";
 import { DaemonClient } from "../src/client.js";
 import { STATE_FILE, type LifecycleDeps, type DaemonState } from "../src/daemon-lifecycle.js";
 import type { StatusDeps } from "../src/commands/status.js";
@@ -76,6 +77,9 @@ describe("Discover + Claim CLI", () => {
             { id: "ds-1", tmuxSession: "organic", tmuxPane: "%0", runtimeHint: "claude-code", confidence: "high", cwd: "/projects" },
           ],
         }));
+      } else if (req.url?.match(/\/api\/discovery\/ds-1\/bind/) && req.method === "POST") {
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, nodeId: "node-1", sessionId: "sess-1" }));
       } else if (req.url?.match(/\/api\/discovery\/ds-1\/claim/) && req.method === "POST") {
         res.writeHead(201, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, nodeId: "node-1", sessionId: "sess-1" }));
@@ -172,5 +176,18 @@ describe("Discover + Claim CLI", () => {
 
     expect(exitCode).toBe(1);
     expect(logs.some((l) => l.includes("not found"))).toBe(true);
+  });
+
+  it("bind attaches discovered session to an existing node", async () => {
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(bindCommand(runningDeps(port)));
+
+    const { logs } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rigged", "bind", "ds-1", "--rig", "rig-1", "--node", "orch.lead"]);
+    });
+
+    expect(logs.some((l) => l.includes("Bound discovery"))).toBe(true);
+    expect(logs.some((l) => l.includes("orch.lead"))).toBe(true);
   });
 });

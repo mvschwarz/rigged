@@ -221,4 +221,39 @@ describe("ClaimService", () => {
 
     eventBus.persistWithinTransaction = origPersist;
   });
+
+  it("bind attaches a discovered session to an existing node", () => {
+    const rig = seedRig();
+    const node = rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/projects/myapp" });
+    const discovered = seedDiscovery({ tmuxSession: "orch-lead@host" });
+
+    const result = claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "orch.lead" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.nodeId).toBe(node.id);
+    const binding = sessionRegistry.getBindingForNode(node.id);
+    expect(binding?.tmuxSession).toBe("orch-lead@host");
+
+    const sessions = sessionRegistry.getSessionsForRig(rig.id).filter((s) => s.nodeId === node.id);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.origin).toBe("claimed");
+
+    const updated = discoveryRepo.getDiscoveredSession(discovered.id);
+    expect(updated?.status).toBe("claimed");
+    expect(updated?.claimedNodeId).toBe(node.id);
+  });
+
+  it("bind rejects runtime mismatch against the target node", () => {
+    const rig = seedRig();
+    rigRepo.addNode(rig.id, "orch.lead", { runtime: "codex", cwd: "/projects/myapp" });
+    const discovered = seedDiscovery({ runtimeHint: "claude-code" });
+
+    const result = claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "orch.lead" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("runtime_mismatch");
+  });
 });

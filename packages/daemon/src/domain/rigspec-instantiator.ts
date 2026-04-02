@@ -303,6 +303,21 @@ interface PodInstantiatorDeps {
   tmuxAdapter?: TmuxAdapter;
 }
 
+export interface MaterializeResult {
+  rigId: string;
+  specName: string;
+  specVersion: string;
+  nodes: Array<{ logicalId: string; status: "materialized" }>;
+}
+
+export type MaterializeOutcome =
+  | { ok: true; result: MaterializeResult }
+  | { ok: false; code: "validation_failed"; errors: string[] }
+  | { ok: false; code: "preflight_failed"; errors: string[]; warnings: string[] }
+  | { ok: false; code: "target_rig_not_found"; message: string }
+  | { ok: false; code: "materialize_conflict"; message: string }
+  | { ok: false; code: "materialize_error"; message: string };
+
 /**
  * Pod-aware rig instantiator. Creates pods, nodes, edges, and runs
  * startup orchestration per node with resolved agent specs.
@@ -318,6 +333,164 @@ export class PodRigInstantiator {
     if (deps.db !== deps.nodeLauncher.db) throw new Error("PodRigInstantiator: nodeLauncher must share the same db handle");
     this.db = deps.db;
     this.deps = deps;
+  }
+
+  async materialize(
+    rigSpecYaml: string,
+    rigRoot: string,
+    opts?: { targetRigId?: string },
+  ): Promise<MaterializeOutcome> {
+    let raw: unknown;
+    try {
+      raw = PodRigSpecCodec.parse(rigSpecYaml);
+    } catch (err) {
+      return { ok: false, code: "validation_failed", errors: [(err as Error).message] };
+    }
+
+    const targetRig = opts?.targetRigId ? this.deps.rigRepo.getRig(opts.targetRigId) : null;
+    if (opts?.targetRigId && !targetRig) {
+      return { ok: false, code: "target_rig_not_found", message: `Rig "${opts.targetRigId}" not found` };
+    }
+
+    const validation = PodRigSpecSchema.validate(raw, {
+      externalQualifiedIds: targetRig?.nodes.map((node) => node.logicalId),
+    });
+    if (!validation.valid) {
+      return { ok: false, code: "validation_failed", errors: validation.errors };
+    }
+
+    const rigSpec = PodRigSpecSchema.normalize(raw as Record<string, unknown>);
+    const preflight = rigPreflight({
+      rigSpecYaml,
+      rigRoot,
+      fsOps: this.deps.fsOps,
+      rigNameOverride: targetRig?.rig.name,
+      externalQualifiedIds: targetRig?.nodes.map((node) => node.logicalId),
+    });
+    if (!preflight.ready) {
+      return { ok: false, code: "preflight_failed", errors: preflight.errors, warnings: preflight.warnings };
+    }
+
+    const persistedEvents: Array<ReturnType<EventBus["persistWithinTransaction"]>> = [];
+    const nodeResults: Array<{ logicalId: string; status: "materialized" }> = [];
+
+    try {
+      let materializedRigId = opts?.targetRigId ?? "";
+      const tx = this.db.transaction(() => {
+        if (!materializedRigId) {
+          const rig = this.deps.rigRepo.createRig(rigSpec.name);
+          materializedRigId = rig.id;
+          persistedEvents.push(this.deps.eventBus.persistWithinTransaction({ type: "rig.created", rigId: materializedRigId }));
+        }
+
+        const currentRig = this.deps.rigRepo.getRig(materializedRigId)!;
+        const logicalIdToNodeId = new Map(currentRig.nodes.map((node) => [node.logicalId, node.id]));
+        const existingPodIds = new Set(
+          currentRig.nodes
+            .map((node) => node.logicalId.includes(".") ? node.logicalId.split(".")[0]! : null)
+            .filter((value): value is string => value !== null),
+        );
+
+        for (const pod of rigSpec.pods) {
+          if (existingPodIds.has(pod.id)) {
+            throw { code: "materialize_conflict", message: `Pod id '${pod.id}' already exists in rig '${currentRig.rig.name}'` };
+          }
+          for (const member of pod.members) {
+            const qualifiedId = `${pod.id}.${member.id}`;
+            if (logicalIdToNodeId.has(qualifiedId)) {
+              throw { code: "materialize_conflict", message: `Logical ID '${qualifiedId}' already exists in rig '${currentRig.rig.name}'` };
+            }
+          }
+        }
+
+        const podIdMap: Record<string, string> = {};
+        for (const pod of rigSpec.pods) {
+          const podRecord = this.deps.podRepo.createPod(materializedRigId, pod.label, {
+            summary: pod.summary,
+            continuityPolicyJson: pod.continuityPolicy ? JSON.stringify(pod.continuityPolicy) : undefined,
+          });
+          podIdMap[pod.id] = podRecord.id;
+          persistedEvents.push(this.deps.eventBus.persistWithinTransaction({
+            type: "pod.created",
+            rigId: materializedRigId,
+            podId: podRecord.id,
+            label: pod.label,
+          }));
+
+          for (const member of pod.members) {
+            const qualifiedId = `${pod.id}.${member.id}`;
+            const node = this.deps.rigRepo.addNode(materializedRigId, qualifiedId, {
+              runtime: member.runtime,
+              model: member.model,
+              cwd: member.cwd,
+              restorePolicy: member.restorePolicy,
+              podId: podRecord.id,
+              agentRef: member.agentRef,
+              profile: member.profile,
+              label: member.label,
+            });
+            logicalIdToNodeId.set(qualifiedId, node.id);
+            nodeResults.push({ logicalId: qualifiedId, status: "materialized" });
+            persistedEvents.push(this.deps.eventBus.persistWithinTransaction({
+              type: "node.added",
+              rigId: materializedRigId,
+              nodeId: node.id,
+              logicalId: qualifiedId,
+            }));
+          }
+        }
+
+        for (const pod of rigSpec.pods) {
+          for (const edge of pod.edges) {
+            const fromId = logicalIdToNodeId.get(`${pod.id}.${edge.from}`);
+            const toId = logicalIdToNodeId.get(`${pod.id}.${edge.to}`);
+            if (!fromId || !toId) {
+              throw { code: "materialize_conflict", message: `Pod-local edge references missing node: ${pod.id}.${edge.from} -> ${pod.id}.${edge.to}` };
+            }
+            this.deps.rigRepo.addEdge(materializedRigId, fromId, toId, edge.kind);
+          }
+        }
+
+        for (const edge of rigSpec.edges) {
+          const fromId = logicalIdToNodeId.get(edge.from);
+          const toId = logicalIdToNodeId.get(edge.to);
+          if (!fromId || !toId) {
+            throw { code: "materialize_conflict", message: `Cross-pod edge references missing node: ${edge.from} -> ${edge.to}` };
+          }
+          this.deps.rigRepo.addEdge(materializedRigId, fromId, toId, edge.kind);
+        }
+
+        persistedEvents.push(this.deps.eventBus.persistWithinTransaction({
+          type: "rig.imported",
+          rigId: materializedRigId,
+          specName: rigSpec.name,
+          specVersion: rigSpec.version,
+        }));
+      });
+
+      tx();
+      for (const event of persistedEvents) {
+        this.deps.eventBus.notifySubscribers(event);
+      }
+
+      return {
+        ok: true,
+        result: {
+          rigId: materializedRigId,
+          specName: rigSpec.name,
+          specVersion: rigSpec.version,
+          nodes: nodeResults,
+        },
+      };
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && "message" in err) {
+        const typed = err as { code: string; message: string };
+        if (typed.code === "materialize_conflict") {
+          return { ok: false, code: "materialize_conflict", message: typed.message };
+        }
+      }
+      return { ok: false, code: "materialize_error", message: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   async instantiate(rigSpecYaml: string, rigRoot: string): Promise<InstantiateOutcome> {

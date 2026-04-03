@@ -1,0 +1,21 @@
+name: synthesizer
+version: "1.0"
+description: Research synthesizer — consolidates findings into actionable summaries
+
+defaults:
+  runtime: codex
+
+profiles:
+  default:
+    uses: []
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      required: true
+  actions: []

@@ -1,0 +1,21 @@
+name: reviewer
+version: "1.0"
+description: Independent code reviewer — analyzes code and writes findings
+
+defaults:
+  runtime: claude-code
+
+profiles:
+  default:
+    uses: []
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      required: true
+  actions: []

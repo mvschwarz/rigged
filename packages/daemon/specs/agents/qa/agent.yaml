@@ -1,0 +1,21 @@
+name: qa
+version: "1.0"
+description: QA agent — gates every edit with adversarial but cooperative review
+
+defaults:
+  runtime: codex
+
+profiles:
+  default:
+    uses: []
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      required: true
+  actions: []

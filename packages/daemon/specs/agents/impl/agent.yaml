@@ -1,0 +1,21 @@
+name: impl
+version: "1.0"
+description: Implementation agent — writes code following TDD discipline
+
+defaults:
+  runtime: claude-code
+
+profiles:
+  default:
+    uses: []
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      required: true
+  actions: []

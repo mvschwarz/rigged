@@ -1,0 +1,21 @@
+name: lead
+version: "1.0"
+description: Orchestrator lead — coordinates agents, monitors progress, bridges communication
+
+defaults:
+  runtime: claude-code
+
+profiles:
+  default:
+    uses: []
+
+resources:
+  guidance:
+    - id: role
+      path: guidance/role.md
+
+startup:
+  files:
+    - path: guidance/role.md
+      required: true
+  actions: []

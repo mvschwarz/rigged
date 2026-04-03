@@ -55,6 +55,7 @@ import { SessionTransport } from "./domain/session-transport.js";
 import { HistoryQuery } from "./domain/history-query.js";
 import { AskService } from "./domain/ask-service.js";
 import { ChatRepository } from "./domain/chat-repository.js";
+import { SpecReviewService } from "./domain/spec-review-service.js";
 import { createApp, type AppDeps } from "./server.js";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -312,6 +313,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
         transcriptsEnabled: transcriptStore.enabled,
       });
     })(),
+    specReviewService: new SpecReviewService(),
   };
 
   const app = createApp(deps);

@@ -47,6 +47,8 @@ import { transcriptRoutes } from "./routes/transcripts.js";
 import { transportRoutes } from "./routes/transport.js";
 import { askRoutes } from "./routes/ask.js";
 import type { AskService } from "./domain/ask-service.js";
+import { specReviewRoutes } from "./routes/spec-review.js";
+import type { SpecReviewService } from "./domain/spec-review-service.js";
 import type { ChatRepository } from "./domain/chat-repository.js";
 import { chatRoutes } from "./routes/chat.js";
 
@@ -82,6 +84,7 @@ export interface AppDeps {
   sessionTransport?: SessionTransport;
   askService?: AskService;
   chatRepo?: ChatRepository;
+  specReviewService?: SpecReviewService;
   uiDistDir?: string | null;
 }
 
@@ -207,6 +210,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("sessionTransport" as never, deps.sessionTransport);
     c.set("askService" as never, deps.askService);
     c.set("chatRepo" as never, deps.chatRepo);
+    c.set("specReviewService" as never, deps.specReviewService);
     c.set("db" as never, deps.rigRepo.db);
     await next();
   });
@@ -236,6 +240,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/transcripts", transcriptRoutes());
   app.route("/api/transport", transportRoutes());
   app.route("/api/ask", askRoutes);
+  app.route("/api/specs/review", specReviewRoutes());
   app.route("/api/rigs/:rigId/chat", chatRoutes());
 
   const uiDistDir = deps.uiDistDir ?? resolveDefaultUiDistDir();

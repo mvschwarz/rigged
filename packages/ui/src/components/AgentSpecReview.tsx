@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { WorkspacePage } from "./WorkspacePage.js";
 import { useSpecsWorkspace } from "./SpecsWorkspace.js";
+import { useAgentSpecReview } from "../hooks/useSpecReview.js";
 import {
   WorkflowCodePreview,
   WorkflowHeader,
@@ -9,79 +10,11 @@ import {
   WorkflowSummaryGrid,
 } from "./WorkflowScaffold.js";
 
-function extractScalar(yaml: string, key: string, fallback: string): string {
-  const pattern = new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n#]+)["']?`, "m");
-  return yaml.match(pattern)?.[1]?.trim() || fallback;
-}
-
-function countTopLevelEntries(yaml: string, sectionName: string): number {
-  const lines = yaml.split("\n");
-  let insideSection = false;
-  let sectionIndent = 0;
-  let count = 0;
-
-  for (const line of lines) {
-    const match = line.match(/^(\s*)([^:#][^:]*)\s*:\s*(.*)$/);
-    if (!match) continue;
-
-    const indent = match[1]?.length ?? 0;
-    const key = match[2]?.trim() ?? "";
-
-    if (!insideSection) {
-      if (key === sectionName) {
-        insideSection = true;
-        sectionIndent = indent;
-      }
-      continue;
-    }
-
-    if (indent <= sectionIndent) break;
-    if (indent === sectionIndent + 2 && !match[3]?.trim()) {
-      count += 1;
-    }
-  }
-
-  return count;
-}
-
-function countSkills(yaml: string): number {
-  const lines = yaml.split("\n");
-  let count = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const match = line.match(/^(\s*)skills:\s*(.*)$/);
-    if (!match) continue;
-
-    const indent = match[1]?.length ?? 0;
-    const rest = match[2]?.trim() ?? "";
-
-    if (rest.startsWith("[") && rest.endsWith("]")) {
-      const values = rest.slice(1, -1).split(",").map((value) => value.trim()).filter(Boolean);
-      count += values.length;
-      continue;
-    }
-
-    if (rest && rest !== "[]") continue;
-
-    for (let lookahead = index + 1; lookahead < lines.length; lookahead += 1) {
-      const nestedLine = lines[lookahead] ?? "";
-      if (!nestedLine.trim()) continue;
-      const nestedIndent = nestedLine.match(/^(\s*)/)?.[1]?.length ?? 0;
-      if (nestedIndent <= indent) break;
-      if (nestedLine.match(/^\s*-\s+/)) {
-        count += 1;
-      }
-    }
-  }
-
-  return count;
-}
-
 export function AgentSpecReview() {
   const navigate = useNavigate();
   const { selectedAgentDraft, currentAgentDraft } = useSpecsWorkspace();
   const draft = selectedAgentDraft ?? currentAgentDraft;
+  const { data: review, isLoading, error } = useAgentSpecReview(draft?.yaml ?? null);
 
   if (!draft) {
     return (
@@ -100,17 +33,13 @@ export function AgentSpecReview() {
     );
   }
 
-  const version = extractScalar(draft.yaml, "version", "Unspecified");
-  const profileCount = countTopLevelEntries(draft.yaml, "profiles");
-  const skillCount = countSkills(draft.yaml);
-
   return (
     <WorkspacePage>
-      <div data-testid="agent-spec-review" className="space-y-8">
+      <div data-testid="agent-spec-review" className="space-y-6">
         <WorkflowHeader
           eyebrow="Agent Spec Review"
-          title={draft.label}
-          description="Review the saved agent draft before you move into validation. This surface stays read-only on purpose."
+          title={review?.name ?? draft.label}
+          description={review?.description ?? "Review the agent spec structure before validation."}
           actions={(
             <Button variant="outline" size="sm" onClick={() => navigate({ to: "/agents/validate" })}>
               Open In Validate
@@ -118,13 +47,101 @@ export function AgentSpecReview() {
           )}
         />
 
-        <WorkflowSummaryGrid>
-          <WorkflowSummaryCard label="Format" value="AgentSpec" testId="agent-spec-summary-format" />
-          <WorkflowSummaryCard label="Version" value={version} testId="agent-spec-summary-version" />
-          <WorkflowSummaryCard label="Profiles" value={profileCount} testId="agent-spec-summary-profiles" />
-          <WorkflowSummaryCard label="Skills" value={skillCount} testId="agent-spec-summary-skills" />
-        </WorkflowSummaryGrid>
+        {/* Summary cards */}
+        {review && (
+          <WorkflowSummaryGrid>
+            <WorkflowSummaryCard label="Format" value="AgentSpec" testId="agent-spec-summary-format" />
+            <WorkflowSummaryCard label="Version" value={review.version} testId="agent-spec-summary-version" />
+            <WorkflowSummaryCard label="Profiles" value={review.profiles.length} testId="agent-spec-summary-profiles" />
+            <WorkflowSummaryCard
+              label="Skills"
+              value={review.resources.skills.length}
+              testId="agent-spec-summary-skills"
+            />
+          </WorkflowSummaryGrid>
+        )}
 
+        {/* Loading / Error */}
+        {isLoading && <div className="font-mono text-[10px] text-stone-400">Loading review...</div>}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 font-mono text-[10px] text-red-700">
+            {(error as Error).message}
+          </div>
+        )}
+
+        {/* Profiles */}
+        {review && review.profiles.length > 0 && (
+          <div data-testid="agent-profiles-section" className="border border-stone-200 p-3">
+            <div className="font-mono text-xs font-bold mb-2">Profiles</div>
+            <div className="space-y-1">
+              {review.profiles.map((p) => (
+                <div key={p.name} className="font-mono text-[10px] flex justify-between">
+                  <span className="font-bold">{p.name}</span>
+                  {p.description && <span className="text-stone-500">{p.description}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Resources */}
+        {review && (
+          <div data-testid="agent-resources-section" className="border border-stone-200 p-3">
+            <div className="font-mono text-xs font-bold mb-2">Resources</div>
+            <div className="space-y-2 font-mono text-[10px]">
+              {review.resources.skills.length > 0 && (
+                <div>
+                  <span className="text-stone-500">Skills:</span>{" "}
+                  {review.resources.skills.map((s, i) => (
+                    <span key={i} className="inline-block bg-stone-100 px-1.5 py-0.5 mr-1 mb-0.5">{s}</span>
+                  ))}
+                </div>
+              )}
+              {review.resources.guidance.length > 0 && (
+                <div>
+                  <span className="text-stone-500">Guidance:</span>{" "}
+                  {review.resources.guidance.map((g, i) => (
+                    <span key={i} className="inline-block bg-stone-100 px-1.5 py-0.5 mr-1 mb-0.5">{g}</span>
+                  ))}
+                </div>
+              )}
+              {review.resources.hooks.length > 0 && (
+                <div>
+                  <span className="text-stone-500">Hooks:</span> {review.resources.hooks.join(", ")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Startup */}
+        {review && (review.startup.files.length > 0 || review.startup.actions.length > 0) && (
+          <div data-testid="agent-startup-section" className="border border-stone-200 p-3">
+            <div className="font-mono text-xs font-bold mb-2">Startup</div>
+            {review.startup.files.length > 0 && (
+              <div className="mb-2">
+                <div className="font-mono text-[9px] text-stone-500 uppercase mb-1">Files</div>
+                {review.startup.files.map((f, i) => (
+                  <div key={i} className="font-mono text-[10px]">
+                    {f.path} {f.required && <span className="text-red-500 text-[8px]">REQUIRED</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {review.startup.actions.length > 0 && (
+              <div>
+                <div className="font-mono text-[9px] text-stone-500 uppercase mb-1">Actions</div>
+                {review.startup.actions.map((a, i) => (
+                  <div key={i} className="font-mono text-[10px]">
+                    <span className="text-stone-500">{a.type}:</span> {a.value}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* YAML */}
         <WorkflowCodePreview title="YAML Preview" testId="agent-spec-yaml">
           {draft.yaml}
         </WorkflowCodePreview>

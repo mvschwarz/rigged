@@ -64,12 +64,17 @@ describe("RigSpecReview", () => {
       expect(screen.getByTestId("rig-spec-review")).toBeDefined();
     });
 
+    // Draft label shows immediately (before daemon review loads)
     expect(screen.getByText("demo-rig")).toBeDefined();
-    expect(screen.getByText("Pod-Aware RigSpec")).toBeDefined();
-    expect(screen.getByTestId("rig-spec-summary-pods").textContent).toContain("2");
-    expect(screen.getByTestId("rig-spec-summary-members").textContent).toContain("2");
-    expect(screen.getByTestId("rig-spec-summary-edges").textContent).toContain("1");
-    expect(screen.getByTestId("rig-spec-yaml").textContent).toContain('agent_ref: "local:agents/lead"');
+    // Tabs should be present
+    expect(screen.getByTestId("tab-topology")).toBeDefined();
+    expect(screen.getByTestId("tab-configuration")).toBeDefined();
+    expect(screen.getByTestId("tab-yaml")).toBeDefined();
+    // YAML tab shows raw content
+    fireEvent.click(screen.getByTestId("tab-yaml"));
+    await waitFor(() => {
+      expect(screen.getByTestId("rig-spec-yaml").textContent).toContain('agent_ref: "local:agents/lead"');
+    });
   });
 
   it("links the review surface back into import and bootstrap flows", async () => {

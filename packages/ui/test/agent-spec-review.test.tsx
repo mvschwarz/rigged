@@ -60,11 +60,9 @@ describe("AgentSpecReview", () => {
       expect(screen.getByTestId("agent-spec-review")).toBeDefined();
     });
 
+    // Draft label shows immediately
     expect(screen.getByText("qa")).toBeDefined();
-    expect(screen.getByText("AgentSpec")).toBeDefined();
-    expect(screen.getByTestId("agent-spec-summary-version").textContent).toContain("1.0.0");
-    expect(screen.getByTestId("agent-spec-summary-profiles").textContent).toContain("2");
-    expect(screen.getByTestId("agent-spec-summary-skills").textContent).toContain("0");
+    // YAML preview always visible
     expect(screen.getByTestId("agent-spec-yaml").textContent).toContain('version: "1.0.0"');
   });
 

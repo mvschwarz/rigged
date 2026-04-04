@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useNodeDetail } from "../hooks/useNodeDetail.js";
 import { getRestoreStatusColorClass } from "../lib/restore-status-colors.js";
 import { copyText } from "../lib/copy-text.js";
@@ -20,6 +21,7 @@ function statusColor(status: string | null): string {
 }
 
 export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelProps) {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useNodeDetail(rigId, logicalId);
   const headerName = data?.canonicalSessionName ?? logicalId;
 
@@ -132,6 +134,13 @@ export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelPr
                   Copy resume command
                 </button>
               )}
+              <button
+                onClick={() => navigate({ to: "/rigs/$rigId/nodes/$logicalId", params: { rigId, logicalId: encodeURIComponent(logicalId) } })}
+                data-testid="detail-open-full"
+                className="px-2 py-1 border border-stone-300 font-mono text-[8px] uppercase hover:bg-stone-200 text-left font-bold"
+              >
+                Open Full Details
+              </button>
             </div>
           </section>
 

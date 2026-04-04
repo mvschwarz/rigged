@@ -251,4 +251,13 @@ describe("NodeDetailPanel", () => {
       expect(screen.getByTestId("detail-compact-spec")).toBeDefined();
     });
   });
+
+  it("shows Open Full Details button", async () => {
+    mockDetail(AGENT_DETAIL);
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByTestId("detail-open-full")).toBeDefined();
+      expect(screen.getByText("Open Full Details")).toBeDefined();
+    });
+  });
 });

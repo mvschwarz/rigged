@@ -21,6 +21,7 @@ import { AgentSpecReview } from "./components/AgentSpecReview.js";
 import { BundleInspector } from "./components/BundleInspector.js";
 import { BundleInstallFlow } from "./components/BundleInstallFlow.js";
 import { LibraryReview } from "./components/LibraryReview.js";
+import { LiveNodeDetails } from "./components/LiveNodeDetails.js";
 import { DiscoveryOverlay } from "./components/DiscoveryOverlay.js";
 import { useRigSummary } from "./hooks/useRigSummary.js";
 import { useDrawerSelection } from "./components/AppShell.js";
@@ -207,6 +208,16 @@ const packageDetailRoute = createRoute({
 });
 
 // Route tree
+// Live node full details route
+const liveNodeDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rigs/$rigId/nodes/$logicalId",
+  component: () => {
+    const { rigId, logicalId } = liveNodeDetailsRoute.useParams();
+    return <LiveNodeDetails rigId={rigId} logicalId={decodeURIComponent(logicalId)} />;
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   rigDetailRoute,
@@ -224,6 +235,7 @@ const routeTree = rootRoute.addChildren([
   discoveryInventoryRoute,
   bundleInspectRoute,
   bundleInstallRoute,
+  liveNodeDetailsRoute,
 ]);
 
 // Router

@@ -81,6 +81,14 @@ export function RigNode({ data }: { data: RigNodeData }) {
   const statusLabel = getStartupStatusLabel(data.startupStatus);
   const statusClass = getStartupStatusColorClass(data.startupStatus);
   const placementChipLabel = data.placementState === "selected" ? "target" : data.placementState === "available" ? "avail" : null;
+  const hoverHintLines = [
+    data.canonicalSessionName ? `Session: ${data.canonicalSessionName}` : null,
+    runtimeModel ? `Runtime: ${runtimeModel}` : null,
+    data.resolvedSpecName ? `Spec: ${data.resolvedSpecName}` : null,
+    data.profile ? `Profile: ${data.profile}` : null,
+    typeof data.edgeCount === "number" ? `Edges: ${data.edgeCount}` : null,
+  ].filter((line): line is string => Boolean(line));
+  const hoverHint = hoverHintLines.join("\n");
 
   const flashFeedback = (kind: "attach" | "resume" | "cmux") => {
     if (feedbackTimerRef.current) {
@@ -134,7 +142,7 @@ export function RigNode({ data }: { data: RigNodeData }) {
 
   return (
     <div
-      className={`bg-white border min-w-[200px] hard-shadow relative ${
+      className={`group bg-white border min-w-[200px] hard-shadow relative ${
         data.placementState === "selected"
           ? "border-emerald-600 ring-2 ring-emerald-400/70 shadow-[0_0_0_3px_rgba(52,211,153,0.12)]"
           : data.placementState === "available"
@@ -142,6 +150,7 @@ export function RigNode({ data }: { data: RigNodeData }) {
             : "border-stone-900"
       }`}
       data-testid="rig-node"
+      title={hoverHint || undefined}
     >
       <Handle type="target" position={Position.Top} />
 
@@ -261,6 +270,17 @@ export function RigNode({ data }: { data: RigNodeData }) {
           </div>
         )}
       </div>
+
+      {hoverHintLines.length > 0 && (
+        <div
+          data-testid="node-hover-hint"
+          className="pointer-events-none absolute left-2 top-full z-20 mt-2 hidden min-w-[180px] border border-stone-900 bg-white px-2 py-1 font-mono text-[8px] text-stone-700 shadow-[4px_4px_0_rgba(28,25,23,0.14)] group-hover:block"
+        >
+          {hoverHintLines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
+        </div>
+      )}
 
       <Handle type="source" position={Position.Bottom} />
     </div>

@@ -464,7 +464,7 @@ describe("RigGraph", () => {
       const customNodes = container.querySelectorAll(".react-flow__node-rigNode");
       expect(customNodes.length).toBe(2);
       // RigNode renders runtime text in combined format
-      expect(screen.getByText(/claude-code/)).toBeDefined();
+      expect(screen.getByText("RUNTIME: claude-code · opus")).toBeDefined();
     });
   });
 });
@@ -1354,5 +1354,31 @@ describe("RigNode spec hint", () => {
     );
 
     expect(screen.queryByTestId("spec-hint")).toBeNull();
+  });
+
+  it("exposes hover metadata for runtime inspection", () => {
+    render(
+      <ReactFlowProvider>
+        <RigNode data={{
+          logicalId: "dev.impl",
+          rigId: "rig-1",
+          role: "worker",
+          runtime: "claude-code",
+          model: "opus",
+          status: "running",
+          canonicalSessionName: "dev-impl@test-rig",
+          binding: null,
+          resolvedSpecName: "impl-agent",
+          profile: "default",
+          edgeCount: 2,
+        }} />
+      </ReactFlowProvider>
+    );
+
+    const node = screen.getByTestId("rig-node");
+    expect(node.getAttribute("title")).toContain("Session: dev-impl@test-rig");
+    expect(node.getAttribute("title")).toContain("Spec: impl-agent");
+    expect(node.getAttribute("title")).toContain("Profile: default");
+    expect(node.getAttribute("title")).toContain("Edges: 2");
   });
 });

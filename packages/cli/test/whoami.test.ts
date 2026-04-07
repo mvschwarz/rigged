@@ -22,6 +22,13 @@ function runningDeps(port: number): StatusDeps {
   return { lifecycleDeps: { ...mockLifecycleDeps(), exists: vi.fn((p: string) => p === STATE_FILE), readFile: vi.fn((p: string) => { if (p === STATE_FILE) return JSON.stringify({ pid: 123, port, db: "test.sqlite", startedAt: "2026-04-03T00:00:00Z" } as DaemonState); return null; }), fetch: vi.fn(async () => ({ ok: true })) }, clientFactory: (baseUrl) => new DaemonClient(baseUrl) };
 }
 
+function stoppedDeps(): StatusDeps {
+  return {
+    lifecycleDeps: { ...mockLifecycleDeps(), exists: vi.fn(() => false) },
+    clientFactory: (baseUrl) => new DaemonClient(baseUrl),
+  };
+}
+
 const WHOAMI_RESPONSE = {
   resolvedBy: "node_id",
   identity: {
@@ -260,5 +267,38 @@ describe("Whoami CLI", () => {
     expect(output).toContain("Edges:");
     expect(output).toContain("delegates_to");
     expect(output).toContain("Transcript:");
+  });
+
+  it("daemon down with OPENRIG_NODE_ID env returns partial JSON instead of hard-failing", async () => {
+    process.env["OPENRIG_NODE_ID"] = "node-1";
+    const program = new Command();
+    program.exitOverride();
+    program.addCommand(whoamiCommand(stoppedDeps()));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await program.parseAsync(["node", "rig", "whoami", "--json"]);
+    });
+
+    const parsed = JSON.parse(logs.join("\n"));
+    expect(parsed.partial).toBe(true);
+    expect(parsed.daemonReachable).toBe(false);
+    expect(parsed.identity.nodeId).toBe("node-1");
+    expect(exitCode).toBeUndefined();
+  });
+
+  it("daemon down with OPENRIG_SESSION_NAME env prints partial human output", async () => {
+    process.env["OPENRIG_SESSION_NAME"] = "dev-impl@my-rig";
+    const program = new Command();
+    program.exitOverride();
+    program.addCommand(whoamiCommand(stoppedDeps()));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await program.parseAsync(["node", "rig", "whoami"]);
+    });
+
+    const output = logs.join("\n");
+    expect(output).toContain("Daemon unavailable");
+    expect(output).toContain("dev-impl@my-rig");
+    expect(exitCode).toBeUndefined();
   });
 });

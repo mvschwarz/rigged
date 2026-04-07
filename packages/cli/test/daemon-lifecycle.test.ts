@@ -476,6 +476,26 @@ describe("Daemon Lifecycle", () => {
       else process.env["OPENRIG_URL"] = prev;
     }
   });
+
+  it("createIsProcessAlive treats zombie processes as dead", async () => {
+    const { createIsProcessAlive } = await import("../src/commands/daemon.js");
+    const isAlive = createIsProcessAlive({
+      signalCheck: () => true,
+      readProcessState: () => "Z",
+    });
+
+    expect(isAlive(123)).toBe(false);
+  });
+
+  it("createIsProcessAlive keeps non-zombie processes alive", async () => {
+    const { createIsProcessAlive } = await import("../src/commands/daemon.js");
+    const isAlive = createIsProcessAlive({
+      signalCheck: () => true,
+      readProcessState: () => "S",
+    });
+
+    expect(isAlive(123)).toBe(true);
+  });
 });
 
 describe("resolveDaemonPath", () => {

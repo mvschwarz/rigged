@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import fs from "node:fs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   startDaemon,
   stopDaemon,
@@ -11,7 +11,41 @@ import {
   OPENRIG_DIR,
 } from "../daemon-lifecycle.js";
 
+interface ProcessAliveDeps {
+  signalCheck: (pid: number) => boolean;
+  readProcessState: (pid: number) => string | null;
+}
+
+export function createIsProcessAlive(deps: ProcessAliveDeps): (pid: number) => boolean {
+  return (pid: number) => {
+    if (!deps.signalCheck(pid)) return false;
+
+    const state = deps.readProcessState(pid)?.trim();
+    if (!state) return false;
+    if (state.startsWith("Z")) return false;
+    return true;
+  };
+}
+
 export function realDeps(): LifecycleDeps {
+  const isProcessAlive = createIsProcessAlive({
+    signalCheck: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    readProcessState: (pid) => {
+      try {
+        return execFileSync("ps", ["-o", "state=", "-p", String(pid)], { encoding: "utf-8" });
+      } catch {
+        return null;
+      }
+    },
+  });
+
   return {
     spawn: (cmd, args, opts) => spawn(cmd, args, opts as Parameters<typeof spawn>[2]),
     fetch: async (url) => {
@@ -25,7 +59,7 @@ export function realDeps(): LifecycleDeps {
     exists: (p) => fs.existsSync(p),
     mkdirp: (p) => fs.mkdirSync(p, { recursive: true }),
     openForAppend: (p) => fs.openSync(p, "a"),
-    isProcessAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+    isProcessAlive,
   };
 }
 

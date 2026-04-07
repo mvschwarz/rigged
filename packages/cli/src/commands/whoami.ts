@@ -39,6 +39,34 @@ type TmuxExecFn = (cmd: string) => string;
 
 const defaultTmuxExec: TmuxExecFn = (cmd: string) => execSync(cmd, { encoding: "utf-8" }).trim();
 
+function buildPartialWhoamiResult(source: { nodeId?: string; sessionName?: string }): Record<string, unknown> {
+  return {
+    resolvedBy: source.nodeId ? "node_id" : "session_name",
+    partial: true,
+    daemonReachable: false,
+    identity: {
+      rigId: null,
+      rigName: null,
+      nodeId: source.nodeId ?? null,
+      logicalId: null,
+      podId: null,
+      podLabel: null,
+      memberId: null,
+      memberLabel: null,
+      sessionName: source.sessionName ?? null,
+      runtime: null,
+      cwd: null,
+      agentRef: null,
+      profile: null,
+      resolvedSpecName: null,
+      resolvedSpecVersion: null,
+    },
+    peers: [],
+    edges: { outgoing: [], incoming: [] },
+    transcript: { enabled: false, path: null, tailCommand: null },
+  };
+}
+
 /**
  * Resolve the current session identity using the approved resolution chain:
  * 1. --node-id flag
@@ -112,8 +140,16 @@ export function whoamiCommand(depsOverride?: StatusDeps): Command {
       const deps = getDeps();
       const status = await getDaemonStatus(deps.lifecycleDeps);
       if (status.state !== "running" || status.healthy === false) {
-        console.error("Daemon not running. Start it with: rig daemon start");
-        process.exitCode = 1;
+        const partial = buildPartialWhoamiResult(source);
+        if (opts.json) {
+          console.log(JSON.stringify(partial, null, 2));
+          return;
+        }
+        const identity = partial.identity as Record<string, string | null>;
+        console.log("Daemon unavailable — showing partial identity");
+        console.log(`Node ID:    ${identity.nodeId ?? "—"}`);
+        console.log(`Session:    ${identity.sessionName ?? "—"}`);
+        console.log(`Resolved:   partial via ${String(partial.resolvedBy).replace(/_/g, " ")}`);
         return;
       }
 

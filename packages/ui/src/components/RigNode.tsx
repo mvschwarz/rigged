@@ -24,6 +24,9 @@ interface RigNodeData {
     tmuxSession?: string | null;
     cmuxSurface?: string | null;
   } | null;
+  contextUsedPercentage?: number | null;
+  contextFresh?: boolean;
+  contextAvailability?: string;
   placementState?: "available" | "selected" | null;
 }
 
@@ -186,6 +189,17 @@ export function RigNode({ data }: { data: RigNodeData }) {
         {data.resolvedSpecName && (
           <div className="font-mono text-[8px] text-stone-400" data-testid="spec-hint">
             {data.resolvedSpecName}{data.profile ? ` · ${data.profile}` : ""}
+          </div>
+        )}
+
+        {/* Context usage badge */}
+        {data.contextAvailability === "known" && data.contextFresh && typeof data.contextUsedPercentage === "number" ? (
+          <div className="font-mono text-[8px] text-stone-500" data-testid="context-badge">
+            CTX {data.contextUsedPercentage}%
+          </div>
+        ) : (
+          <div className="font-mono text-[8px] text-stone-300" data-testid="context-badge-unknown">
+            CTX unknown
           </div>
         )}
 

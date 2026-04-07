@@ -54,6 +54,19 @@ export interface NodeDetailData {
   edges: { outgoing: NodeDetailEdge[]; incoming: NodeDetailEdge[] };
   transcript: NodeDetailTranscript;
   compactSpec: NodeDetailCompactSpec;
+  contextUsage?: {
+    availability: string;
+    reason?: string | null;
+    usedPercentage?: number | null;
+    remainingPercentage?: number | null;
+    contextWindowSize?: number | null;
+    totalInputTokens?: number | null;
+    totalOutputTokens?: number | null;
+    currentUsage?: string | null;
+    source?: string | null;
+    sampledAt?: string | null;
+    fresh?: boolean;
+  };
 }
 
 async function fetchNodeDetail(rigId: string, logicalId: string): Promise<NodeDetailData> {

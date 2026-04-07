@@ -70,13 +70,14 @@ export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelPr
             </div>
           </section>
 
-          {/* Edges, Peers, Transcript, Compact Spec */}
+          {/* Edges, Peers, Transcript, Compact Spec, Context */}
           {data.peers && (
             <LiveIdentityDisplay
               peers={data.peers}
               edges={data.edges}
               transcript={data.transcript}
               compactSpec={data.compactSpec}
+              contextUsage={data.contextUsage}
             />
           )}
 

@@ -33,6 +33,12 @@ interface WhoamiResult {
   peers: WhoamiPeer[];
   edges: { outgoing: WhoamiEdge[]; incoming: WhoamiEdge[] };
   transcript: { enabled: boolean; path: string | null; tailCommand: string | null };
+  contextUsage?: {
+    availability: string;
+    usedPercentage?: number | null;
+    remainingPercentage?: number | null;
+    contextWindowSize?: number | null;
+  };
 }
 
 type TmuxExecFn = (cmd: string) => string;
@@ -224,6 +230,14 @@ export function whoamiCommand(depsOverride?: StatusDeps): Command {
         console.log("");
         console.log(`Transcript: ${data.transcript.path ?? "enabled"}`);
         console.log(`  ${data.transcript.tailCommand}`);
+      }
+
+      // Context usage
+      const ctx = data.contextUsage;
+      if (ctx && ctx.availability === "known") {
+        console.log(`Context:    ${ctx.usedPercentage}% used (${ctx.remainingPercentage}% remaining, ${ctx.contextWindowSize} window)`);
+      } else {
+        console.log("Context:    unknown");
       }
     });
 

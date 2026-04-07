@@ -104,6 +104,7 @@ export function LiveNodeDetails({ rigId, logicalId }: LiveNodeDetailsProps) {
             edges={data.edges}
             transcript={data.transcript}
             compactSpec={data.compactSpec}
+            contextUsage={data.contextUsage}
           />
         )}
 

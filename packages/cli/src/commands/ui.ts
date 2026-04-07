@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getDaemonStatus, type LifecycleDeps } from "../daemon-lifecycle.js";
+import { getDaemonStatus, getDaemonUrl, type LifecycleDeps } from "../daemon-lifecycle.js";
 import { readOpenRigEnv } from "../openrig-compat.js";
 import { realDeps } from "./daemon.js";
 
@@ -7,8 +7,6 @@ export interface UiDeps {
   lifecycleDeps: LifecycleDeps;
   exec: (cmd: string, args: string[]) => Promise<void>;
 }
-
-const DEFAULT_UI_URL = readOpenRigEnv("OPENRIG_UI_URL", "RIGGED_UI_URL")?.trim() || "http://127.0.0.1:5173";
 
 export function uiCommand(depsOverride?: UiDeps): Command {
   const cmd = new Command("ui").description("UI commands");
@@ -26,8 +24,22 @@ export function uiCommand(depsOverride?: UiDeps): Command {
     .description("Open the OpenRig UI in the default browser")
     .action(async () => {
       const deps = getDeps();
-      const status = await getDaemonStatus(deps.lifecycleDeps);
 
+      // Explicit override skips daemon status entirely (dev workflow with Vite)
+      const overrideUrl = readOpenRigEnv("OPENRIG_UI_URL", "RIGGED_UI_URL")?.trim();
+      if (overrideUrl) {
+        console.log(overrideUrl);
+        try {
+          await deps.exec("open", [overrideUrl]);
+        } catch {
+          console.error("Failed to open browser — open the URL manually");
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      // Default: derive UI URL from daemon status (daemon serves the UI)
+      const status = await getDaemonStatus(deps.lifecycleDeps);
       if (status.state !== "running" || status.healthy === false) {
         if (status.state === "running" && status.healthy === false) {
           console.error("Daemon unhealthy — healthz failed");
@@ -38,7 +50,7 @@ export function uiCommand(depsOverride?: UiDeps): Command {
         return;
       }
 
-      const url = DEFAULT_UI_URL;
+      const url = getDaemonUrl(status);
       console.log(url);
 
       try {

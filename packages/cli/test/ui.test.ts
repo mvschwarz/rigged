@@ -61,8 +61,8 @@ describe("rig ui open", () => {
     program.addCommand(uiCommand(deps));
     const logs = await captureLogs(() => program.parseAsync(["node", "rig", "ui", "open"]));
 
-    expect(execFn).toHaveBeenCalledWith("open", ["http://127.0.0.1:5173"]);
-    expect(logs.join("\n")).toContain("http://127.0.0.1:5173");
+    expect(execFn).toHaveBeenCalledWith("open", ["http://127.0.0.1:8888"]);
+    expect(logs.join("\n")).toContain("http://127.0.0.1:8888");
   });
 
   // Test 2: Daemon down -> error, no exec
@@ -80,16 +80,16 @@ describe("rig ui open", () => {
     expect(execFn).not.toHaveBeenCalled();
   });
 
-  // Test 3: UI URL is stable even when daemon runs on another port
-  it("UI URL does not change with daemon port", async () => {
+  // Test 3: UI URL derives from daemon port (daemon serves the UI)
+  it("UI URL derives from daemon port", async () => {
     const execFn = vi.fn(async () => {});
     const deps = runningDeps(9999, execFn);
     const program = new Command();
     program.addCommand(uiCommand(deps));
     const logs = await captureLogs(() => program.parseAsync(["node", "rig", "ui", "open"]));
 
-    expect(execFn).toHaveBeenCalledWith("open", ["http://127.0.0.1:5173"]);
-    expect(logs.join("\n")).toContain("http://127.0.0.1:5173");
+    expect(execFn).toHaveBeenCalledWith("open", ["http://127.0.0.1:9999"]);
+    expect(logs.join("\n")).toContain("http://127.0.0.1:9999");
   });
 
   // Test 4: Unhealthy daemon -> error, no exec
@@ -142,7 +142,7 @@ describe("rig ui open", () => {
 
     const output = logs.join("\n");
     // URL must be printed even when open fails
-    expect(output).toContain("http://127.0.0.1:5173");
+    expect(output).toContain("http://127.0.0.1:7433");
     // Clean error message
     expect(output).toMatch(/failed to open|manually/i);
     // Non-zero exit code
@@ -159,7 +159,32 @@ describe("rig ui open", () => {
     program.addCommand(uiCommand(deps));
     const logs = await captureLogs(() => program.parseAsync(["node", "rig", "ui", "open"]));
 
-    expect(logs.join("\n")).toContain("http://127.0.0.1:5173");
+    expect(logs.join("\n")).toContain("http://127.0.0.1:5555");
     expect(execFn).toHaveBeenCalled();
+  });
+
+  // Test 8: OPENRIG_UI_URL override works even when daemon is stopped
+  it("OPENRIG_UI_URL override works without daemon running", async () => {
+    const prev = process.env["OPENRIG_UI_URL"];
+    process.env["OPENRIG_UI_URL"] = "http://localhost:5173";
+    try {
+      const execFn = vi.fn(async () => {});
+      // Daemon is down (no state file)
+      const deps: UiDeps = {
+        lifecycleDeps: mockLifecycleDeps({ exists: vi.fn(() => false) }),
+        exec: execFn,
+      };
+      const program = new Command();
+      program.addCommand(uiCommand(deps));
+      const logs = await captureLogs(() => program.parseAsync(["node", "rig", "ui", "open"]));
+
+      expect(execFn).toHaveBeenCalledWith("open", ["http://localhost:5173"]);
+      expect(logs.join("\n")).toContain("http://localhost:5173");
+      // Should NOT see "not running" error
+      expect(logs.join("\n")).not.toMatch(/not running/i);
+    } finally {
+      if (prev === undefined) delete process.env["OPENRIG_UI_URL"];
+      else process.env["OPENRIG_UI_URL"] = prev;
+    }
   });
 });

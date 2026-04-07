@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { createFullTestDb, createTestApp } from "./helpers/test-app.js";
 import { RigExpansionService } from "../src/domain/rig-expansion-service.js";
 import type { ExpansionRequest } from "../src/domain/types.js";
+import type { RuntimeAdapter } from "../src/domain/runtime-adapter.js";
 
 describe("RigExpansionService", () => {
   let db: Database.Database;
@@ -184,6 +185,86 @@ describe("RigExpansionService", () => {
     // Topology still exists despite all launches failing
     const updatedRig = setup.rigRepo.getRig(rig.id);
     expect(updatedRig!.nodes.some((n) => n.logicalId === "infra.server")).toBe(true);
+  });
+
+  it("returns partial when startup fails after sessions are launched", async () => {
+    const failingTerminalAdapter: RuntimeAdapter = {
+      runtime: "terminal",
+      listInstalled: async () => [],
+      project: async () => ({ projected: [], skipped: [], failed: [] }),
+      deliverStartup: async () => ({ delivered: 0, failed: [] }),
+      launchHarness: vi.fn()
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: false, error: "terminal harness failed" }),
+      checkReady: async () => ({ ready: true }),
+    };
+
+    setup = createTestApp(db, { adapters: { terminal: failingTerminalAdapter } });
+    service = new RigExpansionService({
+      db,
+      rigRepo: setup.rigRepo,
+      eventBus: setup.eventBus,
+      nodeLauncher: setup.nodeLauncher,
+      podInstantiator: setup.podInstantiator,
+      sessionRegistry: setup.sessionRegistry,
+    });
+
+    const rig = seedRig();
+    const twoPod: ExpansionRequest["pod"] = {
+      id: "infra",
+      label: "Infrastructure",
+      members: [
+        { id: "server1", runtime: "terminal", agentRef: "builtin:terminal", profile: "none", cwd: "/tmp" },
+        { id: "server2", runtime: "terminal", agentRef: "builtin:terminal", profile: "none", cwd: "/tmp" },
+      ],
+      edges: [],
+    };
+
+    const result = await service.expand({ rigId: rig.id, pod: twoPod });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe("partial");
+    expect(result.nodes.map((n) => n.status)).toEqual(["launched", "failed"]);
+    expect(result.retryTargets).toEqual(["infra.server2"]);
+
+    const sessions = setup.sessionRegistry.getSessionsForRig(rig.id);
+    const failedSession = sessions.find((session) => session.nodeId === result.nodes[1]!.nodeId);
+    expect(failedSession?.startupStatus).toBe("failed");
+  });
+
+  it("returns failed when every materialized node fails startup after launch", async () => {
+    const failingTerminalAdapter: RuntimeAdapter = {
+      runtime: "terminal",
+      listInstalled: async () => [],
+      project: async () => ({ projected: [], skipped: [], failed: [] }),
+      deliverStartup: async () => ({ delivered: 0, failed: [] }),
+      launchHarness: async () => ({ ok: false, error: "terminal harness failed" }),
+      checkReady: async () => ({ ready: true }),
+    };
+
+    setup = createTestApp(db, { adapters: { terminal: failingTerminalAdapter } });
+    service = new RigExpansionService({
+      db,
+      rigRepo: setup.rigRepo,
+      eventBus: setup.eventBus,
+      nodeLauncher: setup.nodeLauncher,
+      podInstantiator: setup.podInstantiator,
+      sessionRegistry: setup.sessionRegistry,
+    });
+
+    const rig = seedRig();
+    const result = await service.expand({ rigId: rig.id, pod: terminalPodFragment() });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe("failed");
+    expect(result.nodes[0]!.status).toBe("failed");
+    expect(result.nodes[0]!.error).toContain("Harness launch failed");
+    expect(result.retryTargets).toEqual(["infra.server"]);
+
+    const sessions = setup.sessionRegistry.getSessionsForRig(rig.id);
+    expect(sessions[0]?.startupStatus).toBe("failed");
   });
 
   // T11: No rig.imported event emitted (suppressed)

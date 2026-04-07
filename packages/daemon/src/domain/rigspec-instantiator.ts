@@ -318,6 +318,19 @@ export type MaterializeOutcome =
   | { ok: false; code: "materialize_conflict"; message: string }
   | { ok: false; code: "materialize_error"; message: string };
 
+export interface LaunchMaterializedNodeResult {
+  logicalId: string;
+  nodeId: string;
+  status: "launched" | "failed";
+  error?: string;
+  sessionName?: string;
+}
+
+export type LaunchMaterializedOutcome =
+  | { ok: true; result: { nodes: LaunchMaterializedNodeResult[]; warnings?: string[] } }
+  | { ok: false; code: "validation_failed"; errors: string[] }
+  | { ok: false; code: "target_rig_not_found"; message: string };
+
 /**
  * Pod-aware rig instantiator. Creates pods, nodes, edges, and runs
  * startup orchestration per node with resolved agent specs.
@@ -496,6 +509,100 @@ export class PodRigInstantiator {
     }
   }
 
+  async launchMaterialized(
+    rigSpecYaml: string,
+    rigRoot: string,
+    targetRigId: string,
+  ): Promise<LaunchMaterializedOutcome> {
+    let raw: unknown;
+    try {
+      raw = PodRigSpecCodec.parse(rigSpecYaml);
+    } catch (err) {
+      return { ok: false, code: "validation_failed", errors: [(err as Error).message] };
+    }
+
+    const targetRig = this.deps.rigRepo.getRig(targetRigId);
+    if (!targetRig) {
+      return { ok: false, code: "target_rig_not_found", message: `Rig "${targetRigId}" not found` };
+    }
+
+    const validation = PodRigSpecSchema.validate(raw, {
+      externalQualifiedIds: targetRig.nodes.map((node) => node.logicalId),
+    });
+    if (!validation.valid) {
+      return { ok: false, code: "validation_failed", errors: validation.errors };
+    }
+
+    const rigSpec = PodRigSpecSchema.normalize(raw as Record<string, unknown>);
+    const launchOrder = this.computePodLaunchOrder(rigSpec);
+    const podWarnings: string[] = [];
+    const nodeResults: LaunchMaterializedNodeResult[] = [];
+
+    for (const logicalId of launchOrder) {
+      const memberContext = this.findMemberContext(rigSpec, logicalId);
+      if (!memberContext) {
+        nodeResults.push({
+          logicalId,
+          nodeId: "",
+          status: "failed",
+          error: `Unable to resolve member definition for "${logicalId}"`,
+        });
+        continue;
+      }
+
+      const node = this.deps.rigRepo.getRig(targetRigId)?.nodes.find((entry) => entry.logicalId === logicalId);
+      if (!node) {
+        nodeResults.push({
+          logicalId,
+          nodeId: "",
+          status: "failed",
+          error: `Node "${logicalId}" not found after materialization`,
+        });
+        continue;
+      }
+
+      const launched = memberContext.member.agentRef === "builtin:terminal"
+        ? await this.launchExistingTerminalMember({
+            rigId: targetRigId,
+            rigSpec,
+            rigRoot,
+            pod: memberContext.pod,
+            member: memberContext.member,
+            qualifiedId: logicalId,
+            nodeId: node.id,
+          })
+        : await this.launchExistingAgentMember({
+            rigId: targetRigId,
+            rigSpec,
+            rigRoot,
+            pod: memberContext.pod,
+            member: memberContext.member,
+            qualifiedId: logicalId,
+            nodeId: node.id,
+          });
+
+      if (launched.warnings?.length) {
+        podWarnings.push(...launched.warnings);
+      }
+
+      nodeResults.push({
+        logicalId,
+        nodeId: node.id,
+        status: launched.status,
+        error: launched.error,
+        sessionName: launched.sessionName,
+      });
+    }
+
+    return {
+      ok: true,
+      result: {
+        nodes: nodeResults,
+        warnings: podWarnings.length > 0 ? podWarnings : undefined,
+      },
+    };
+  }
+
   async instantiate(rigSpecYaml: string, rigRoot: string): Promise<InstantiateOutcome> {
     // 1. Parse + validate
     let rigSpec: PodRigSpec;
@@ -627,97 +734,27 @@ export class PodRigInstantiator {
           continue;
         }
 
-        // Validate session name components before launch
-        const sessionNameErrors = validateSessionComponents(pod.id, member.id, rigSpec.name);
-        if (sessionNameErrors.length > 0) {
-          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: sessionNameErrors.join("; ") });
-          continue;
-        }
-
-        // Launch session with canonical name
-        const canonicalSessionName = deriveCanonicalSessionName(pod.id, member.id, rigSpec.name);
-        const launchResult = await this.deps.nodeLauncher.launchNode(rigId, qualifiedId, { sessionName: canonicalSessionName });
-        if (!launchResult.ok) {
-          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: launchResult.message });
-          continue;
-        }
-        launchedSessionNames.push(canonicalSessionName);
-        if (launchResult.warnings?.length) {
-          podInstantiateWarnings.push(...launchResult.warnings);
-        }
-
-        // Propagate narrowed restorePolicy to session row (restore-orchestrator reads it)
-        try {
-          this.db.prepare("UPDATE sessions SET restore_policy = ? WHERE id = ?")
-            .run(configResult.config.restorePolicy, launchResult.session.id);
-        } catch { /* best-effort */ }
-
-        // Select adapter
-        const adapter = this.deps.adapters[member.runtime];
-        if (!adapter) {
-          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: `No adapter for runtime "${member.runtime}"` });
-          continue;
-        }
-
-        // Plan projection
-        const planResult = planProjection({
-          config: configResult.config,
-          collisions: resolveResult.collisions,
-          fsOps: this.deps.fsOps,
-        });
-        if (!planResult.ok) {
-          nodeResults.push({ logicalId: qualifiedId, status: "failed", error: planResult.errors.join("; ") });
-          continue;
-        }
-
-        // Build resolved startup files with correct owner roots
-        const resolvedFiles = this.buildResolvedStartupFiles(
-          resolveResult.resolved.spec,
-          resolveResult.resolved.sourcePath,
-          resolveResult.resolved.spec.profiles[member.profile],
-          rigSpec, rigRoot, pod, member,
-        );
-
-        // Build binding
-        const binding: NodeBinding = {
-          id: launchResult.ok ? launchResult.binding.id : "",
-          nodeId,
-          tmuxSession: launchResult.ok ? launchResult.binding.tmuxSession : null,
-          tmuxWindow: null,
-          tmuxPane: null,
-          cmuxWorkspace: null,
-          cmuxSurface: null,
-          updatedAt: "",
-          cwd: member.cwd,
-        };
-
-        // Run startup
-        const startupResult = await this.deps.startupOrchestrator.startNode({
+        const launched = await this.launchExistingAgentMember({
           rigId,
+          rigSpec,
+          rigRoot,
+          pod,
+          member,
+          qualifiedId,
           nodeId,
-          sessionId: launchResult.ok ? launchResult.session.id : "",
-          binding,
-          adapter,
-          plan: planResult.plan,
-          resolvedStartupFiles: resolvedFiles,
-          startupActions: [
-            ...configResult.config.startup.actions,
-            this.buildSessionIdentityAction({
-              rigName: rigSpec.name,
-              pod,
-              member,
-              runtime: member.runtime,
-              sessionName: canonicalSessionName,
-              resolvedSpecName: configResult.config.resolvedSpecName,
-            }),
-          ],
-          isRestore: false,
+          resolveResult,
+          configResult,
         });
-
+        if (launched.sessionName) {
+          launchedSessionNames.push(launched.sessionName);
+        }
+        if (launched.warnings?.length) {
+          podInstantiateWarnings.push(...launched.warnings);
+        }
         nodeResults.push({
           logicalId: qualifiedId,
-          status: startupResult.ok ? "launched" : "failed",
-          error: startupResult.ok ? undefined : startupResult.errors.join("; "),
+          status: launched.status,
+          error: launched.error,
         });
       }
 
@@ -799,7 +836,10 @@ export class PodRigInstantiator {
       if (!LAUNCH_DEP_KINDS.has(edge.kind)) continue;
       const from = edge.kind === "delegates_to" ? edge.from : edge.to;
       const to = edge.kind === "delegates_to" ? edge.to : edge.from;
-      if (adjacency[from]) { adjacency[from]!.push(to); inDegree[to] = (inDegree[to] ?? 0) + 1; }
+      if (adjacency[from] && adjacency[to]) {
+        adjacency[from]!.push(to);
+        inDegree[to] = (inDegree[to] ?? 0) + 1;
+      }
     }
 
     // Topological sort with alphabetical tiebreaker
@@ -860,77 +900,224 @@ export class PodRigInstantiator {
       return { logicalId: qualifiedId, status: "failed", error: (err as Error).message };
     }
 
-    // Validate session name components
-    const sessionNameErrors = validateSessionComponents(pod.id, member.id, rigSpec.name);
+    const launched = await this.launchExistingTerminalMember({
+      rigId,
+      rigSpec,
+      rigRoot,
+      pod,
+      member,
+      qualifiedId,
+      nodeId,
+    });
+    if (launched.sessionName) {
+      launchedSessionNames.push(launched.sessionName);
+    }
+    if (launched.warnings?.length) {
+      warnings.push(...launched.warnings);
+    }
+    return {
+      logicalId: qualifiedId,
+      status: launched.status,
+      error: launched.error,
+    };
+  }
+
+  private findMemberContext(
+    rigSpec: PodRigSpec,
+    qualifiedId: string,
+  ): { pod: RigSpecPod; member: RigSpecPodMember } | null {
+    const [podId, memberId] = qualifiedId.split(".", 2);
+    if (!podId || !memberId) return null;
+    const pod = rigSpec.pods.find((entry) => entry.id === podId);
+    const member = pod?.members.find((entry) => entry.id === memberId);
+    return pod && member ? { pod, member } : null;
+  }
+
+  private async launchExistingAgentMember(input: {
+    rigId: string;
+    rigSpec: PodRigSpec;
+    rigRoot: string;
+    pod: RigSpecPod;
+    member: RigSpecPodMember;
+    qualifiedId: string;
+    nodeId: string;
+    resolveResult?: ReturnType<typeof resolveAgentRef> extends infer T ? T : never;
+    configResult?: ReturnType<typeof resolveNodeConfig> extends infer T ? T : never;
+  }): Promise<{ status: "launched" | "failed"; error?: string; sessionName?: string; warnings?: string[] }> {
+    const resolveResult = input.resolveResult ?? resolveAgentRef(input.member.agentRef, input.rigRoot, this.deps.fsOps);
+    if (!resolveResult.ok) {
+      const msg = resolveResult.code === "validation_failed"
+        ? (resolveResult as { errors: string[] }).errors.join("; ")
+        : (resolveResult as { error: string }).error;
+      return { status: "failed", error: msg };
+    }
+
+    const configResult = input.configResult ?? resolveNodeConfig({
+      baseSpec: resolveResult.resolved,
+      importedSpecs: resolveResult.imports,
+      collisions: resolveResult.collisions,
+      profileName: input.member.profile,
+      member: input.member,
+      pod: input.pod,
+      rig: input.rigSpec,
+    });
+    if (!configResult.ok) {
+      return { status: "failed", error: configResult.errors.join("; ") };
+    }
+
+    this.updateNodeResolvedConfig(input.nodeId, configResult.config);
+
+    const sessionNameErrors = validateSessionComponents(input.pod.id, input.member.id, input.rigSpec.name);
     if (sessionNameErrors.length > 0) {
-      return { logicalId: qualifiedId, status: "failed", error: sessionNameErrors.join("; ") };
+      return { status: "failed", error: sessionNameErrors.join("; ") };
     }
 
-    // Launch session
-    const canonicalSessionName = deriveCanonicalSessionName(pod.id, member.id, rigSpec.name);
-    const launchResult = await this.deps.nodeLauncher.launchNode(rigId, qualifiedId, { sessionName: canonicalSessionName });
+    const canonicalSessionName = deriveCanonicalSessionName(input.pod.id, input.member.id, input.rigSpec.name);
+    const launchResult = await this.deps.nodeLauncher.launchNode(input.rigId, input.qualifiedId, { sessionName: canonicalSessionName });
     if (!launchResult.ok) {
-      return { logicalId: qualifiedId, status: "failed", error: launchResult.message };
-    }
-    launchedSessionNames.push(canonicalSessionName);
-    if (launchResult.warnings?.length) {
-      warnings.push(...launchResult.warnings);
+      return { status: "failed", error: launchResult.message };
     }
 
-    // Propagate restore_policy to session row (restore-orchestrator reads session.restorePolicy)
     try {
       this.db.prepare("UPDATE sessions SET restore_policy = ? WHERE id = ?")
-        .run("checkpoint_only", launchResult.session.id);
+        .run(configResult.config.restorePolicy, launchResult.session.id);
     } catch { /* best-effort */ }
 
-    // Assemble startup layers (empty agent base + profile, keep rig/pod/member)
-    const startup = resolveStartup({
-      specStartup: { files: [], actions: [] },
-      profileStartup: undefined,
-      rigCultureFile: rigSpec.cultureFile,
-      rigStartup: rigSpec.startup,
-      podStartup: pod.startup,
-      memberStartup: member.startup,
-      operatorStartup: undefined,
+    const adapter = this.deps.adapters[input.member.runtime];
+    if (!adapter) {
+      return { status: "failed", error: `No adapter for runtime "${input.member.runtime}"`, sessionName: canonicalSessionName, warnings: launchResult.warnings };
+    }
+
+    const planResult = planProjection({
+      config: configResult.config,
+      collisions: resolveResult.collisions,
+      fsOps: this.deps.fsOps,
     });
+    if (!planResult.ok) {
+      return { status: "failed", error: planResult.errors.join("; "), sessionName: canonicalSessionName, warnings: launchResult.warnings };
+    }
 
-    // Build resolved startup files for rig/pod/member layers (skip agent/profile)
-    const resolvedFiles = this.buildTerminalResolvedStartupFiles(rigSpec, rigRoot, pod, member);
+    const resolvedFiles = this.buildResolvedStartupFiles(
+      resolveResult.resolved.spec,
+      resolveResult.resolved.sourcePath,
+      resolveResult.resolved.spec.profiles[input.member.profile],
+      input.rigSpec,
+      input.rigRoot,
+      input.pod,
+      input.member,
+    );
 
-    // Build binding
     const binding: NodeBinding = {
-      id: launchResult.ok ? launchResult.binding.id : "",
-      nodeId,
-      tmuxSession: launchResult.ok ? launchResult.binding.tmuxSession : null,
+      id: launchResult.binding.id,
+      nodeId: input.nodeId,
+      tmuxSession: launchResult.binding.tmuxSession,
       tmuxWindow: null,
       tmuxPane: null,
       cmuxWorkspace: null,
       cmuxSurface: null,
       updatedAt: "",
-      cwd: member.cwd,
+      cwd: input.member.cwd,
     };
 
-    // Select terminal adapter
-    const adapter = this.deps.adapters["terminal"];
-    if (!adapter) {
-      return { logicalId: qualifiedId, status: "failed", error: 'No adapter for runtime "terminal"' };
+    const startupResult = await this.deps.startupOrchestrator.startNode({
+      rigId: input.rigId,
+      nodeId: input.nodeId,
+      sessionId: launchResult.session.id,
+      binding,
+      adapter,
+      plan: planResult.plan,
+      resolvedStartupFiles: resolvedFiles,
+      startupActions: [
+        ...configResult.config.startup.actions,
+        this.buildSessionIdentityAction({
+          rigName: input.rigSpec.name,
+          pod: input.pod,
+          member: input.member,
+          runtime: input.member.runtime,
+          sessionName: canonicalSessionName,
+          resolvedSpecName: configResult.config.resolvedSpecName,
+        }),
+      ],
+      isRestore: false,
+    });
+
+    return {
+      status: startupResult.ok ? "launched" : "failed",
+      error: startupResult.ok ? undefined : startupResult.errors.join("; "),
+      sessionName: canonicalSessionName,
+      warnings: launchResult.warnings,
+    };
+  }
+
+  private async launchExistingTerminalMember(input: {
+    rigId: string;
+    rigSpec: PodRigSpec;
+    rigRoot: string;
+    pod: RigSpecPod;
+    member: RigSpecPodMember;
+    qualifiedId: string;
+    nodeId: string;
+  }): Promise<{ status: "launched" | "failed"; error?: string; sessionName?: string; warnings?: string[] }> {
+    const sessionNameErrors = validateSessionComponents(input.pod.id, input.member.id, input.rigSpec.name);
+    if (sessionNameErrors.length > 0) {
+      return { status: "failed", error: sessionNameErrors.join("; ") };
     }
 
-    // Empty projection plan for terminal nodes
+    const canonicalSessionName = deriveCanonicalSessionName(input.pod.id, input.member.id, input.rigSpec.name);
+    const launchResult = await this.deps.nodeLauncher.launchNode(input.rigId, input.qualifiedId, { sessionName: canonicalSessionName });
+    if (!launchResult.ok) {
+      return { status: "failed", error: launchResult.message };
+    }
+
+    try {
+      this.db.prepare("UPDATE nodes SET restore_policy = ? WHERE id = ?")
+        .run("checkpoint_only", input.nodeId);
+    } catch { /* best-effort */ }
+
+    try {
+      this.db.prepare("UPDATE sessions SET restore_policy = ? WHERE id = ?")
+        .run("checkpoint_only", launchResult.session.id);
+    } catch { /* best-effort */ }
+
+    const startup = resolveStartup({
+      specStartup: { files: [], actions: [] },
+      profileStartup: undefined,
+      rigCultureFile: input.rigSpec.cultureFile,
+      rigStartup: input.rigSpec.startup,
+      podStartup: input.pod.startup,
+      memberStartup: input.member.startup,
+      operatorStartup: undefined,
+    });
+    const resolvedFiles = this.buildTerminalResolvedStartupFiles(input.rigSpec, input.rigRoot, input.pod, input.member);
+    const binding: NodeBinding = {
+      id: launchResult.binding.id,
+      nodeId: input.nodeId,
+      tmuxSession: launchResult.binding.tmuxSession,
+      tmuxWindow: null,
+      tmuxPane: null,
+      cmuxWorkspace: null,
+      cmuxSurface: null,
+      updatedAt: "",
+      cwd: input.member.cwd,
+    };
+    const adapter = this.deps.adapters["terminal"];
+    if (!adapter) {
+      return { status: "failed", error: 'No adapter for runtime "terminal"', sessionName: canonicalSessionName, warnings: launchResult.warnings };
+    }
+
     const emptyPlan = {
       entries: [],
       diagnostics: [],
       conflicts: [],
       noOps: [],
       runtime: "terminal",
-      cwd: member.cwd,
+      cwd: input.member.cwd,
     };
 
-    // Run startup (terminal adapter no-ops project/deliver/checkReady; send_text actions execute)
     const startupResult = await this.deps.startupOrchestrator.startNode({
-      rigId,
-      nodeId,
-      sessionId: launchResult.ok ? launchResult.session.id : "",
+      rigId: input.rigId,
+      nodeId: input.nodeId,
+      sessionId: launchResult.session.id,
       binding,
       adapter,
       plan: emptyPlan as any,
@@ -940,10 +1127,40 @@ export class PodRigInstantiator {
     });
 
     return {
-      logicalId: qualifiedId,
       status: startupResult.ok ? "launched" : "failed",
       error: startupResult.ok ? undefined : startupResult.errors.join("; "),
+      sessionName: canonicalSessionName,
+      warnings: launchResult.warnings,
     };
+  }
+
+  private updateNodeResolvedConfig(
+    nodeId: string,
+    config: {
+      restorePolicy: string;
+      resolvedSpecName: string;
+      resolvedSpecVersion: string;
+      resolvedSpecHash: string;
+    },
+  ): void {
+    try {
+      this.db.prepare(
+        `UPDATE nodes
+         SET restore_policy = ?,
+             resolved_spec_name = ?,
+             resolved_spec_version = ?,
+             resolved_spec_hash = ?
+         WHERE id = ?`
+      ).run(
+        config.restorePolicy,
+        config.resolvedSpecName,
+        config.resolvedSpecVersion,
+        config.resolvedSpecHash,
+        nodeId,
+      );
+    } catch {
+      /* best-effort */
+    }
   }
 
   private buildTerminalResolvedStartupFiles(

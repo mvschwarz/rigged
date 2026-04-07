@@ -65,52 +65,32 @@ export class RigExpansionService {
     const podId = newPod ?? "";
     const podNamespace = pod.id;
 
-    // 5. Launch each newly created node
-    const nodeOutcomes: ExpansionNodeOutcome[] = [];
-    const warnings: string[] = [];
-    const retryTargets: string[] = [];
-
-    for (const materialized of newNodes) {
-      const node = updatedRig.nodes.find((n) => n.logicalId === materialized.logicalId);
-      if (!node) {
-        nodeOutcomes.push({
-          logicalId: materialized.logicalId,
-          nodeId: "",
-          status: "failed",
-          error: "Node not found after materialization",
-        });
-        retryTargets.push(materialized.logicalId);
-        continue;
-      }
-
-      try {
-        const launchResult = await this.deps.nodeLauncher.launchNode(request.rigId, node.logicalId);
-        if (launchResult.ok) {
-          nodeOutcomes.push({
-            logicalId: materialized.logicalId,
-            nodeId: node.id,
-            status: "launched",
-            sessionName: launchResult.sessionName,
-          });
-        } else {
-          nodeOutcomes.push({
-            logicalId: materialized.logicalId,
-            nodeId: node.id,
-            status: "failed",
-            error: launchResult.message ?? "launch failed",
-          });
-          retryTargets.push(materialized.logicalId);
-        }
-      } catch (err) {
-        nodeOutcomes.push({
-          logicalId: materialized.logicalId,
-          nodeId: node.id,
-          status: "failed",
-          error: (err as Error).message,
-        });
-        retryTargets.push(materialized.logicalId);
-      }
+    // 5. Launch and fully start the newly created nodes via the pod-aware seam
+    const launchOutcome = await this.deps.podInstantiator.launchMaterialized(
+      syntheticSpec,
+      request.rigRoot ?? ".",
+      request.rigId,
+    );
+    if (!launchOutcome.ok) {
+      const message = "message" in launchOutcome
+        ? launchOutcome.message
+        : "errors" in launchOutcome
+          ? launchOutcome.errors.join("; ")
+          : "launch failed";
+      return { ok: false, code: launchOutcome.code, error: message };
     }
+
+    const nodeOutcomes: ExpansionNodeOutcome[] = launchOutcome.result.nodes.map((node) => ({
+      logicalId: node.logicalId,
+      nodeId: node.nodeId,
+      status: node.status,
+      error: node.error,
+      sessionName: node.sessionName,
+    }));
+    const warnings = launchOutcome.result.warnings ?? [];
+    const retryTargets = nodeOutcomes
+      .filter((node) => node.status === "failed")
+      .map((node) => node.logicalId);
 
     // 6. Determine overall status
     const launched = nodeOutcomes.filter((n) => n.status === "launched").length;

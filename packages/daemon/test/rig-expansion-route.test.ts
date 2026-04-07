@@ -172,6 +172,31 @@ describe("POST /api/rigs/:rigId/expand", () => {
     expect(body.ok).toBe(true);
   });
 
+  it("expansion with edge from new pod to existing node launches only the new node", async () => {
+    const rig = seedRig();
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod("backend", "api") }),
+    });
+
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pod: terminalPod("ops", "monitor"),
+        crossPodEdges: [{ kind: "delegates_to", from: "ops.monitor", to: "backend.api" }],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe("ok");
+    expect(body.nodes).toHaveLength(1);
+    expect(body.nodes[0].logicalId).toBe("ops.monitor");
+  });
+
   it("accepts spec-style snake_case member fields in pod fragments", async () => {
     const rig = seedRig();
     const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {

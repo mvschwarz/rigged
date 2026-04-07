@@ -48,6 +48,7 @@ import { RigSpecPreflight } from "../../src/domain/rigspec-preflight.js";
 import { RigInstantiator, PodRigInstantiator } from "../../src/domain/rigspec-instantiator.js";
 import { PodRepository } from "../../src/domain/pod-repository.js";
 import { StartupOrchestrator } from "../../src/domain/startup-orchestrator.js";
+import type { RuntimeAdapter } from "../../src/domain/runtime-adapter.js";
 import { ClaudeResumeAdapter } from "../../src/adapters/claude-resume.js";
 import { CodexResumeAdapter } from "../../src/adapters/codex-resume.js";
 import { CmuxAdapter } from "../../src/adapters/cmux.js";
@@ -90,7 +91,21 @@ export function unavailableCmuxAdapter(): CmuxAdapter {
   return new CmuxAdapter(factory, { timeoutMs: 50 });
 }
 
-export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter; tmux?: TmuxAdapter }) {
+function readyRuntimeAdapter(runtime: string): RuntimeAdapter {
+  return {
+    runtime,
+    listInstalled: async () => [],
+    project: async () => ({ projected: [], skipped: [], failed: [] }),
+    deliverStartup: async () => ({ delivered: 0, failed: [] }),
+    launchHarness: async () => ({ ok: true }),
+    checkReady: async () => ({ ready: true }),
+  };
+}
+
+export function createTestApp(
+  db: Database.Database,
+  opts?: { cmux?: CmuxAdapter; tmux?: TmuxAdapter; adapters?: Partial<Record<string, RuntimeAdapter>> },
+) {
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);
   const eventBus = new EventBus(db);
@@ -138,18 +153,17 @@ export function createTestApp(db: Database.Database, opts?: { cmux?: CmuxAdapter
   const externalInstallExecutor = new ExternalInstallExecutor({ exec, db });
   const packageInstallService = new PackageInstallService({ packageRepo, installRepo, installEngine, installVerifier });
   const startupOrchestrator = new StartupOrchestrator({ db, sessionRegistry, eventBus, tmuxAdapter: tmux });
-  const mockAdapter = {
-    runtime: "claude-code",
-    listInstalled: async () => [],
-    project: async () => ({ projected: [], skipped: [], failed: [] }),
-    deliverStartup: async () => ({ delivered: 0, failed: [] }),
-    checkReady: async () => ({ ready: true }),
+  const adapters: Record<string, RuntimeAdapter> = {
+    terminal: readyRuntimeAdapter("terminal"),
+    "claude-code": readyRuntimeAdapter("claude-code"),
+    codex: readyRuntimeAdapter("codex"),
+    ...opts?.adapters,
   };
   const podInstantiator = new PodRigInstantiator({
     db, rigRepo, podRepo, sessionRegistry, eventBus, nodeLauncher,
     startupOrchestrator,
     fsOps: { readFile: () => "", exists: () => false },
-    adapters: { "claude-code": mockAdapter, "codex": { ...mockAdapter, runtime: "codex" } },
+    adapters,
   });
 
   const bootstrapOrchestrator = new BootstrapOrchestrator({

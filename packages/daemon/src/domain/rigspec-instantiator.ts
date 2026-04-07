@@ -338,7 +338,7 @@ export class PodRigInstantiator {
   async materialize(
     rigSpecYaml: string,
     rigRoot: string,
-    opts?: { targetRigId?: string },
+    opts?: { targetRigId?: string; suppressSummaryEvent?: boolean },
   ): Promise<MaterializeOutcome> {
     let raw: unknown;
     try {
@@ -461,12 +461,14 @@ export class PodRigInstantiator {
           this.deps.rigRepo.addEdge(materializedRigId, fromId, toId, edge.kind);
         }
 
-        persistedEvents.push(this.deps.eventBus.persistWithinTransaction({
-          type: "rig.imported",
-          rigId: materializedRigId,
-          specName: rigSpec.name,
-          specVersion: rigSpec.version,
-        }));
+        if (!opts?.suppressSummaryEvent) {
+          persistedEvents.push(this.deps.eventBus.persistWithinTransaction({
+            type: "rig.imported",
+            rigId: materializedRigId,
+            specName: rigSpec.name,
+            specVersion: rigSpec.version,
+          }));
+        }
       });
 
       tx();

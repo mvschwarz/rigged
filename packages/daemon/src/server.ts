@@ -78,6 +78,7 @@ export interface AppDeps {
   discoveryCoordinator: DiscoveryCoordinator;
   discoveryRepo: DiscoveryRepository;
   claimService: ClaimService;
+  rigExpansionService?: import("./domain/rig-expansion-service.js").RigExpansionService;
   psProjectionService: PsProjectionService;
   upRouter: UpCommandRouter;
   teardownOrchestrator: RigTeardownOrchestrator;
@@ -206,6 +207,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("discoveryCoordinator" as never, deps.discoveryCoordinator);
     c.set("discoveryRepo" as never, deps.discoveryRepo);
     c.set("claimService" as never, deps.claimService);
+    c.set("rigExpansionService" as never, deps.rigExpansionService);
     c.set("psProjectionService" as never, deps.psProjectionService);
     c.set("upRouter" as never, deps.upRouter);
     c.set("teardownOrchestrator" as never, deps.teardownOrchestrator);

@@ -125,7 +125,9 @@ export type RigEvent =
   | { type: "continuity.sync"; rigId: string; podId: string; nodeId: string }
   | { type: "continuity.degraded"; rigId: string; podId: string; nodeId: string; reason: string }
   // Chat events
-  | { type: "chat.message"; rigId: string; messageId: string; sender: string; kind: string; body: string; topic?: string };
+  | { type: "chat.message"; rigId: string; messageId: string; sender: string; kind: string; body: string; topic?: string }
+  // Expansion events
+  | { type: "rig.expanded"; rigId: string; podId: string; podNamespace: string; nodes: Array<{ logicalId: string; status: string }>; status: string };
 
 export type PersistedEvent = RigEvent & {
   seq: number;
@@ -473,3 +475,41 @@ export interface InstantiateResult {
   nodes: { logicalId: string; status: "launched" | "failed"; error?: string }[];
   warnings?: string[];
 }
+
+// -- Expansion types --
+
+export interface ExpansionPodFragment {
+  id: string;
+  label: string;
+  summary?: string;
+  members: Array<{
+    id: string;
+    runtime: string;
+    agentRef?: string;
+    profile?: string;
+    cwd?: string;
+    model?: string;
+    restorePolicy?: string;
+    label?: string;
+  }>;
+  edges: Array<{ from: string; to: string; kind: string }>;
+}
+
+export interface ExpansionRequest {
+  rigId: string;
+  pod: ExpansionPodFragment;
+  crossPodEdges?: Array<{ from: string; to: string; kind: string }>;
+  rigRoot?: string;
+}
+
+export interface ExpansionNodeOutcome {
+  logicalId: string;
+  nodeId: string;
+  status: "launched" | "failed";
+  error?: string;
+  sessionName?: string;
+}
+
+export type ExpansionResult =
+  | { ok: true; status: "ok" | "partial" | "failed"; podId: string; podNamespace: string; nodes: ExpansionNodeOutcome[]; warnings: string[]; retryTargets: string[] }
+  | { ok: false; code: string; error: string };

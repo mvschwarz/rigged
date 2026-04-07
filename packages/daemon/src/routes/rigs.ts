@@ -6,7 +6,8 @@ import type { SnapshotRepository } from "../domain/snapshot-repository.js";
 import type { RestoreOrchestrator } from "../domain/restore-orchestrator.js";
 import { projectRigToGraph, type InventoryOverlay } from "../domain/graph-projection.js";
 import { getNodeInventory } from "../domain/node-inventory.js";
-import type { Pod } from "../domain/types.js";
+import type { Pod, ExpansionPodFragment } from "../domain/types.js";
+import type { RigExpansionService } from "../domain/rig-expansion-service.js";
 
 export const rigsRoutes = new Hono();
 
@@ -152,4 +153,42 @@ rigsRoutes.post("/:id/up", async (c) => {
     warnings: result.result.warnings,
     attachCommand,
   }, 200);
+});
+
+// POST /api/rigs/:rigId/expand — dynamic rig expansion
+rigsRoutes.post("/:rigId/expand", async (c) => {
+  const rigId = c.req.param("rigId")!;
+  const expansionService = c.get("rigExpansionService" as never) as RigExpansionService | undefined;
+  if (!expansionService) {
+    return c.json({ error: "Expansion service not available" }, 500);
+  }
+
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const pod = body["pod"] as ExpansionPodFragment | undefined;
+  if (!pod || typeof pod !== "object" || !pod.id || !Array.isArray(pod.members)) {
+    return c.json({ error: "pod is required with id and members[]" }, 400);
+  }
+
+  const crossPodEdges = Array.isArray(body["crossPodEdges"]) ? body["crossPodEdges"] as Array<{ from: string; to: string; kind: string }> : undefined;
+  const rigRoot = typeof body["rigRoot"] === "string" ? body["rigRoot"] : undefined;
+
+  const result = await expansionService.expand({ rigId, pod, crossPodEdges, rigRoot });
+
+  if (!result.ok) {
+    switch (result.code) {
+      case "rig_not_found":
+      case "target_rig_not_found":
+        return c.json(result, 404);
+      case "materialize_conflict":
+        return c.json(result, 409);
+      case "validation_failed":
+      case "preflight_failed":
+        return c.json(result, 400);
+      default:
+        return c.json(result, 500);
+    }
+  }
+
+  const httpStatus = result.status === "ok" ? 201 : 207;
+  return c.json(result, httpStatus);
 });

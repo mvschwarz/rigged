@@ -1,0 +1,174 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import type Database from "better-sqlite3";
+import { createFullTestDb, createTestApp } from "./helpers/test-app.js";
+
+describe("POST /api/rigs/:rigId/expand", () => {
+  let db: Database.Database;
+  let setup: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    db = createFullTestDb();
+    setup = createTestApp(db);
+  });
+
+  afterEach(() => { db.close(); });
+
+  function seedRig(name = "test-rig") {
+    return setup.rigRepo.createRig(name);
+  }
+
+  function terminalPod(id = "infra", memberId = "server") {
+    return {
+      id,
+      label: "Infrastructure",
+      members: [
+        { id: memberId, runtime: "terminal", agentRef: "builtin:terminal", profile: "none", cwd: "/tmp" },
+      ],
+      edges: [],
+    };
+  }
+
+  // T1: Valid expansion -> 201
+  it("returns 201 with ok result for valid expansion", async () => {
+    const rig = seedRig();
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe("ok");
+    expect(body.podNamespace).toBe("infra");
+    expect(body.nodes).toHaveLength(1);
+    expect(body.nodes[0].logicalId).toBe("infra.server");
+  });
+
+  // T2: Nonexistent rig -> 404
+  it("returns 404 for nonexistent rig", async () => {
+    const res = await setup.app.request("/api/rigs/nonexistent/expand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  // T3: Duplicate namespace -> 409
+  it("returns 409 for duplicate pod namespace", async () => {
+    const rig = seedRig();
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod("infra") }),
+    });
+
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod("infra", "server2") }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  // T4: Launch failure -> 207
+  it("returns 207 for expansion with launch failure", async () => {
+    const rig = seedRig();
+    const tmux = setup.tmuxAdapter as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    tmux.createSession.mockResolvedValueOnce({ ok: false, code: "unknown", message: "tmux not available" });
+
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+
+    expect(res.status).toBe(207);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(["partial", "failed"]).toContain(body.status);
+  });
+
+  // T5: Exactly one rig.expanded event
+  it("emits exactly one rig.expanded event", async () => {
+    const rig = seedRig();
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+
+    const events = db.prepare("SELECT type FROM events WHERE type = 'rig.expanded'").all() as Array<{ type: string }>;
+    expect(events).toHaveLength(1);
+  });
+
+  // T6: Missing body -> 400
+  it("returns 400 for missing pod in body", async () => {
+    const rig = seedRig();
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // T7a: rig.expanded in events table
+  it("rig.expanded event contains correct payload", async () => {
+    const rig = seedRig();
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+
+    const events = db.prepare("SELECT payload FROM events WHERE type = 'rig.expanded'").all() as Array<{ payload: string }>;
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.rigId).toBe(rig.id);
+    expect(payload.podNamespace).toBe("infra");
+    expect(payload.status).toBe("ok");
+  });
+
+  // T7b: Detail events (pod.created, node.added) also emitted
+  it("detail events (pod.created, node.added) emitted during expansion", async () => {
+    const rig = seedRig();
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod() }),
+    });
+
+    const podEvents = db.prepare("SELECT type FROM events WHERE type = 'pod.created'").all();
+    const nodeEvents = db.prepare("SELECT type FROM events WHERE type = 'node.added'").all();
+    expect(podEvents.length).toBeGreaterThanOrEqual(1);
+    expect(nodeEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // T8: Cross-pod edges -> 201
+  it("expansion with cross-pod edges returns 201", async () => {
+    const rig = seedRig();
+    // First pod
+    await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pod: terminalPod("orch", "lead") }),
+    });
+
+    // Second pod with cross-pod edge
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pod: terminalPod("dev", "impl"),
+        crossPodEdges: [{ kind: "delegates_to", from: "orch.lead", to: "dev.impl" }],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+  });
+});

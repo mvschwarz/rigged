@@ -1,0 +1,3 @@
+# Build artifacts assembled by scripts/build-package.sh
+daemon/
+ui/

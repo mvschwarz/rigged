@@ -5,6 +5,7 @@ import type { NodeLauncher } from "./node-launcher.js";
 import type { PodRigInstantiator } from "./rigspec-instantiator.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { ExpansionRequest, ExpansionResult, ExpansionNodeOutcome } from "./types.js";
+import { stringify as stringifyYaml } from "yaml";
 
 interface RigExpansionServiceDeps {
   db: Database.Database;
@@ -123,37 +124,40 @@ export class RigExpansionService {
     pod: ExpansionRequest["pod"],
     crossPodEdges?: ExpansionRequest["crossPodEdges"],
   ): string {
-    const members = pod.members.map((m) => {
-      const lines = [`      - id: ${m.id}`, `        runtime: ${m.runtime}`];
-      if (m.agentRef) lines.push(`        agent_ref: "${m.agentRef}"`);
-      if (m.profile) lines.push(`        profile: ${m.profile}`);
-      if (m.cwd) lines.push(`        cwd: "${m.cwd}"`);
-      if (m.model) lines.push(`        model: ${m.model}`);
-      if (m.restorePolicy) lines.push(`        restore_policy: ${m.restorePolicy}`);
-      if (m.label) lines.push(`        label: "${m.label}"`);
-      return lines.join("\n");
+    const syntheticSpec: Record<string, unknown> = {
+      version: "0.2",
+      name: rigName,
+      pods: [
+        {
+          id: pod.id,
+          label: pod.label,
+          ...(pod.summary ? { summary: pod.summary } : {}),
+          members: pod.members.map((member) => ({
+            id: member.id,
+            runtime: member.runtime,
+            ...(member.agentRef ? { agent_ref: member.agentRef } : {}),
+            ...(member.profile ? { profile: member.profile } : {}),
+            ...(member.cwd ? { cwd: member.cwd } : {}),
+            ...(member.model ? { model: member.model } : {}),
+            ...(member.restorePolicy ? { restore_policy: member.restorePolicy } : {}),
+            ...(member.label ? { label: member.label } : {}),
+          })),
+          edges: pod.edges.map((edge) => ({
+            kind: edge.kind,
+            from: edge.from,
+            to: edge.to,
+          })),
+        },
+      ],
+      edges: (crossPodEdges ?? []).map((edge) => ({
+        kind: edge.kind,
+        from: edge.from,
+        to: edge.to,
+      })),
+    };
+
+    return stringifyYaml(syntheticSpec, {
+      lineWidth: 0,
     });
-
-    const podEdges = pod.edges.map((e) =>
-      `      - kind: ${e.kind}\n        from: ${e.from}\n        to: ${e.to}`
-    );
-
-    const crossEdges = (crossPodEdges ?? []).map((e) =>
-      `  - kind: ${e.kind}\n    from: ${e.from}\n    to: ${e.to}`
-    );
-
-    return [
-      `version: "0.2"`,
-      `name: ${rigName}`,
-      `pods:`,
-      `  - id: ${pod.id}`,
-      `    label: "${pod.label}"`,
-      pod.summary ? `    summary: "${pod.summary}"` : null,
-      `    members:`,
-      ...members,
-      `    edges:`,
-      podEdges.length > 0 ? podEdges.join("\n") : `      []`,
-      crossEdges.length > 0 ? `edges:\n${crossEdges.join("\n")}` : `edges: []`,
-    ].filter((line): line is string => line !== null).join("\n");
   }
 }

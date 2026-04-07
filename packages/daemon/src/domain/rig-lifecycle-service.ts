@@ -57,11 +57,19 @@ export type RemoveNodeResult =
 export type ShrinkPodResult =
   | {
       ok: true;
+      status: "ok" | "partial";
       rigId: string;
       podId: string;
       namespace: string;
       removedLogicalIds: string[];
       sessionsKilled: number;
+      nodes: Array<{
+        nodeId: string;
+        logicalId: string;
+        status: "removed" | "failed";
+        sessionsKilled: number;
+        error?: string;
+      }>;
     }
   | {
       ok: false;
@@ -285,9 +293,40 @@ export class RigLifecycleService {
 
     let sessionsKilled = 0;
     const removedLogicalIds: string[] = [];
+    const nodeOutcomes: Array<{
+      nodeId: string;
+      logicalId: string;
+      status: "removed" | "failed";
+      sessionsKilled: number;
+      error?: string;
+    }> = [];
     for (const node of nodes) {
       const removed = await this.removeNode(rigId, node.id);
       if (!removed.ok) {
+        const error = removed.code === "node_not_found"
+          ? `Node '${node.logical_id}' disappeared while shrinking pod '${pod.namespace}'.`
+          : removed.error;
+
+        if (removedLogicalIds.length > 0) {
+          nodeOutcomes.push({
+            nodeId: node.id,
+            logicalId: node.logical_id,
+            status: "failed",
+            sessionsKilled: 0,
+            error,
+          });
+          return {
+            ok: true,
+            status: "partial",
+            rigId,
+            podId: pod.id,
+            namespace: pod.namespace,
+            removedLogicalIds,
+            sessionsKilled,
+            nodes: nodeOutcomes,
+          };
+        }
+
         if (removed.code === "rig_not_found") {
           return {
             ok: false,
@@ -299,17 +338,23 @@ export class RigLifecycleService {
           return {
             ok: false,
             code: "kill_failed",
-            error: `Node '${node.logical_id}' disappeared while shrinking pod '${pod.namespace}'.`,
+            error,
           };
         }
         return {
           ok: false,
           code: "kill_failed",
-          error: removed.error,
+          error,
         };
       }
       sessionsKilled += removed.sessionsKilled;
       removedLogicalIds.push(removed.logicalId);
+      nodeOutcomes.push({
+        nodeId: removed.nodeId,
+        logicalId: removed.logicalId,
+        status: "removed",
+        sessionsKilled: removed.sessionsKilled,
+      });
     }
 
     let persistedSeq = 0;
@@ -336,11 +381,13 @@ export class RigLifecycleService {
 
     return {
       ok: true,
+      status: "ok",
       rigId,
       podId: pod.id,
       namespace: pod.namespace,
       removedLogicalIds,
       sessionsKilled,
+      nodes: nodeOutcomes,
     };
   }
 

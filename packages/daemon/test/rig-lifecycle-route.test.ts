@@ -156,4 +156,51 @@ describe("Rig lifecycle routes", () => {
     const podEvents = db.prepare("SELECT type FROM events WHERE type = 'pod.deleted'").all() as Array<{ type: string }>;
     expect(podEvents).toHaveLength(1);
   });
+
+  it("DELETE /api/rigs/:rigId/pods/:podRef returns partial state when a later node removal fails", async () => {
+    const rig = setup.rigRepo.createRig("shrink-partial-rig");
+    const seed = await setup.rigExpansionService.expand({
+      rigId: rig.id,
+      pod: {
+        id: "dev",
+        label: "Development",
+        members: [
+          { id: "impl", runtime: "terminal", agentRef: "builtin:terminal", profile: "none", cwd: "/tmp" },
+          { id: "qa", runtime: "terminal", agentRef: "builtin:terminal", profile: "none", cwd: "/tmp" },
+        ],
+        edges: [{ from: "impl", to: "qa", kind: "delegates_to" }],
+      },
+    });
+    expect(seed.ok).toBe(true);
+
+    const killSession = setup.tmuxAdapter.killSession as ReturnType<typeof import("vitest").vi.fn>;
+    killSession
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, code: "kill_failed", message: "tmux timeout" });
+
+    const res = await setup.app.request(`/api/rigs/${rig.id}/pods/dev`, {
+      method: "DELETE",
+    });
+
+    expect(res.status).toBe(207);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe("partial");
+    expect(body.removedLogicalIds).toEqual(["dev.impl"]);
+    expect(body.sessionsKilled).toBe(1);
+    expect(body.nodes).toEqual([
+      expect.objectContaining({ logicalId: "dev.impl", status: "removed", sessionsKilled: 1 }),
+      expect.objectContaining({ logicalId: "dev.qa", status: "failed", sessionsKilled: 0 }),
+    ]);
+    expect(body.nodes[1].error).toContain("tmux timeout");
+
+    const rigState = setup.rigRepo.getRig(rig.id);
+    expect(rigState?.nodes.map((node) => node.logicalId)).toEqual(["dev.qa"]);
+
+    const podRows = db.prepare("SELECT namespace FROM pods WHERE rig_id = ?").all(rig.id) as Array<{ namespace: string }>;
+    expect(podRows.map((pod) => pod.namespace)).toEqual(["dev"]);
+
+    const podEvents = db.prepare("SELECT type FROM events WHERE type = 'pod.deleted'").all() as Array<{ type: string }>;
+    expect(podEvents).toHaveLength(0);
+  });
 });

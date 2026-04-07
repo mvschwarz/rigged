@@ -58,6 +58,43 @@ describe("RigExpansionService", () => {
     expect(updatedRig!.nodes.some((n) => n.logicalId === "infra.server")).toBe(true);
   });
 
+  it("accepts labels and summaries with YAML-significant characters", async () => {
+    const rig = seedRig();
+    const result = await service.expand({
+      rigId: rig.id,
+      pod: {
+        id: "ops",
+        label: 'Ops: "Research"',
+        summary: "Owns: queues, alerts, and runbooks",
+        members: [
+          {
+            id: "agent",
+            runtime: "terminal",
+            agentRef: "builtin:terminal",
+            profile: "none",
+            cwd: '/tmp/"quoted":path',
+            label: 'Worker: "A"',
+          },
+        ],
+        edges: [],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe("ok");
+
+    const podRow = db.prepare("SELECT namespace, label, summary FROM pods WHERE rig_id = ? AND namespace = ?").get(
+      rig.id,
+      "ops",
+    ) as { namespace: string; label: string; summary: string | null } | undefined;
+    expect(podRow?.label).toBe('Ops: "Research"');
+    expect(podRow?.summary).toBe("Owns: queues, alerts, and runbooks");
+
+    const node = setup.rigRepo.getRig(rig.id)?.nodes.find((candidate) => candidate.logicalId === "ops.agent");
+    expect(node?.label).toBe('Worker: "A"');
+  });
+
   // T2: Nonexistent rig -> error
   it("returns error for nonexistent rig", async () => {
     const result = await service.expand({ rigId: "nonexistent", pod: terminalPodFragment() });

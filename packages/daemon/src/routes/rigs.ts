@@ -259,5 +259,5 @@ rigsRoutes.delete("/:rigId/pods/:podRef", async (c) => {
     return c.json(result, status);
   }
 
-  return c.json(result, 200);
+  return c.json(result, result.status === "ok" ? 200 : 207);
 });

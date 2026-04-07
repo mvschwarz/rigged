@@ -8,6 +8,7 @@ import {
   readLogs,
   tailLogs,
   getDaemonPath,
+  resolveDaemonPath,
   STATE_FILE,
   LOG_FILE,
   OPENRIG_DIR,
@@ -41,15 +42,10 @@ function writtenState(deps: LifecycleDeps): DaemonState {
 
 describe("Daemon Lifecycle", () => {
   // Test 1: start resolves absolute daemon path (not cwd-relative)
-  it("getDaemonPath resolves absolute path to packages/daemon from CLI package", () => {
+  it("getDaemonPath resolves absolute path ending with daemon", () => {
     const daemonPath = getDaemonPath();
     expect(path.isAbsolute(daemonPath)).toBe(true);
-    expect(daemonPath).toMatch(/packages\/daemon$/);
-    // Derived from import.meta.dirname (CLI src), not process.cwd
-    // The path should be sibling to the cli package
-    const cliSrc = path.resolve(import.meta.dirname, "../src");
-    const expected = path.resolve(cliSrc, "../../daemon");
-    expect(daemonPath).toBe(expected);
+    expect(daemonPath).toMatch(/daemon$/);
   });
 
   // Test 2: start constructs exact spawn command with correct env/redirect
@@ -62,7 +58,7 @@ describe("Daemon Lifecycle", () => {
 
     const [cmd, args, opts] = spawnMock.mock.calls[0]!;
     expect(cmd).toBe(process.execPath);
-    expect(args[0]).toContain("packages/daemon");
+    expect(args[0]).toContain("daemon");
     expect(args[0]).toContain("dist/index.js");
     expect(opts.env).toMatchObject({
       OPENRIG_PORT: "7433",
@@ -479,5 +475,19 @@ describe("Daemon Lifecycle", () => {
       if (prev === undefined) delete process.env["OPENRIG_URL"];
       else process.env["OPENRIG_URL"] = prev;
     }
+  });
+});
+
+describe("resolveDaemonPath", () => {
+  it("returns bundled path when ../daemon/dist/index.js exists", () => {
+    const exists = (p: string) => p.endsWith("daemon/dist/index.js");
+    const result = resolveDaemonPath("/install/cli/dist", exists);
+    expect(result).toBe(path.resolve("/install/cli/dist", "../daemon"));
+  });
+
+  it("falls back to monorepo path when bundled does not exist", () => {
+    const exists = () => false;
+    const result = resolveDaemonPath("/repo/packages/cli/dist", exists);
+    expect(result).toBe(path.resolve("/repo/packages/cli/dist", "../../daemon"));
   });
 });

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import { OPENRIG_HOME, LEGACY_RIGGED_HOME, readOpenRigEnv } from "./openrig-compat.js";
 
@@ -60,8 +61,15 @@ const DEFAULT_DB = "openrig.sqlite";
 const HEALTHZ_RETRIES = 20;
 const HEALTHZ_DELAY_MS = 250;
 
+/** Pure resolver: prefers bundled daemon (npm install layout), falls back to monorepo. */
+export function resolveDaemonPath(baseDir: string, exists: (p: string) => boolean): string {
+  const bundled = path.resolve(baseDir, "../daemon");
+  if (exists(path.join(bundled, "dist/index.js"))) return bundled;
+  return path.resolve(baseDir, "../../daemon");
+}
+
 export function getDaemonPath(): string {
-  return path.resolve(import.meta.dirname, "../../daemon");
+  return resolveDaemonPath(import.meta.dirname, existsSync);
 }
 
 function readState(deps: LifecycleDeps): DaemonState | null {

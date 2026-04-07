@@ -15,7 +15,7 @@ describe("daemon startServer", () => {
   beforeEach(() => {
     serveMock.mockReset();
     createDaemonMock.mockReset();
-    createDaemonMock.mockResolvedValue({ app: { fetch: vi.fn() } });
+    createDaemonMock.mockResolvedValue({ app: { fetch: vi.fn() }, contextMonitor: { start: vi.fn(), stop: vi.fn() } });
   });
 
   it("binds the daemon to loopback", async () => {

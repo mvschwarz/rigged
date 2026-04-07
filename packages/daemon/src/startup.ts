@@ -99,6 +99,7 @@ interface DaemonResult {
   app: Hono;
   db: Database.Database;
   deps: AppDeps;
+  contextMonitor: import("./domain/context-monitor.js").ContextMonitor;
 }
 
 export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> {
@@ -356,5 +357,11 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
 
   const app = createApp(deps);
 
-  return { app, db, deps };
+  // Context monitor — caller (index.ts) starts polling after listen
+  const { ContextUsageStore } = await import("./domain/context-usage-store.js");
+  const { ContextMonitor } = await import("./domain/context-monitor.js");
+  const contextUsageStore = new ContextUsageStore(db, { stateDir: OPENRIG_HOME });
+  const contextMonitor = new ContextMonitor(db, contextUsageStore);
+
+  return { app, db, deps, contextMonitor };
 }

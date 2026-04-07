@@ -6,12 +6,14 @@ export async function startServer(port?: number) {
   const p = port ?? parseInt(readOpenRigEnv("OPENRIG_PORT", "RIGGED_PORT") ?? "7433", 10);
   const dbPath = readOpenRigEnv("OPENRIG_DB", "RIGGED_DB") ?? "openrig.sqlite";
 
-  const { app } = await createDaemon({ dbPath });
+  const { app, contextMonitor } = await createDaemon({ dbPath });
 
   const h = readOpenRigEnv("OPENRIG_HOST", "RIGGED_HOST") ?? "127.0.0.1";
 
   return serve({ fetch: app.fetch, port: p, hostname: h }, (info) => {
     console.log(`OpenRig daemon listening on http://localhost:${info.port}`);
+    // Start context monitor polling only after successful server bind
+    contextMonitor.start();
   });
 }
 

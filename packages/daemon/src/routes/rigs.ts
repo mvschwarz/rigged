@@ -8,6 +8,7 @@ import { projectRigToGraph, type InventoryOverlay } from "../domain/graph-projec
 import { getNodeInventory } from "../domain/node-inventory.js";
 import type { Pod, ExpansionPodFragment } from "../domain/types.js";
 import type { RigExpansionService } from "../domain/rig-expansion-service.js";
+import type { RigLifecycleService } from "../domain/rig-lifecycle-service.js";
 
 export const rigsRoutes = new Hono();
 
@@ -238,4 +239,25 @@ rigsRoutes.post("/:rigId/expand", async (c) => {
 
   const httpStatus = result.status === "ok" ? 201 : 207;
   return c.json(result, httpStatus);
+});
+
+// DELETE /api/rigs/:rigId/pods/:podRef
+rigsRoutes.delete("/:rigId/pods/:podRef", async (c) => {
+  const rigId = c.req.param("rigId")!;
+  const podRef = decodeURIComponent(c.req.param("podRef")!);
+  const lifecycleService = c.get("rigLifecycleService" as never) as RigLifecycleService | undefined;
+  if (!lifecycleService) {
+    return c.json({ error: "Lifecycle service not available" }, 500);
+  }
+
+  const result = await lifecycleService.shrinkPod(rigId, podRef);
+  if (!result.ok) {
+    const status = result.code === "rig_not_found" ? 404
+      : result.code === "pod_not_found" ? 404
+      : result.code === "kill_failed" ? 409
+      : 500;
+    return c.json(result, status);
+  }
+
+  return c.json(result, 200);
 });

@@ -53,7 +53,35 @@ export function useActivityFeed(): UseActivityFeedResult {
       if (event.type === "node.claimed") {
         queryClient.invalidateQueries({ queryKey: ["discovery"] });
         const rigId = event.payload["rigId"] as string | undefined;
-        if (rigId) queryClient.invalidateQueries({ queryKey: ["rig", rigId, "graph"] });
+        if (rigId) {
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "graph"] });
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "nodes"] });
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "sessions"] });
+          queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
+          queryClient.invalidateQueries({ queryKey: ["ps"] });
+        }
+      }
+
+      if (event.type === "session.detached") {
+        queryClient.invalidateQueries({ queryKey: ["discovery"] });
+      }
+
+      if (
+        event.type === "session.detached"
+        || event.type === "node.removed"
+        || event.type === "pod.deleted"
+        || event.type === "rig.expanded"
+        || event.type === "restore.completed"
+        || event.type === "rig.deleted"
+      ) {
+        const rigId = event.payload["rigId"] as string | undefined;
+        if (rigId) {
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "graph"] });
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "nodes"] });
+          queryClient.invalidateQueries({ queryKey: ["rig", rigId, "sessions"] });
+        }
+        queryClient.invalidateQueries({ queryKey: ["rigs", "summary"] });
+        queryClient.invalidateQueries({ queryKey: ["ps"] });
       }
     } catch {
       // Ignore unparseable messages

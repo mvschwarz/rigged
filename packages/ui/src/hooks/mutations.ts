@@ -175,3 +175,41 @@ export function useExpandRig() {
     },
   });
 }
+
+export function useRemoveLibrarySpec() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (entryId: string) => {
+      const res = await fetch(`/api/specs/library/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Remove failed (HTTP ${res.status})`);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["spec-library"] });
+    },
+  });
+}
+
+export function useRenameLibrarySpec() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ entryId, name }: { entryId: string; name: string }) => {
+      const res = await fetch(`/api/specs/library/${encodeURIComponent(entryId)}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? `Rename failed (HTTP ${res.status})`);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["spec-library"] });
+    },
+  });
+}

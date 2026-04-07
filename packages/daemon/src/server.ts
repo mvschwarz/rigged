@@ -25,7 +25,7 @@ import type { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
 import type { DiscoveryRepository } from "./domain/discovery-repository.js";
 import type { ClaimService } from "./domain/claim-service.js";
 import { rigsRoutes } from "./routes/rigs.js";
-import { sessionsRoutes, nodesRoutes } from "./routes/sessions.js";
+import { sessionsRoutes, nodesRoutes, sessionAdminRoutes } from "./routes/sessions.js";
 import { adaptersRoutes } from "./routes/adapters.js";
 import { eventsRoute } from "./routes/events.js";
 import { snapshotsRoutes, restoreRoutes } from "./routes/snapshots.js";
@@ -55,6 +55,7 @@ import type { ChatRepository } from "./domain/chat-repository.js";
 import { whoamiRoutes } from "./routes/whoami.js";
 import type { WhoamiService } from "./domain/whoami-service.js";
 import { chatRoutes } from "./routes/chat.js";
+import type { RigLifecycleService } from "./domain/rig-lifecycle-service.js";
 
 export interface AppDeps {
   rigRepo: RigRepository;
@@ -79,6 +80,7 @@ export interface AppDeps {
   discoveryRepo: DiscoveryRepository;
   claimService: ClaimService;
   rigExpansionService?: import("./domain/rig-expansion-service.js").RigExpansionService;
+  rigLifecycleService?: RigLifecycleService;
   psProjectionService: PsProjectionService;
   upRouter: UpCommandRouter;
   teardownOrchestrator: RigTeardownOrchestrator;
@@ -208,6 +210,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("discoveryRepo" as never, deps.discoveryRepo);
     c.set("claimService" as never, deps.claimService);
     c.set("rigExpansionService" as never, deps.rigExpansionService);
+    c.set("rigLifecycleService" as never, deps.rigLifecycleService);
     c.set("psProjectionService" as never, deps.psProjectionService);
     c.set("upRouter" as never, deps.upRouter);
     c.set("teardownOrchestrator" as never, deps.teardownOrchestrator);
@@ -232,6 +235,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/rigs", rigsRoutes);
   app.route("/api/rigs/:rigId/sessions", sessionsRoutes);
   app.route("/api/rigs/:rigId/nodes", nodesRoutes);
+  app.route("/api/sessions", sessionAdminRoutes);
   app.route("/api/adapters", adaptersRoutes);
   app.route("/api/events", eventsRoute);
   app.route("/api/rigs/:rigId/snapshots", snapshotsRoutes);

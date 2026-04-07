@@ -64,6 +64,10 @@ export class DaemonClient {
     });
   }
 
+  async delete<T = unknown>(path: string): Promise<DaemonResponse<T>> {
+    return this.requestJson<T>(path, { method: "DELETE" });
+  }
+
   private async fetch(path: string, init: RequestInit): Promise<Response> {
     try {
       return await fetch(`${this.baseUrl}${path}`, init);

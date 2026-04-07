@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SpecLibraryService } from "../src/domain/spec-library-service.js";
@@ -96,5 +96,45 @@ describe("spec library routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as Array<{ name: string }>;
     expect(body.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("DELETE /api/specs/library/:id removes a user-file entry", async () => {
+    const app = createApp();
+    const id = lib.list()[0]!.id;
+
+    const res = await app.request(`/api/specs/library/${id}`, { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { ok: boolean; name: string };
+    expect(body.ok).toBe(true);
+    expect(body.name).toBe("lib-rig");
+
+    const listRes = await app.request("/api/specs/library");
+    const entries = await listRes.json() as Array<{ id: string }>;
+    expect(entries).toHaveLength(0);
+  });
+
+  it("POST /api/specs/library/:id/rename renames a user-file entry and updates YAML name", async () => {
+    const app = createApp();
+    const id = lib.list()[0]!.id;
+
+    const res = await app.request(`/api/specs/library/${id}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "renamed-rig" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { ok: boolean; entry: { name: string; sourcePath: string } };
+    expect(body.ok).toBe(true);
+    expect(body.entry.name).toBe("renamed-rig");
+
+    const listRes = await app.request("/api/specs/library");
+    const entries = await listRes.json() as Array<{ name: string; sourcePath: string }>;
+    expect(entries[0]!.name).toBe("renamed-rig");
+    expect(entries[0]!.sourcePath).toContain("renamed-rig");
+
+    const yaml = readFileSync(entries[0]!.sourcePath, "utf-8");
+    expect(yaml).toContain("name: renamed-rig");
   });
 });

@@ -87,6 +87,12 @@ export class DiscoveryRepository {
     ).run(nodeId, id);
   }
 
+  releaseClaimByNodeId(nodeId: string): void {
+    this.db.prepare(
+      "UPDATE discovered_sessions SET status = 'active', claimed_node_id = NULL, last_seen_at = datetime('now') WHERE claimed_node_id = ?"
+    ).run(nodeId);
+  }
+
   listDiscovered(status?: DiscoveryStatus): DiscoveredSession[] {
     const rows = status
       ? this.db.prepare("SELECT * FROM discovered_sessions WHERE status = ? ORDER BY last_seen_at DESC").all(status) as DiscoveredSessionRow[]

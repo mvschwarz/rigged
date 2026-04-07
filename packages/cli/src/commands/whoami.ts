@@ -86,9 +86,13 @@ export function resolveIdentitySource(
   if (opts.session) return { sessionName: opts.session };
 
   const envNodeId = readOpenRigEnv("OPENRIG_NODE_ID", "RIGGED_NODE_ID");
-  if (envNodeId) return { nodeId: envNodeId };
-
   const envSessionName = readOpenRigEnv("OPENRIG_SESSION_NAME", "RIGGED_SESSION_NAME");
+  if (envNodeId) {
+    return {
+      nodeId: envNodeId,
+      ...(envSessionName ? { sessionName: envSessionName } : {}),
+    };
+  }
   if (envSessionName) return { sessionName: envSessionName };
 
   // TMUX_PANE fallback — try OpenRig metadata first, then raw session name
@@ -146,7 +150,7 @@ export function whoamiCommand(depsOverride?: StatusDeps): Command {
           return;
         }
         const identity = partial.identity as Record<string, string | null>;
-        console.log("Daemon unavailable — showing partial identity");
+        console.log("daemon unreachable — topology and peer info unavailable.");
         console.log(`Node ID:    ${identity.nodeId ?? "—"}`);
         console.log(`Session:    ${identity.sessionName ?? "—"}`);
         console.log(`Resolved:   partial via ${String(partial.resolvedBy).replace(/_/g, " ")}`);

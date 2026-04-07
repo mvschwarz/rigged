@@ -286,6 +286,24 @@ describe("Whoami CLI", () => {
     expect(exitCode).toBeUndefined();
   });
 
+  it("daemon down preserves OPENRIG_SESSION_NAME alongside OPENRIG_NODE_ID in partial JSON", async () => {
+    process.env["OPENRIG_NODE_ID"] = "node-1";
+    process.env["OPENRIG_SESSION_NAME"] = "dev-impl@my-rig";
+    const program = new Command();
+    program.exitOverride();
+    program.addCommand(whoamiCommand(stoppedDeps()));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await program.parseAsync(["node", "rig", "whoami", "--json"]);
+    });
+
+    const parsed = JSON.parse(logs.join("\n"));
+    expect(parsed.partial).toBe(true);
+    expect(parsed.identity.nodeId).toBe("node-1");
+    expect(parsed.identity.sessionName).toBe("dev-impl@my-rig");
+    expect(exitCode).toBeUndefined();
+  });
+
   it("daemon down with OPENRIG_SESSION_NAME env prints partial human output", async () => {
     process.env["OPENRIG_SESSION_NAME"] = "dev-impl@my-rig";
     const program = new Command();
@@ -297,7 +315,7 @@ describe("Whoami CLI", () => {
     });
 
     const output = logs.join("\n");
-    expect(output).toContain("Daemon unavailable");
+    expect(output).toContain("daemon unreachable — topology and peer info unavailable.");
     expect(output).toContain("dev-impl@my-rig");
     expect(exitCode).toBeUndefined();
   });

@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, relative, dirname, extname } from "node:path";
 import { createHash } from "node:crypto";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { SpecReviewService } from "./spec-review-service.js";
 
 export interface SpecLibraryEntry {
@@ -19,6 +20,10 @@ export interface SpecLibraryOpts {
   roots: Array<{ path: string; sourceType: "builtin" | "user_file" }>;
   specReviewService: SpecReviewService;
 }
+
+export type SpecLibraryMutationResult =
+  | { ok: true; entry: SpecLibraryEntry }
+  | { ok: false; code: "not_found" | "read_only" | "conflict" | "invalid_spec"; error: string };
 
 function makeId(sourceType: string, relativePath: string): string {
   return createHash("sha256")
@@ -124,6 +129,71 @@ export class SpecLibraryService {
     } catch {
       return null;
     }
+  }
+
+  remove(id: string): SpecLibraryMutationResult {
+    const entry = this.entries.get(id);
+    if (!entry) {
+      return { ok: false, code: "not_found", error: `Spec '${id}' not found in library` };
+    }
+    if (entry.sourceType !== "user_file") {
+      return { ok: false, code: "read_only", error: `Spec '${entry.name}' is built in and cannot be removed.` };
+    }
+
+    unlinkSync(entry.sourcePath);
+    this.scan();
+    return { ok: true, entry };
+  }
+
+  rename(id: string, newName: string): SpecLibraryMutationResult {
+    const entry = this.entries.get(id);
+    if (!entry) {
+      return { ok: false, code: "not_found", error: `Spec '${id}' not found in library` };
+    }
+    if (entry.sourceType !== "user_file") {
+      return { ok: false, code: "read_only", error: `Spec '${entry.name}' is built in and cannot be renamed.` };
+    }
+
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      return { ok: false, code: "invalid_spec", error: "name is required" };
+    }
+    if (Array.from(this.entries.values()).some((candidate) => candidate.id !== id && candidate.name === trimmedName)) {
+      return { ok: false, code: "conflict", error: `Spec name '${trimmedName}' already exists in the library.` };
+    }
+
+    const yaml = readFileSync(entry.sourcePath, "utf-8");
+    const raw = parseYaml(yaml) as Record<string, unknown> | null;
+    if (!raw || typeof raw !== "object") {
+      return { ok: false, code: "invalid_spec", error: `Spec '${entry.name}' could not be parsed for rename.` };
+    }
+    raw["name"] = trimmedName;
+
+    const extension = extname(entry.sourcePath) || ".yaml";
+    const fileSafeName = trimmedName.replace(/[^A-Za-z0-9._-]+/g, "-");
+    const nextPath = join(dirname(entry.sourcePath), `${fileSafeName}${extension}`);
+    if (nextPath !== entry.sourcePath) {
+      try {
+        statSync(nextPath);
+        return { ok: false, code: "conflict", error: `A spec file already exists at ${nextPath}.` };
+      } catch {
+        // target path is free
+      }
+    }
+
+    const nextYaml = stringifyYaml(raw);
+    if (nextPath === entry.sourcePath) {
+      writeFileSync(entry.sourcePath, nextYaml, "utf-8");
+    } else {
+      writeFileSync(nextPath, nextYaml, "utf-8");
+      unlinkSync(entry.sourcePath);
+    }
+
+    this.scan();
+    const renamed = Array.from(this.entries.values()).find((candidate) => candidate.sourcePath === nextPath);
+    return renamed
+      ? { ok: true, entry: renamed }
+      : { ok: false, code: "invalid_spec", error: `Renamed spec '${trimmedName}' could not be reloaded.` };
   }
 
   private classifySpec(

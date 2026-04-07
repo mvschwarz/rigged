@@ -176,6 +176,10 @@ export class RigRepository {
     this.db.prepare("DELETE FROM rigs WHERE id = ?").run(rigId);
   }
 
+  deleteNode(nodeId: string): void {
+    this.db.prepare("DELETE FROM nodes WHERE id = ?").run(nodeId);
+  }
+
   // -- Row-to-domain mappers --
 
   private rowToRig(row: RigRow): Rig {

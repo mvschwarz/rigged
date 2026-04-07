@@ -237,5 +237,69 @@ export function specsCommand(depsOverride?: StatusDeps): Command {
       }
     });
 
+  // specs remove
+  cmd.command("remove")
+    .argument("<name-or-id>", "Spec name or library ID")
+    .description("Remove a user-file spec from the library")
+    .option("--json", "JSON output")
+    .action(async (nameOrId: string, opts: { json?: boolean }) => {
+      try {
+        const client = await getClient();
+        const entry = await resolveLibrarySpec(client, nameOrId);
+        const res = await client.delete<Record<string, unknown>>(`/api/specs/library/${encodeURIComponent(entry.id)}`);
+
+        if (opts.json) {
+          console.log(JSON.stringify(res.data, null, 2));
+          if (res.status >= 400) process.exitCode = 1;
+          return;
+        }
+
+        if (res.status >= 400) {
+          console.error((res.data["error"] as string | undefined) ?? `Remove failed (HTTP ${res.status})`);
+          process.exitCode = 1;
+          return;
+        }
+
+        console.log(`Removed ${res.data["name"] ?? entry.name} from the library`);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exitCode = 1;
+      }
+    });
+
+  // specs rename
+  cmd.command("rename")
+    .argument("<name-or-id>", "Spec name or library ID")
+    .argument("<new-name>", "New spec name")
+    .description("Rename a user-file spec in the library")
+    .option("--json", "JSON output")
+    .action(async (nameOrId: string, newName: string, opts: { json?: boolean }) => {
+      try {
+        const client = await getClient();
+        const entry = await resolveLibrarySpec(client, nameOrId);
+        const res = await client.post<Record<string, unknown>>(`/api/specs/library/${encodeURIComponent(entry.id)}/rename`, {
+          name: newName,
+        });
+
+        if (opts.json) {
+          console.log(JSON.stringify(res.data, null, 2));
+          if (res.status >= 400) process.exitCode = 1;
+          return;
+        }
+
+        if (res.status >= 400) {
+          console.error((res.data["error"] as string | undefined) ?? `Rename failed (HTTP ${res.status})`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const renamed = (res.data["entry"] as Record<string, unknown> | undefined) ?? {};
+        console.log(`Renamed ${entry.name} to ${renamed["name"] ?? newName}`);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exitCode = 1;
+      }
+    });
+
   return cmd;
 }

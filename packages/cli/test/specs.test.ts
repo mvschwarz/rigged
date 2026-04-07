@@ -53,6 +53,15 @@ describe("Specs CLI", () => {
       } else if (url === "/api/specs/library/abc123/review") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(RIG_REVIEW));
+      } else if (url === "/api/specs/library/abc123" && req.method === "DELETE") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, id: "abc123", name: "review-rig" }));
+      } else if (url === "/api/specs/library/abc123/rename" && req.method === "POST") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: true,
+          entry: { ...LIBRARY_ENTRIES[0], id: "renamed123", name: "renamed-rig", sourcePath: "/builtin/renamed-rig.yaml" },
+        }));
       } else if (url === "/api/specs/library/sync" && req.method === "POST") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(LIBRARY_ENTRIES));
@@ -196,5 +205,25 @@ describe("Specs CLI", () => {
     expect(output).toContain("Added");
     expect(output).toContain("test-spec");
     expect(output).toContain("ID:");
+  });
+
+  it("specs remove resolves by name and reports deletion", async () => {
+    const { logs, exitCode } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rig", "specs", "remove", "review-rig"]);
+    });
+
+    expect(exitCode).toBeUndefined();
+    expect(logs.join("\n")).toContain("Removed");
+    expect(logs.join("\n")).toContain("review-rig");
+  });
+
+  it("specs rename resolves by name and reports the new entry", async () => {
+    const { logs, exitCode } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rig", "specs", "rename", "review-rig", "renamed-rig"]);
+    });
+
+    expect(exitCode).toBeUndefined();
+    expect(logs.join("\n")).toContain("Renamed");
+    expect(logs.join("\n")).toContain("renamed-rig");
   });
 });

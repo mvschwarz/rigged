@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useSpecsWorkspace, type SpecsDraft } from "./SpecsWorkspace.js";
 import { useSpecLibrary, useLibraryReview, type SpecLibraryEntry } from "../hooks/useSpecLibrary.js";
 import { usePsEntries } from "../hooks/usePsEntries.js";
-import { useExpandRig, type ExpandRigResult } from "../hooks/mutations.js";
+import { useExpandRig, useRemoveLibrarySpec, useRenameLibrarySpec, type ExpandRigResult } from "../hooks/mutations.js";
 import { ExpansionOutcome } from "./ExpansionOutcome.js";
 
 interface SpecsPanelProps {
@@ -69,11 +69,13 @@ function LibraryList({
   entries,
   onSelect,
   renderAction,
+  renderExpanded,
 }: {
   title: string;
   entries: SpecLibraryEntry[];
   onSelect: (id: string) => void;
   renderAction?: (entry: SpecLibraryEntry) => ReactNode;
+  renderExpanded?: (entry: SpecLibraryEntry) => ReactNode;
 }) {
   if (entries.length === 0) return null;
 
@@ -97,6 +99,7 @@ function LibraryList({
               </button>
               {renderAction && <div className="shrink-0 pr-2">{renderAction(entry)}</div>}
             </div>
+            {renderExpanded && <div>{renderExpanded(entry)}</div>}
           </div>
         ))}
       </div>
@@ -205,6 +208,12 @@ export function SpecsPanel({ onClose }: SpecsPanelProps) {
   const { data: rigLibrary = [] } = useSpecLibrary("rig");
   const { data: agentLibrary = [] } = useSpecLibrary("agent");
   const [addToRigEntryId, setAddToRigEntryId] = useState<string | null>(null);
+  const [renameEntryId, setRenameEntryId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmRemoveEntryId, setConfirmRemoveEntryId] = useState<string | null>(null);
+  const [libraryActionError, setLibraryActionError] = useState<string | null>(null);
+  const removeLibrarySpec = useRemoveLibrarySpec();
+  const renameLibrarySpec = useRenameLibrarySpec();
 
   const openLibraryEntry = async (id: string) => {
     await navigate({ to: "/specs/library/$entryId", params: { entryId: id } });
@@ -212,6 +221,146 @@ export function SpecsPanel({ onClose }: SpecsPanelProps) {
 
   const rigDraftHistory = recentRigDrafts.filter((draft) => draft.id !== currentRigDraft?.id);
   const agentDraftHistory = recentAgentDrafts.filter((draft) => draft.id !== currentAgentDraft?.id);
+
+  const startRename = (entry: SpecLibraryEntry) => {
+    setLibraryActionError(null);
+    setConfirmRemoveEntryId(null);
+    setRenameEntryId(entry.id);
+    setRenameValue(entry.name);
+  };
+
+  const submitRename = async (entryId: string) => {
+    try {
+      setLibraryActionError(null);
+      await renameLibrarySpec.mutateAsync({ entryId, name: renameValue });
+      setRenameEntryId(null);
+      setRenameValue("");
+    } catch (err) {
+      setLibraryActionError((err as Error).message);
+    }
+  };
+
+  const submitRemove = async (entryId: string) => {
+    try {
+      setLibraryActionError(null);
+      await removeLibrarySpec.mutateAsync(entryId);
+      setConfirmRemoveEntryId(null);
+      if (renameEntryId === entryId) {
+        setRenameEntryId(null);
+        setRenameValue("");
+      }
+    } catch (err) {
+      setLibraryActionError((err as Error).message);
+    }
+  };
+
+  const renderLibraryAction = (entry: SpecLibraryEntry, allowAddToRig: boolean) => (
+    <div className="flex items-center gap-1">
+      {allowAddToRig && (
+        <button
+          data-testid={`library-add-to-rig-${entry.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setLibraryActionError(null);
+            setAddToRigEntryId(addToRigEntryId === entry.id ? null : entry.id);
+          }}
+          className="shrink-0 font-mono text-[7px] uppercase tracking-[0.12em] text-stone-500 hover:text-stone-900 border border-stone-300 px-1 py-0.5"
+        >
+          + Rig
+        </button>
+      )}
+      {entry.sourceType === "user_file" && (
+        <>
+          <button
+            data-testid={`library-rename-${entry.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              startRename(entry);
+            }}
+            className="shrink-0 font-mono text-[7px] uppercase tracking-[0.12em] text-stone-500 hover:text-stone-900 border border-stone-300 px-1 py-0.5"
+          >
+            Rename
+          </button>
+          <button
+            data-testid={`library-remove-${entry.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setLibraryActionError(null);
+              setRenameEntryId(null);
+              setConfirmRemoveEntryId(confirmRemoveEntryId === entry.id ? null : entry.id);
+            }}
+            className="shrink-0 font-mono text-[7px] uppercase tracking-[0.12em] text-red-600 hover:text-red-800 border border-stone-300 px-1 py-0.5"
+          >
+            Remove
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const renderLibraryExpanded = (entry: SpecLibraryEntry) => {
+    const showRename = renameEntryId === entry.id;
+    const showRemove = confirmRemoveEntryId === entry.id;
+    if (!showRename && !showRemove) return null;
+
+    return (
+      <div className="border-x border-b border-stone-300/28 bg-white/6 px-2 py-2 space-y-2">
+        {showRename && (
+          <div data-testid={`library-rename-form-${entry.id}`} className="space-y-2">
+            <input
+              data-testid={`library-rename-input-${entry.id}`}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="w-full border border-stone-300 bg-white/80 px-2 py-1 font-mono text-[10px]"
+            />
+            <div className="flex gap-2">
+              <button
+                data-testid={`library-rename-submit-${entry.id}`}
+                onClick={() => void submitRename(entry.id)}
+                className="font-mono text-[8px] uppercase border border-stone-300 px-2 py-1 hover:bg-stone-200"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setRenameEntryId(null);
+                  setRenameValue("");
+                  setLibraryActionError(null);
+                }}
+                className="font-mono text-[8px] uppercase text-stone-500 hover:text-stone-900"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {showRemove && (
+          <div data-testid={`library-remove-confirm-${entry.id}`} className="space-y-2">
+            <div className="font-mono text-[9px] text-stone-600">Remove {entry.name} from the library?</div>
+            <div className="flex gap-2">
+              <button
+                data-testid={`library-remove-submit-${entry.id}`}
+                onClick={() => void submitRemove(entry.id)}
+                className="font-mono text-[8px] uppercase border border-stone-300 px-2 py-1 text-red-600 hover:bg-stone-200"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmRemoveEntryId(null);
+                  setLibraryActionError(null);
+                }}
+                className="font-mono text-[8px] uppercase text-stone-500 hover:text-stone-900"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {libraryActionError && <div data-testid="library-action-error" className="font-mono text-[9px] text-red-600">{libraryActionError}</div>}
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -256,15 +405,8 @@ export function SpecsPanel({ onClose }: SpecsPanelProps) {
             title="Library"
             entries={rigLibrary}
             onSelect={openLibraryEntry}
-            renderAction={(entry) => (
-              <button
-                data-testid={`library-add-to-rig-${entry.id}`}
-                onClick={(e) => { e.stopPropagation(); setAddToRigEntryId(addToRigEntryId === entry.id ? null : entry.id); }}
-                className="shrink-0 font-mono text-[7px] uppercase tracking-[0.12em] text-stone-500 hover:text-stone-900 border border-stone-300 px-1 py-0.5"
-              >
-                + Rig
-              </button>
-            )}
+            renderAction={(entry) => renderLibraryAction(entry, true)}
+            renderExpanded={renderLibraryExpanded}
           />
           {addToRigEntryId && rigLibrary.some((e) => e.id === addToRigEntryId) && (
             <AddToRigFlow entryId={addToRigEntryId} onDone={() => setAddToRigEntryId(null)} />
@@ -282,7 +424,13 @@ export function SpecsPanel({ onClose }: SpecsPanelProps) {
           <Button variant="outline" size="sm" onClick={() => openSurface("/agents/validate")}>
             Validate AgentSpec
           </Button>
-          <LibraryList title="Library" entries={agentLibrary} onSelect={openLibraryEntry} />
+          <LibraryList
+            title="Library"
+            entries={agentLibrary}
+            onSelect={openLibraryEntry}
+            renderAction={(entry) => renderLibraryAction(entry, false)}
+            renderExpanded={renderLibraryExpanded}
+          />
           {currentAgentDraft && (
             <DraftList title="Current Draft" drafts={[currentAgentDraft]} onSelect={openAgentDraft} />
           )}

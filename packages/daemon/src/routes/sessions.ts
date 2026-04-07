@@ -5,9 +5,11 @@ import type { NodeLauncher } from "../domain/node-launcher.js";
 import type { CmuxAdapter } from "../adapters/cmux.js";
 import type { TranscriptStore } from "../domain/transcript-store.js";
 import { getNodeInventory, getNodeDetail } from "../domain/node-inventory.js";
+import type { RigLifecycleService } from "../domain/rig-lifecycle-service.js";
 
 export const sessionsRoutes = new Hono();
 export const nodesRoutes = new Hono();
+export const sessionAdminRoutes = new Hono();
 
 function getDeps(c: { get: (key: string) => unknown }) {
   return {
@@ -15,6 +17,7 @@ function getDeps(c: { get: (key: string) => unknown }) {
     sessionRegistry: c.get("sessionRegistry" as never) as SessionRegistry,
     nodeLauncher: c.get("nodeLauncher" as never) as NodeLauncher,
     cmuxAdapter: c.get("cmuxAdapter" as never) as CmuxAdapter,
+    rigLifecycleService: c.get("rigLifecycleService" as never) as RigLifecycleService | undefined,
   };
 }
 
@@ -97,4 +100,42 @@ nodesRoutes.post("/:logicalId/focus", async (c) => {
 
   const result = await cmuxAdapter.focusSurface(cmuxSurface);
   return c.json(result);
+});
+
+// DELETE /api/rigs/:rigId/nodes/:logicalId
+nodesRoutes.delete("/:logicalId", async (c) => {
+  const rigId = c.req.param("rigId")!;
+  const nodeRef = decodeURIComponent(c.req.param("logicalId")!);
+  const { rigLifecycleService } = getDeps(c);
+  if (!rigLifecycleService) {
+    return c.json({ error: "Lifecycle service not available" }, 500);
+  }
+
+  const result = await rigLifecycleService.removeNode(rigId, nodeRef);
+  if (!result.ok) {
+    const status = result.code === "rig_not_found" ? 404
+      : result.code === "node_not_found" ? 404
+      : result.code === "kill_failed" ? 409
+      : 500;
+    return c.json(result, status);
+  }
+
+  return c.json(result, 200);
+});
+
+// POST /api/sessions/:sessionRef/unclaim
+sessionAdminRoutes.post("/:sessionRef/unclaim", async (c) => {
+  const sessionRef = decodeURIComponent(c.req.param("sessionRef")!);
+  const { rigLifecycleService } = getDeps(c);
+  if (!rigLifecycleService) {
+    return c.json({ error: "Lifecycle service not available" }, 500);
+  }
+
+  const result = await rigLifecycleService.unclaimSession(sessionRef);
+  if (!result.ok) {
+    const status = result.code === "session_ambiguous" ? 409 : 404;
+    return c.json(result, status);
+  }
+
+  return c.json(result, 200);
 });

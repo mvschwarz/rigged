@@ -43,6 +43,7 @@ import { SessionEnricher } from "./domain/session-enricher.js";
 import { DiscoveryRepository } from "./domain/discovery-repository.js";
 import { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
 import { ClaimService } from "./domain/claim-service.js";
+import { RigLifecycleService } from "./domain/rig-lifecycle-service.js";
 import { RigExpansionService } from "./domain/rig-expansion-service.js";
 // TODO: AS-T12 — migrate to pod-aware bundle source resolver
 import { LegacyBundleSourceResolver as BundleSourceResolver } from "./domain/bundle-source-resolver.js";
@@ -248,6 +249,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
   });
   const resumeMetadataRefresher = new ResumeMetadataRefresher({ sessionRegistry, tmuxAdapter });
   const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
+  const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
 
   const specReviewService = new SpecReviewService();
@@ -274,6 +276,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     discoveryCoordinator,
     discoveryRepo,
     claimService,
+    rigLifecycleService,
     rigExpansionService,
     psProjectionService: new PsProjectionService({ db }),
     upRouter: new UpCommandRouter({

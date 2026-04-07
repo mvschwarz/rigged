@@ -35,6 +35,7 @@ import { RigTeardownOrchestrator } from "../../src/domain/rig-teardown.js";
 import { DiscoveryCoordinator } from "../../src/domain/discovery-coordinator.js";
 import { ClaimService } from "../../src/domain/claim-service.js";
 import { RigExpansionService } from "../../src/domain/rig-expansion-service.js";
+import { RigLifecycleService } from "../../src/domain/rig-lifecycle-service.js";
 import { RigRepository } from "../../src/domain/rig-repository.js";
 import { SessionRegistry } from "../../src/domain/session-registry.js";
 import { EventBus } from "../../src/domain/event-bus.js";
@@ -191,6 +192,7 @@ export function createTestApp(
   });
   const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
+  const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
 
   const podBundleSourceResolver = new PodBundleSourceResolver();
 
@@ -201,6 +203,7 @@ export function createTestApp(
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
     discoveryCoordinator, discoveryRepo, claimService, rigExpansionService,
+    rigLifecycleService,
     psProjectionService: new PsProjectionService({ db }),
     upRouter: new UpCommandRouter({ fsOps: { exists: () => false, readFile: () => "", readHead: () => Buffer.alloc(0) } }),
     teardownOrchestrator: new RigTeardownOrchestrator({ db, rigRepo, sessionRegistry, tmuxAdapter: tmux, snapshotCapture, eventBus }),
@@ -214,6 +217,7 @@ export function createTestApp(
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
     discoveryCoordinator, discoveryRepo, claimService, rigExpansionService, tmuxScanner,
+    rigLifecycleService,
     psProjectionService: new PsProjectionService({ db }),
     upRouter: new UpCommandRouter({ fsOps: { exists: () => false, readFile: () => "", readHead: () => Buffer.alloc(0) } }),
     teardownOrchestrator: new RigTeardownOrchestrator({ db, rigRepo, sessionRegistry, tmuxAdapter: tmux, snapshotCapture, eventBus }),

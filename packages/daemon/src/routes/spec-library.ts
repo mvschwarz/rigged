@@ -68,5 +68,39 @@ export function specLibraryRoutes(): Hono {
     return c.json(lib.list());
   });
 
+  // DELETE /:id — remove a user-file library entry
+  router.delete("/:id", (c) => {
+    const lib = c.get("specLibraryService" as never) as SpecLibraryService;
+    const result = lib.remove(c.req.param("id"));
+    if (!result.ok) {
+      const status = result.code === "not_found" ? 404
+        : result.code === "read_only" ? 409
+        : result.code === "conflict" ? 409
+        : 400;
+      return c.json(result, status);
+    }
+    return c.json({ ok: true, id: result.entry.id, name: result.entry.name });
+  });
+
+  // POST /:id/rename — rename a user-file library entry
+  router.post("/:id/rename", async (c) => {
+    const lib = c.get("specLibraryService" as never) as SpecLibraryService;
+    const body = await c.req.json().catch(() => ({}));
+    const name = body["name"];
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return c.json({ ok: false, code: "invalid_spec", error: "name is required" }, 400);
+    }
+
+    const result = lib.rename(c.req.param("id"), name);
+    if (!result.ok) {
+      const status = result.code === "not_found" ? 404
+        : result.code === "read_only" ? 409
+        : result.code === "conflict" ? 409
+        : 400;
+      return c.json(result, status);
+    }
+    return c.json({ ok: true, entry: result.entry });
+  });
+
   return router;
 }

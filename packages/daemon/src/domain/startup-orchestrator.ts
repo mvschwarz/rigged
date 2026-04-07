@@ -127,19 +127,18 @@ export class StartupOrchestrator {
     }
 
     // 4. Deliver pre-launch files (filesystem: guidance_merge, skill_install)
-    if (preLaunchFiles.length > 0) {
-      try {
-        const deliveryResult = await input.adapter.deliverStartup(preLaunchFiles, input.binding);
-        if (deliveryResult.failed.length > 0) {
-          for (const f of deliveryResult.failed) {
-            errors.push(`Pre-launch file delivery failed: ${f.path}: ${f.error}`);
-          }
-          return this.fail(input, errors);
+    // Always call even with empty list so adapters can provision runtime-specific config (e.g. context collectors)
+    try {
+      const deliveryResult = await input.adapter.deliverStartup(preLaunchFiles, input.binding);
+      if (deliveryResult.failed.length > 0) {
+        for (const f of deliveryResult.failed) {
+          errors.push(`Pre-launch file delivery failed: ${f.path}: ${f.error}`);
         }
-      } catch (err) {
-        errors.push(`Pre-launch delivery error: ${(err as Error).message}`);
         return this.fail(input, errors);
       }
+    } catch (err) {
+      errors.push(`Pre-launch delivery error: ${(err as Error).message}`);
+      return this.fail(input, errors);
     }
 
     // 5. Launch harness (unless skipped for legacy nodes)

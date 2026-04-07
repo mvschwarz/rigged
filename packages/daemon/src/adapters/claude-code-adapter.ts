@@ -37,12 +37,23 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   private fs: ClaudeAdapterFsOps;
   private sessionIdFactory: () => string;
   private sleep: (ms: number) => Promise<void>;
+  private stateDir: string | null;
+  private collectorAssetPath: string | null;
 
-  constructor(deps: { tmux: TmuxAdapter; fsOps: ClaudeAdapterFsOps; sessionIdFactory?: () => string; sleep?: (ms: number) => Promise<void> }) {
+  constructor(deps: {
+    tmux: TmuxAdapter;
+    fsOps: ClaudeAdapterFsOps;
+    sessionIdFactory?: () => string;
+    sleep?: (ms: number) => Promise<void>;
+    stateDir?: string;
+    collectorAssetPath?: string;
+  }) {
     this.tmux = deps.tmux;
     this.fs = deps.fsOps;
     this.sessionIdFactory = deps.sessionIdFactory ?? randomUUID;
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.stateDir = deps.stateDir ?? null;
+    this.collectorAssetPath = deps.collectorAssetPath ?? null;
   }
 
   async listInstalled(binding: NodeBinding): Promise<InstalledResource[]> {
@@ -79,6 +90,9 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   }
 
   async deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult> {
+    // Best-effort: provision context collector for managed Claude sessions
+    try { this.provisionContextCollector(binding); } catch { /* best-effort */ }
+
     let delivered = 0;
     const failed: Array<{ path: string; error: string }> = [];
 
@@ -300,6 +314,44 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
   private detectDeliveryHint(path: string, content: string): "guidance_merge" | "skill_install" | "send_text" {
     return resolveConcreteHint(path, content);
+  }
+
+  /**
+   * Best-effort: provision the OpenRig context collector for managed Claude sessions.
+   * Writes a collector script and merges status line config into .claude/settings.local.json.
+   * Idempotent: safe to call multiple times (merge preserves existing settings).
+   */
+  private provisionContextCollector(binding: NodeBinding): void {
+    if (!this.stateDir || !this.collectorAssetPath || !binding.cwd) return;
+
+    const sessionName = binding.tmuxSession ?? "unknown";
+    // Compute sidecar path same as ContextUsageStore
+    const safeName = sessionName.replace(/[^a-zA-Z0-9@._-]/g, "_");
+    const sidecarPath = nodePath.join(this.stateDir, "context", `${safeName}.json`);
+
+    // 1. Copy collector script to project
+    const collectorDest = nodePath.join(binding.cwd, ".openrig", "context-collector.cjs");
+    this.fs.mkdirp(nodePath.dirname(collectorDest));
+    this.fs.copyFile(this.collectorAssetPath, collectorDest);
+
+    // 2. Merge status line config into .claude/settings.local.json
+    const settingsPath = nodePath.join(binding.cwd, ".claude", "settings.local.json");
+    this.fs.mkdirp(nodePath.dirname(settingsPath));
+
+    let existing: Record<string, unknown> = {};
+    try {
+      if (this.fs.exists(settingsPath)) {
+        existing = JSON.parse(this.fs.readFile(settingsPath));
+      }
+    } catch { /* corrupt file — overwrite */ }
+
+    const collectorCmd = `node ${collectorDest} ${sidecarPath}`;
+    existing["statusLine"] = {
+      ...(typeof existing["statusLine"] === "object" && existing["statusLine"] !== null ? existing["statusLine"] as Record<string, unknown> : {}),
+      command: collectorCmd,
+    };
+
+    this.fs.writeFile(settingsPath, JSON.stringify(existing, null, 2));
   }
 }
 

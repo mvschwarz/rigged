@@ -11,6 +11,53 @@ import type { RigExpansionService } from "../domain/rig-expansion-service.js";
 
 export const rigsRoutes = new Hono();
 
+function normalizeExpansionPodFragment(raw: Record<string, unknown>): ExpansionPodFragment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const id = raw["id"];
+  const label = raw["label"];
+  const members = raw["members"];
+  if (typeof id !== "string" || !Array.isArray(members)) return null;
+
+  return {
+    id,
+    label: typeof label === "string" ? label : id,
+    summary: typeof raw["summary"] === "string" ? raw["summary"] : undefined,
+    members: members.map((member) => {
+      const m = (member ?? {}) as Record<string, unknown>;
+      return {
+        id: typeof m["id"] === "string" ? m["id"] : "",
+        runtime: typeof m["runtime"] === "string" ? m["runtime"] : "",
+        agentRef:
+          typeof m["agentRef"] === "string"
+            ? m["agentRef"]
+            : typeof m["agent_ref"] === "string"
+              ? m["agent_ref"]
+              : undefined,
+        profile: typeof m["profile"] === "string" ? m["profile"] : undefined,
+        cwd: typeof m["cwd"] === "string" ? m["cwd"] : undefined,
+        model: typeof m["model"] === "string" ? m["model"] : undefined,
+        restorePolicy:
+          typeof m["restorePolicy"] === "string"
+            ? m["restorePolicy"]
+            : typeof m["restore_policy"] === "string"
+              ? m["restore_policy"]
+              : undefined,
+        label: typeof m["label"] === "string" ? m["label"] : undefined,
+      };
+    }),
+    edges: Array.isArray(raw["edges"])
+      ? raw["edges"].map((edge) => {
+          const e = (edge ?? {}) as Record<string, unknown>;
+          return {
+            from: typeof e["from"] === "string" ? e["from"] : "",
+            to: typeof e["to"] === "string" ? e["to"] : "",
+            kind: typeof e["kind"] === "string" ? e["kind"] : "",
+          };
+        })
+      : [],
+  };
+}
+
 function getRepo(c: { get: (key: string) => unknown }): RigRepository {
   return c.get("rigRepo" as never) as RigRepository;
 }
@@ -164,8 +211,8 @@ rigsRoutes.post("/:rigId/expand", async (c) => {
   }
 
   const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
-  const pod = body["pod"] as ExpansionPodFragment | undefined;
-  if (!pod || typeof pod !== "object" || !pod.id || !Array.isArray(pod.members)) {
+  const pod = normalizeExpansionPodFragment((body["pod"] ?? {}) as Record<string, unknown>);
+  if (!pod) {
     return c.json({ error: "pod is required with id and members[]" }, 400);
   }
 

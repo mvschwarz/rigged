@@ -171,4 +171,39 @@ describe("POST /api/rigs/:rigId/expand", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
   });
+
+  it("accepts spec-style snake_case member fields in pod fragments", async () => {
+    const rig = seedRig();
+    const res = await setup.app.request(`/api/rigs/${rig.id}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pod: {
+          id: "qa",
+          label: "QA",
+          members: [
+            {
+              id: "reviewer",
+              runtime: "terminal",
+              agent_ref: "builtin:terminal",
+              profile: "none",
+              cwd: "/tmp",
+              restore_policy: "checkpoint_only",
+            },
+          ],
+          edges: [],
+        },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.nodes[0].logicalId).toBe("qa.reviewer");
+    const stored = db
+      .prepare("SELECT agent_ref, restore_policy FROM nodes WHERE rig_id = ? AND logical_id = ?")
+      .get(rig.id, "qa.reviewer") as { agent_ref: string; restore_policy: string } | undefined;
+    expect(stored?.agent_ref).toBe("builtin:terminal");
+    expect(stored?.restore_policy).toBe("checkpoint_only");
+  });
 });

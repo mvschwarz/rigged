@@ -2,12 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 import { Command } from "commander";
 import { doctorCommand, runDoctorChecks, type DoctorDeps } from "../src/commands/doctor.js";
 
+const defaultConfig = {
+  daemon: { port: 7433, host: "127.0.0.1" },
+  db: { path: "/tmp/openrig/openrig.sqlite" },
+  transcripts: { enabled: true, path: "/tmp/openrig/transcripts" },
+};
+
 function makeDeps(overrides?: Partial<DoctorDeps>): DoctorDeps {
   return {
     exists: () => true,
     baseDir: "/install/cli/dist",
     exec: () => "tmux 3.4\n",
     checkPort: async () => true,
+    configStore: { resolve: () => defaultConfig },
+    mkdirp: () => {},
+    checkWritable: () => {},
     ...overrides,
   };
 }
@@ -65,6 +74,19 @@ describe("runDoctorChecks", () => {
     const { checks } = runDoctorChecks(deps);
     const nodeCheck = checks.find((c) => c.name === "node_version");
     expect(nodeCheck?.status).toBe("pass");
+  });
+
+  it("writable_home missing -> fail with guidance", () => {
+    const deps = makeDeps({
+      checkWritable: () => {
+        throw new Error("permission denied");
+      },
+    });
+    const { checks } = runDoctorChecks(deps);
+    const writableCheck = checks.find((c) => c.name === "writable_home");
+    expect(writableCheck?.status).toBe("fail");
+    expect(writableCheck?.message).toContain("Cannot write");
+    expect(writableCheck?.fix).toContain("permissions");
   });
 
   it("port available -> pass", async () => {
@@ -137,6 +159,26 @@ describe("rig doctor", () => {
     expect(parsed.healthy).toBe(true);
     expect(Array.isArray(parsed.checks)).toBe(true);
     expect(parsed.checks.length).toBeGreaterThan(0);
+  });
+
+  it("--json exits non-zero when writable state paths fail", async () => {
+    const deps = makeDeps({
+      checkWritable: () => {
+        throw new Error("permission denied");
+      },
+    });
+    const program = new Command();
+    program.addCommand(doctorCommand(deps));
+
+    const { logs, exitCode } = await captureLogs(() =>
+      program.parseAsync(["node", "rig", "doctor", "--json"]),
+    );
+
+    const parsed = JSON.parse(logs.join("\n"));
+    const writableCheck = parsed.checks.find((check: { name: string }) => check.name === "writable_home");
+    expect(parsed.healthy).toBe(false);
+    expect(writableCheck.status).toBe("fail");
+    expect(exitCode).toBe(1);
   });
 
   it("wired via createProgram", async () => {

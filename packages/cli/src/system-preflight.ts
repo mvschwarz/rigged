@@ -1,7 +1,7 @@
 import net from "node:net";
 import { accessSync, mkdirSync, constants } from "node:fs";
 import { dirname } from "node:path";
-import type { ConfigStore } from "./config-store.js";
+import type { ConfigStore, RiggedConfig } from "./config-store.js";
 import type { DaemonStatus } from "./daemon-lifecycle.js";
 
 export interface PreflightCheck {
@@ -32,6 +32,11 @@ interface RunOverrides {
 
 const MIN_NODE_MAJOR = 20;
 
+interface WritableHomeCheckDeps {
+  mkdirp?: (path: string) => void;
+  checkWritable?: (path: string) => void;
+}
+
 function parseNodeMajor(version: string): number {
   const match = version.match(/^v?(\d+)/);
   return match ? parseInt(match[1]!, 10) : 0;
@@ -56,6 +61,49 @@ function checkPort(host: string, port: number): Promise<boolean> {
     });
     socket.connect(port, host);
   });
+}
+
+export function buildWritableHomeCheck(
+  config: RiggedConfig,
+  openrigHome: string,
+  deps: WritableHomeCheckDeps = {},
+): PreflightCheck {
+  const mkdirp = deps.mkdirp ?? ((dirPath: string) => mkdirSync(dirPath, { recursive: true }));
+  const checkWritable = deps.checkWritable ?? ((dirPath: string) => accessSync(dirPath, constants.W_OK));
+
+  const pathsToCheck = [
+    { path: openrigHome, label: "OpenRig home" },
+  ];
+  const dbDir = dirname(config.db.path);
+  if (dbDir && dbDir !== openrigHome && !dbDir.startsWith(openrigHome + "/")) {
+    pathsToCheck.push({ path: dbDir, label: "Database directory" });
+  }
+  const transcriptPath = config.transcripts.path;
+  if (transcriptPath && transcriptPath !== openrigHome && !transcriptPath.startsWith(openrigHome + "/")) {
+    pathsToCheck.push({ path: transcriptPath, label: "Transcript directory" });
+  }
+
+  const writableErrors: string[] = [];
+  for (const { path: dirPath, label } of pathsToCheck) {
+    try {
+      mkdirp(dirPath);
+      checkWritable(dirPath);
+    } catch {
+      writableErrors.push(`Cannot write to ${dirPath} (${label}).`);
+    }
+  }
+
+  if (writableErrors.length === 0) {
+    return { name: "writable_home", ok: true };
+  }
+
+  return {
+    name: "writable_home",
+    ok: false,
+    error: writableErrors.join(" "),
+    reason: "OpenRig stores database, config, and transcripts in these directories.",
+    fix: "Fix directory permissions, or change paths with rig config set db.path / transcripts.path.",
+  };
 }
 
 export class SystemPreflight {
@@ -101,41 +149,7 @@ export class SystemPreflight {
     }
 
     // 3. Writable OpenRig home + transcript path
-    const pathsToCheck = [
-      { path: openrigHome, label: "OpenRig home" },
-    ];
-    // Check DB directory if different from home
-    const dbDir = dirname(config.db.path);
-    if (dbDir && dbDir !== openrigHome && !dbDir.startsWith(openrigHome + "/")) {
-      pathsToCheck.push({ path: dbDir, label: "Database directory" });
-    }
-    // Check transcript path if different from home
-    const transcriptPath = config.transcripts.path;
-    if (transcriptPath && transcriptPath !== openrigHome && !transcriptPath.startsWith(openrigHome + "/")) {
-      pathsToCheck.push({ path: transcriptPath, label: "Transcript directory" });
-    }
-    let writableOk = true;
-    const writableErrors: string[] = [];
-    for (const { path: dirPath, label } of pathsToCheck) {
-      try {
-        mkdirSync(dirPath, { recursive: true });
-        accessSync(dirPath, constants.W_OK);
-      } catch {
-        writableOk = false;
-        writableErrors.push(`Cannot write to ${dirPath} (${label}).`);
-      }
-    }
-    if (writableOk) {
-      checks.push({ name: "writable_home", ok: true });
-    } else {
-      checks.push({
-        name: "writable_home",
-        ok: false,
-        error: writableErrors.join(" "),
-        reason: "OpenRig stores database, config, and transcripts in these directories.",
-        fix: `Fix directory permissions, or change paths with rig config set db.path / transcripts.path.`,
-      });
-    }
+    checks.push(buildWritableHomeCheck(config, openrigHome));
 
     // 4. Daemon port availability
     const status = await this.deps.getDaemonStatus();

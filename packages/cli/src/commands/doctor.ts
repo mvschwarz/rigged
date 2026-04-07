@@ -1,9 +1,11 @@
 import { Command } from "commander";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import net from "node:net";
 import { execSync } from "node:child_process";
 import { resolveDaemonPath } from "../daemon-lifecycle.js";
+import { ConfigStore } from "../config-store.js";
+import { buildWritableHomeCheck } from "../system-preflight.js";
 
 interface DoctorCheck {
   name: string;
@@ -18,6 +20,9 @@ export interface DoctorDeps {
   baseDir: string;
   exec: (cmd: string) => string;
   checkPort: (port: number) => Promise<boolean>;
+  configStore: Pick<ConfigStore, "resolve">;
+  mkdirp?: (path: string) => void;
+  checkWritable?: (path: string) => void;
 }
 
 const MIN_NODE_MAJOR = 20;
@@ -94,7 +99,21 @@ export function runDoctorChecks(deps: DoctorDeps): { checks: DoctorCheck[]; port
     });
   }
 
-  // 5. Port availability (async) — daemon already running on that port counts as OK
+  // 5. Writable state paths (shared with preflight)
+  const config = deps.configStore.resolve();
+  const writableCheck = buildWritableHomeCheck(config, path.dirname(config.db.path), {
+    mkdirp: deps.mkdirp,
+    checkWritable: deps.checkWritable,
+  });
+  checks.push({
+    name: writableCheck.name,
+    status: writableCheck.ok ? "pass" : "fail",
+    message: writableCheck.ok ? "Writable state paths verified." : writableCheck.error ?? "State paths are not writable.",
+    reason: writableCheck.reason,
+    fix: writableCheck.fix,
+  });
+
+  // 6. Port availability (async) — daemon already running on that port counts as OK
   const portCheck = deps.checkPort(DEFAULT_PORT).then(async (available): Promise<DoctorCheck> => {
     if (available) {
       return { name: "port", status: "pass", message: `Port ${DEFAULT_PORT} available.` };
@@ -129,6 +148,9 @@ export function doctorCommand(depsOverride?: DoctorDeps): Command {
         baseDir: import.meta.dirname,
         exec: (c: string) => execSync(c, { encoding: "utf-8" }),
         checkPort: defaultCheckPort,
+        configStore: new ConfigStore(),
+        mkdirp: (dirPath: string) => mkdirSync(dirPath, { recursive: true }),
+        checkWritable: (dirPath: string) => accessSync(dirPath, constants.W_OK),
       };
 
       const { checks, portCheck } = runDoctorChecks(deps);

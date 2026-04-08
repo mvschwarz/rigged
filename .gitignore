@@ -15,6 +15,10 @@ docs/*
 *.sqlite-shm
 *.sqlite-wal
 *.sqlite.pre-reboot-backup
+.openrig/
 
 # Local demo proof artifacts
 demo/proof/
+
+# Build artifacts
+*.tgz

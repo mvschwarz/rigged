@@ -6,11 +6,12 @@ import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, resumeMetadataSchema, nodeSpecFieldsSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, externalCliAttachmentSchema]);
   return db;
 }
 

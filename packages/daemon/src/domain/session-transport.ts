@@ -66,6 +66,7 @@ export interface CaptureResult {
   content?: string;
   lines?: number;
   error?: string;
+  reason?: string;
 }
 
 export interface BroadcastResult {
@@ -84,7 +85,7 @@ interface SessionTransportDeps {
 
 interface SessionRow { node_id: string; session_name: string; }
 interface NodeRow { rig_id: string; logical_id: string; }
-interface RuntimeRow { runtime: string | null; }
+interface SessionMetaRow { runtime: string | null; attachment_type: string | null; }
 
 export class SessionTransport {
   readonly db: Database.Database;
@@ -97,6 +98,25 @@ export class SessionTransport {
     this.rigRepo = deps.rigRepo;
     this.sessionRegistry = deps.sessionRegistry;
     this.tmuxAdapter = deps.tmuxAdapter;
+  }
+
+  private getSessionMeta(sessionName: string): { runtime: string | null; attachmentType: string | null } {
+    const row = this.db.prepare(`
+      SELECT
+        n.runtime AS runtime,
+        b.attachment_type AS attachment_type
+      FROM sessions s
+      JOIN nodes n ON s.node_id = n.id
+      LEFT JOIN bindings b ON b.node_id = n.id
+      WHERE s.session_name = ?
+      ORDER BY s.id DESC
+      LIMIT 1
+    `).get(sessionName) as SessionMetaRow | undefined;
+
+    return {
+      runtime: row?.runtime ?? null,
+      attachmentType: row?.attachment_type ?? null,
+    };
   }
 
   async resolveSessions(target: TargetSpec): Promise<ResolveResult> {
@@ -302,15 +322,17 @@ export class SessionTransport {
 
   async send(sessionName: string, text: string, opts?: SendOpts): Promise<SendResult> {
     let preVerifyContent: string | null = null;
-    const runtimeRow = this.db.prepare(`
-      SELECT n.runtime AS runtime
-      FROM sessions s
-      JOIN nodes n ON s.node_id = n.id
-      WHERE s.session_name = ?
-      ORDER BY s.id DESC
-      LIMIT 1
-    `).get(sessionName) as RuntimeRow | undefined;
-    const runtime = runtimeRow?.runtime ?? null;
+    const sessionMeta = this.getSessionMeta(sessionName);
+    const runtime = sessionMeta.runtime;
+
+    if (sessionMeta.attachmentType === "external_cli") {
+      return {
+        ok: false,
+        sessionName,
+        reason: "transport_unavailable",
+        error: `Session '${sessionName}' is attached as an external CLI node. Inbound tmux transport is unavailable for this target.`,
+      };
+    }
 
     // 1. Check session exists / tmux available
     try {
@@ -412,12 +434,23 @@ export class SessionTransport {
   }
 
   async capture(sessionName: string, opts?: { lines?: number }): Promise<CaptureResult> {
+    const sessionMeta = this.getSessionMeta(sessionName);
+    if (sessionMeta.attachmentType === "external_cli") {
+      return {
+        ok: false,
+        sessionName,
+        reason: "transport_unavailable",
+        error: `Session '${sessionName}' is attached as an external CLI node. Inbound tmux capture is unavailable for this target.`,
+      };
+    }
+
     try {
       const exists = await this.tmuxAdapter.hasSession(sessionName);
       if (!exists) {
         return {
           ok: false,
           sessionName,
+          reason: "session_missing",
           error: `Session '${sessionName}' not found. Check available sessions with: rig ps --nodes`,
         };
       }
@@ -425,6 +458,7 @@ export class SessionTransport {
       return {
         ok: false,
         sessionName,
+        reason: "tmux_unavailable",
         error: "tmux is not available. Ensure tmux is installed and a server is running.",
       };
     }
@@ -435,6 +469,7 @@ export class SessionTransport {
       return {
         ok: false,
         sessionName,
+        reason: "capture_failed",
         error: `Could not capture pane content for '${sessionName}'.`,
       };
     }

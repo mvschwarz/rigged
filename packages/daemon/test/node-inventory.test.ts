@@ -8,7 +8,7 @@ function seedPodAwareRig(db: Database.Database, opts?: { rigName?: string }) {
   const rigName = opts?.rigName ?? "test-rig";
   db.prepare("INSERT INTO rigs (id, name) VALUES (?, ?)").run("rig-1", rigName);
   // Pod
-  db.prepare("INSERT INTO pods (id, rig_id, label) VALUES (?, ?, ?)").run("pod-1", "rig-1", "Dev");
+  db.prepare("INSERT INTO pods (id, rig_id, namespace, label) VALUES (?, ?, ?, ?)").run("pod-1", "rig-1", "dev", "Dev");
   // Agent node
   db.prepare(
     "INSERT INTO nodes (id, rig_id, logical_id, runtime, cwd, pod_id, agent_ref, profile, resolved_spec_name, resolved_spec_version, resolved_spec_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -98,6 +98,7 @@ describe("Node Inventory Projection", () => {
     const entries = getNodeInventory(db, "rig-1");
     expect(entries).toHaveLength(2);
     expect(entries.map((e) => e.logicalId).sort()).toEqual(["dev.impl", "infra.server"]);
+    expect(entries.every((e) => e.podNamespace === "dev")).toBe(true);
   });
 
   // Test 2: Inventory includes correct canonical session names

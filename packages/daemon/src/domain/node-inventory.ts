@@ -11,6 +11,7 @@ interface InventoryRow {
   rig_name: string;
   logical_id: string;
   pod_id: string | null;
+  pod_namespace: string | null;
   runtime: string | null;
   model: string | null;
   agent_ref: string | null;
@@ -27,6 +28,7 @@ interface InventoryRow {
   resume_type: string | null;
   resume_token: string | null;
   startup_completed_at: string | null;
+  binding_attachment_type: string | null;
 }
 
 interface EventRow {
@@ -49,9 +51,11 @@ interface StartupContextRow {
 interface BindingRow {
   id: string;
   node_id: string;
+  attachment_type: string | null;
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  external_session_name: string | null;
   cmux_workspace: string | null;
   cmux_surface: string | null;
   updated_at: string;
@@ -143,6 +147,7 @@ export function getNodeInventory(db: Database.Database, rigId: string): NodeInve
       r.name as rig_name,
       n.logical_id,
       n.pod_id,
+      p.namespace as pod_namespace,
       n.runtime,
       n.model,
       n.agent_ref,
@@ -157,11 +162,14 @@ export function getNodeInventory(db: Database.Database, rigId: string): NodeInve
       s.startup_status,
       s.resume_type,
       s.resume_token,
-      s.startup_completed_at
+      s.startup_completed_at,
+      b.attachment_type as binding_attachment_type
     FROM nodes n
     JOIN rigs r ON r.id = n.rig_id
+    LEFT JOIN pods p ON p.id = n.pod_id
     LEFT JOIN sessions s ON s.node_id = n.id
       AND s.id = (SELECT s2.id FROM sessions s2 WHERE s2.node_id = n.id ORDER BY s2.id DESC LIMIT 1)
+    LEFT JOIN bindings b ON b.node_id = n.id
     WHERE n.rig_id = ?
     ORDER BY n.created_at
   `).all(rigId) as InventoryRow[];
@@ -171,13 +179,15 @@ export function getNodeInventory(db: Database.Database, rigId: string): NodeInve
     rigName: row.rig_name,
     logicalId: row.logical_id,
     podId: row.pod_id,
+    podNamespace: row.pod_namespace,
     canonicalSessionName: row.session_name,
+    attachmentType: (row.binding_attachment_type as NodeInventoryEntry["attachmentType"]) ?? null,
     nodeKind: deriveNodeKind(row.runtime),
     runtime: row.runtime,
     sessionStatus: row.session_status,
     startupStatus: row.startup_status as NodeInventoryEntry["startupStatus"],
     restoreOutcome: deriveRestoreOutcome(db, rigId, row.node_id),
-    tmuxAttachCommand: row.session_name ? `tmux attach -t ${row.session_name}` : null,
+    tmuxAttachCommand: row.binding_attachment_type === "tmux" && row.session_name ? `tmux attach -t ${row.session_name}` : null,
     resumeCommand: computeResumeCommand(row.runtime, row.resume_token),
     latestError: getLatestError(db, rigId, row.node_id),
     // Extended fields
@@ -227,9 +237,11 @@ export function getNodeDetail(
   const binding: Binding | null = bindingRow ? {
     id: bindingRow.id,
     nodeId,
+    attachmentType: (bindingRow.attachment_type as Binding["attachmentType"]) ?? "tmux",
     tmuxSession: bindingRow.tmux_session,
     tmuxWindow: bindingRow.tmux_window,
     tmuxPane: bindingRow.tmux_pane,
+    externalSessionName: bindingRow.external_session_name ?? null,
     cmuxWorkspace: bindingRow.cmux_workspace,
     cmuxSurface: bindingRow.cmux_surface,
     updatedAt: bindingRow.updated_at,
@@ -304,6 +316,7 @@ export function getNodeDetail(
     .map((e) => ({
       logicalId: e.logicalId,
       canonicalSessionName: e.canonicalSessionName,
+      attachmentType: e.attachmentType,
       runtime: e.runtime,
     }));
 

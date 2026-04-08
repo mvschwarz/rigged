@@ -31,6 +31,7 @@ export interface NodeDetailData {
   rigName: string;
   logicalId: string;
   podId: string | null;
+  podNamespace?: string | null;
   canonicalSessionName: string | null;
   nodeKind: "agent" | "infrastructure";
   runtime: string | null;

@@ -24,6 +24,7 @@ import type { BootstrapRepository } from "./domain/bootstrap-repository.js";
 import type { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
 import type { DiscoveryRepository } from "./domain/discovery-repository.js";
 import type { ClaimService } from "./domain/claim-service.js";
+import type { SelfAttachService } from "./domain/self-attach-service.js";
 import { rigsRoutes } from "./routes/rigs.js";
 import { sessionsRoutes, nodesRoutes, sessionAdminRoutes } from "./routes/sessions.js";
 import { adaptersRoutes } from "./routes/adapters.js";
@@ -79,6 +80,7 @@ export interface AppDeps {
   discoveryCoordinator: DiscoveryCoordinator;
   discoveryRepo: DiscoveryRepository;
   claimService: ClaimService;
+  selfAttachService?: SelfAttachService;
   rigExpansionService?: import("./domain/rig-expansion-service.js").RigExpansionService;
   rigLifecycleService?: RigLifecycleService;
   psProjectionService: PsProjectionService;
@@ -175,6 +177,9 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.rigRepo.db !== deps.claimService.db) {
     throw new Error("createApp: claimService must share the same db handle");
   }
+  if (deps.selfAttachService && deps.rigRepo.db !== deps.selfAttachService.db) {
+    throw new Error("createApp: selfAttachService must share the same db handle");
+  }
   if (deps.rigRepo.db !== deps.psProjectionService.db) {
     throw new Error("createApp: psProjectionService must share the same db handle");
   }
@@ -210,6 +215,7 @@ export function createApp(deps: AppDeps): Hono {
     c.set("discoveryCoordinator" as never, deps.discoveryCoordinator);
     c.set("discoveryRepo" as never, deps.discoveryRepo);
     c.set("claimService" as never, deps.claimService);
+    c.set("selfAttachService" as never, deps.selfAttachService);
     c.set("rigExpansionService" as never, deps.rigExpansionService);
     c.set("rigLifecycleService" as never, deps.rigLifecycleService);
     c.set("psProjectionService" as never, deps.psProjectionService);

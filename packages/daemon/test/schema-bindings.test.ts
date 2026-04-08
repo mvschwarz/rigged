@@ -4,6 +4,7 @@ import { createDb } from "../src/db/connection.js";
 import { migrate } from "../src/db/migrate.js";
 import { coreSchema } from "../src/db/migrations/001_core_schema.js";
 import { bindingsSessionsSchema } from "../src/db/migrations/002_bindings_sessions.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 
 function seedRigWithNode(db: Database.Database) {
   db.prepare("INSERT INTO rigs (id, name) VALUES (?, ?)").run(
@@ -20,7 +21,7 @@ describe("002_bindings_sessions", () => {
 
   beforeEach(() => {
     db = createDb();
-    migrate(db, [coreSchema, bindingsSessionsSchema]);
+    migrate(db, [coreSchema, bindingsSessionsSchema, externalCliAttachmentSchema]);
   });
 
   afterEach(() => {
@@ -88,6 +89,20 @@ describe("002_bindings_sessions", () => {
         .prepare("SELECT * FROM bindings WHERE node_id = ?")
         .get("node-1") as { cmux_surface: string | null };
       expect(binding.cmux_surface).toBe("surface-42");
+    });
+
+    it("supports external_cli attachment without tmux session", () => {
+      seedRigWithNode(db);
+      db.prepare(
+        "INSERT INTO bindings (id, node_id, attachment_type, external_session_name) VALUES (?, ?, ?, ?)"
+      ).run("bind-1", "node-1", "external_cli", "orch-lead@host");
+
+      const binding = db
+        .prepare("SELECT attachment_type, tmux_session, external_session_name FROM bindings WHERE node_id = ?")
+        .get("node-1") as { attachment_type: string; tmux_session: string | null; external_session_name: string | null };
+      expect(binding.attachment_type).toBe("external_cli");
+      expect(binding.tmux_session).toBeNull();
+      expect(binding.external_session_name).toBe("orch-lead@host");
     });
 
     it("cascades on node delete", () => {

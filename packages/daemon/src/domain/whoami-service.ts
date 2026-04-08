@@ -10,7 +10,9 @@ export interface WhoamiResult {
     rigName: string;
     nodeId: string;
     logicalId: string;
+    attachmentType: "tmux" | "external_cli";
     podId: string | null;
+    podNamespace: string | null;
     podLabel: string | null;
     memberId: string;
     memberLabel: string | null;
@@ -27,6 +29,7 @@ export interface WhoamiResult {
     sessionName: string;
     runtime: string;
     podId: string | null;
+    podNamespace: string | null;
     memberId: string;
   }>;
   edges: {
@@ -85,6 +88,12 @@ interface PodRow {
   id: string;
   label: string | null;
   namespace: string | null;
+}
+
+interface BindingRow {
+  attachment_type: string | null;
+  tmux_session: string | null;
+  external_session_name: string | null;
 }
 
 interface WhoamiDeps {
@@ -160,9 +169,11 @@ export class WhoamiService {
 
     // Get pod info
     let podLabel: string | null = null;
+    let podNamespace: string | null = null;
     if (nodeRow.pod_id) {
       const pod = this.db.prepare("SELECT * FROM pods WHERE id = ?").get(nodeRow.pod_id) as PodRow | undefined;
       podLabel = pod?.label ?? null;
+      podNamespace = pod?.namespace ?? null;
     }
 
     // If resolved by nodeId, get current session name
@@ -171,12 +182,18 @@ export class WhoamiService {
     }
 
     // Build identity
+    const binding = this.db
+      .prepare("SELECT attachment_type, tmux_session, external_session_name FROM bindings WHERE node_id = ?")
+      .get(nodeRow.id) as BindingRow | undefined;
+
     const identity: WhoamiResult["identity"] = {
       rigId: nodeRow.rig_id,
       rigName: rig.rig.name,
       nodeId: nodeRow.id,
       logicalId: nodeRow.logical_id,
+      attachmentType: (binding?.attachment_type as WhoamiResult["identity"]["attachmentType"]) ?? "tmux",
       podId: nodeRow.pod_id,
+      podNamespace,
       podLabel,
       memberId,
       memberLabel: nodeRow.label,
@@ -196,12 +213,18 @@ export class WhoamiService {
       const peerParts = peerNode.logicalId.split(".");
       const peerMemberId = peerParts.length > 1 ? peerParts.slice(1).join(".") : peerNode.logicalId;
       const peerSessionName = this.getCurrentSessionName(peerNode.id, nodeRow.rig_id);
+      let peerPodNamespace: string | null = null;
+      if (peerNode.podId) {
+        const peerPod = this.db.prepare("SELECT namespace FROM pods WHERE id = ?").get(peerNode.podId) as { namespace: string | null } | undefined;
+        peerPodNamespace = peerPod?.namespace ?? null;
+      }
 
       peers.push({
         logicalId: peerNode.logicalId,
         sessionName: peerSessionName,
         runtime: peerNode.runtime ?? "unknown",
         podId: peerNode.podId ?? null,
+        podNamespace: peerPodNamespace,
         memberId: peerMemberId,
       });
     }
@@ -271,9 +294,12 @@ export class WhoamiService {
   }
 
   private getCurrentSessionName(nodeId: string, rigId: string): string {
-    // Prefer binding's tmux session (most current)
-    const binding = this.db.prepare("SELECT tmux_session FROM bindings WHERE node_id = ?").get(nodeId) as { tmux_session: string | null } | undefined;
+    // Prefer binding's current transport/session anchor
+    const binding = this.db
+      .prepare("SELECT tmux_session, external_session_name FROM bindings WHERE node_id = ?")
+      .get(nodeId) as { tmux_session: string | null; external_session_name: string | null } | undefined;
     if (binding?.tmux_session) return binding.tmux_session;
+    if (binding?.external_session_name) return binding.external_session_name;
 
     // Fall back to newest session by ULID
     const sess = this.db

@@ -10,6 +10,7 @@ import type { ContextUsageStore } from "../domain/context-usage-store.js";
 import type { Pod, ExpansionPodFragment } from "../domain/types.js";
 import type { RigExpansionService } from "../domain/rig-expansion-service.js";
 import type { RigLifecycleService } from "../domain/rig-lifecycle-service.js";
+import type { SelfAttachService } from "../domain/self-attach-service.js";
 
 export const rigsRoutes = new Hono();
 
@@ -70,6 +71,10 @@ function getSessionRegistry(c: { get: (key: string) => unknown }): SessionRegist
 
 function getRigLifecycleService(c: { get: (key: string) => unknown }): RigLifecycleService | undefined {
   return c.get("rigLifecycleService" as never) as RigLifecycleService | undefined;
+}
+
+function getSelfAttachService(c: { get: (key: string) => unknown }): SelfAttachService | undefined {
+  return c.get("selfAttachService" as never) as SelfAttachService | undefined;
 }
 
 // GET /api/rigs/summary — MUST be registered before /:id to avoid Hono resolving "summary" as a rig ID
@@ -190,6 +195,79 @@ rigsRoutes.post("/:id/release", async (c) => {
     case "rig_not_found":
       return c.json(result, 404);
     case "contains_launched_nodes":
+      return c.json(result, 409);
+    default:
+      return c.json(result, 500);
+  }
+});
+
+// POST /api/rigs/:id/attach-self — attach the current shell/agent, tmux-backed or external
+rigsRoutes.post("/:id/attach-self", async (c) => {
+  const rigId = c.req.param("id")!;
+  const selfAttachService = getSelfAttachService(c);
+  if (!selfAttachService) {
+    return c.json({ error: "Self-attach service not available" }, 500);
+  }
+
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const logicalId = typeof body["logicalId"] === "string" ? body["logicalId"].trim() : "";
+  const podNamespace = typeof body["podNamespace"] === "string" ? body["podNamespace"].trim() : "";
+  const memberName = typeof body["memberName"] === "string" ? body["memberName"].trim() : "";
+  const runtime = typeof body["runtime"] === "string" ? body["runtime"].trim() : "";
+  const cwd = typeof body["cwd"] === "string" ? body["cwd"] : undefined;
+  const displayName = typeof body["displayName"] === "string" ? body["displayName"] : undefined;
+  const attachmentType = typeof body["attachmentType"] === "string" ? body["attachmentType"].trim() : "";
+  const tmuxSession = typeof body["tmuxSession"] === "string" ? body["tmuxSession"].trim() : "";
+  const tmuxWindow = typeof body["tmuxWindow"] === "string" ? body["tmuxWindow"].trim() : "";
+  const tmuxPane = typeof body["tmuxPane"] === "string" ? body["tmuxPane"].trim() : "";
+
+  const hasNodeTarget = logicalId.length > 0;
+  const hasPodFields = podNamespace.length > 0 || memberName.length > 0 || runtime.length > 0;
+
+  if (hasNodeTarget && hasPodFields) {
+    return c.json({ error: "Specify either logicalId or podNamespace + memberName + runtime" }, 400);
+  }
+  if (!hasNodeTarget && !hasPodFields) {
+    return c.json({ error: "Specify either logicalId or podNamespace + memberName + runtime" }, 400);
+  }
+  if (!hasNodeTarget && (!podNamespace || !memberName)) {
+    return c.json({ error: "podNamespace and memberName are required when attaching into a pod" }, 400);
+  }
+  if (attachmentType && attachmentType !== "tmux" && attachmentType !== "external_cli") {
+    return c.json({ error: "attachmentType must be 'tmux' or 'external_cli'" }, 400);
+  }
+  if (attachmentType === "tmux" && !tmuxSession) {
+    return c.json({ error: "tmuxSession is required when attachmentType is 'tmux'" }, 400);
+  }
+
+  const context = attachmentType === "tmux" || tmuxSession
+    ? {
+        attachmentType: "tmux" as const,
+        tmuxSession,
+        tmuxWindow: tmuxWindow || undefined,
+        tmuxPane: tmuxPane || undefined,
+      }
+    : undefined;
+
+  const result = hasNodeTarget
+    ? await selfAttachService.attachToNode({ rigId, logicalId, runtime: runtime || undefined, cwd, displayName, context })
+    : await selfAttachService.attachToPod({ rigId, podNamespace, memberName, runtime, cwd, displayName, context });
+
+  if (result.ok) {
+    return c.json(result, 201);
+  }
+
+  switch (result.code) {
+    case "rig_not_found":
+    case "node_not_found":
+    case "pod_not_found":
+      return c.json(result, 404);
+    case "runtime_required":
+      return c.json(result, 400);
+    case "already_bound":
+    case "duplicate_logical_id":
+    case "invalid_member_name":
+    case "runtime_mismatch":
       return c.json(result, 409);
     default:
       return c.json(result, 500);

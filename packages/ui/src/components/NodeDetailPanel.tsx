@@ -61,7 +61,7 @@ export function NodeDetailPanel({ rigId, logicalId, onClose }: NodeDetailPanelPr
             <div className="space-y-1 font-mono text-[10px]">
               <div className="flex justify-between"><span className="text-stone-500">Rig</span><span className="text-stone-900">{data.rigName}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">Logical ID</span><span className="text-stone-900">{logicalId}</span></div>
-              <div className="flex justify-between"><span className="text-stone-500">Pod</span><span className="text-stone-900">{inferPodName(logicalId) ?? displayPodName(data.podId)}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Pod</span><span className="text-stone-900">{data.podNamespace ?? inferPodName(logicalId) ?? displayPodName(data.podId)}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">Session</span><span className="text-stone-900 truncate ml-2">{data.canonicalSessionName ?? "—"}</span></div>
               <div className="flex justify-between"><span className="text-stone-500">Runtime</span><span className="text-stone-900">{data.runtime ?? "—"}</span></div>
               {data.cwd && (

@@ -19,6 +19,7 @@ import { agentspecRebootSchema } from "../../src/db/migrations/014_agentspec_reb
 import { startupContextSchema } from "../../src/db/migrations/015_startup_context.js";
 import { podNamespaceSchema } from "../../src/db/migrations/017_pod_namespace.js";
 import { contextUsageSchema } from "../../src/db/migrations/018_context_usage.js";
+import { externalCliAttachmentSchema } from "../../src/db/migrations/019_external_cli_attachment.js";
 import { BootstrapRepository } from "../../src/domain/bootstrap-repository.js";
 import { RuntimeVerifier } from "../../src/domain/runtime-verifier.js";
 import { RequirementsProbeRegistry } from "../../src/domain/requirements-probe.js";
@@ -35,6 +36,7 @@ import { UpCommandRouter } from "../../src/domain/up-command-router.js";
 import { RigTeardownOrchestrator } from "../../src/domain/rig-teardown.js";
 import { DiscoveryCoordinator } from "../../src/domain/discovery-coordinator.js";
 import { ClaimService } from "../../src/domain/claim-service.js";
+import { SelfAttachService } from "../../src/domain/self-attach-service.js";
 import { RigExpansionService } from "../../src/domain/rig-expansion-service.js";
 import { ContextUsageStore } from "../../src/domain/context-usage-store.js";
 import { WhoamiService } from "../../src/domain/whoami-service.js";
@@ -70,7 +72,7 @@ import fs from "node:fs";
 
 export function createFullTestDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema, podNamespaceSchema, contextUsageSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema, podNamespaceSchema, contextUsageSchema, externalCliAttachmentSchema]);
   return db;
 }
 
@@ -195,6 +197,7 @@ export function createTestApp(
     scanner: tmuxScanner, fingerprinter, enricher, discoveryRepo, sessionRegistry, eventBus,
   });
   const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
+  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
   const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
   const contextUsageStore = new ContextUsageStore(db, { stateDir: "/tmp/openrig-test" });
@@ -209,7 +212,7 @@ export function createTestApp(
     rigSpecExporter, rigSpecPreflight, rigInstantiator,
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
-    discoveryCoordinator, discoveryRepo, claimService, rigExpansionService,
+    discoveryCoordinator, discoveryRepo, claimService, selfAttachService, rigExpansionService,
     rigLifecycleService,
     psProjectionService: new PsProjectionService({ db }),
     upRouter: new UpCommandRouter({ fsOps: { exists: () => false, readFile: () => "", readHead: () => Buffer.alloc(0) } }),
@@ -225,7 +228,7 @@ export function createTestApp(
     rigSpecExporter, rigSpecPreflight, rigInstantiator,
     packageRepo, installRepo, installEngine, installVerifier,
     bootstrapOrchestrator, bootstrapRepo,
-    discoveryCoordinator, discoveryRepo, claimService, rigExpansionService, tmuxScanner,
+    discoveryCoordinator, discoveryRepo, claimService, selfAttachService, rigExpansionService, tmuxScanner,
     rigLifecycleService,
     psProjectionService: new PsProjectionService({ db }),
     upRouter: new UpCommandRouter({ fsOps: { exists: () => false, readFile: () => "", readHead: () => Buffer.alloc(0) } }),

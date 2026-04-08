@@ -10,7 +10,10 @@ import { snapshotsSchema } from "../src/db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "../src/db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
+import { discoverySchema } from "../src/db/migrations/012_discovery.js";
+import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { SessionTransport } from "../src/domain/session-transport.js";
@@ -19,7 +22,7 @@ import { transportRoutes } from "../src/routes/transport.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, agentspecRebootSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, externalCliAttachmentSchema]);
   return db;
 }
 
@@ -78,6 +81,17 @@ describe("transport routes", () => {
     sessionRegistry.updateStatus(sess2.id, "running");
     sessionRegistry.updateBinding(node2.id, { tmuxSession: "dev-qa@my-rig" });
     return { rig, node1, node2 };
+  }
+
+  function seedExternalCliRig() {
+    const rig = rigRepo.createRig("rigged-buildout");
+    const node = rigRepo.addNode(rig.id, "orch1.lead", { role: "orchestrator", runtime: "claude-code" });
+    const session = sessionRegistry.registerClaimedSession(node.id, "orch1-lead@rigged-buildout");
+    sessionRegistry.updateBinding(node.id, {
+      attachmentType: "external_cli",
+      externalSessionName: "orch1-lead@rigged-buildout",
+    });
+    return { rig, node, session };
   }
 
   it("POST /send with valid session returns 200 with SendResult", async () => {
@@ -141,6 +155,23 @@ describe("transport routes", () => {
     expect(body.error).toContain("ambiguous");
   });
 
+  it("POST /send to external_cli target returns 409 with honest transport guidance", async () => {
+    seedExternalCliRig();
+    const tmux = mockTmux();
+    const transport = new SessionTransport({ db, rigRepo, sessionRegistry, tmuxAdapter: tmux });
+    const app = createApp({ sessionTransport: transport });
+
+    const res = await app.request("/api/transport/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: "orch1-lead@rigged-buildout", text: "hello" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.reason).toBe("transport_unavailable");
+    expect(body.error).toContain("external CLI");
+  });
+
   it("POST /capture with rig targeting returns multi-session results", async () => {
     seedRig();
     const tmux = mockTmux();
@@ -157,6 +188,23 @@ describe("transport routes", () => {
     expect(body.results).toBeDefined();
     expect(body.results.length).toBe(2);
     expect(body.results.every((r: { ok: boolean }) => r.ok)).toBe(true);
+  });
+
+  it("POST /capture for external_cli target returns 409 with honest transport guidance", async () => {
+    seedExternalCliRig();
+    const tmux = mockTmux();
+    const transport = new SessionTransport({ db, rigRepo, sessionRegistry, tmuxAdapter: tmux });
+    const app = createApp({ sessionTransport: transport });
+
+    const res = await app.request("/api/transport/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: "orch1-lead@rigged-buildout" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.reason).toBe("transport_unavailable");
+    expect(body.error).toContain("external CLI");
   });
 
   it("POST /broadcast without rig/pod broadcasts globally to all running sessions", async () => {

@@ -33,12 +33,13 @@ export function transportRoutes(): Hono {
       const statusMap: Record<string, number> = {
         session_missing: 404,
         tmux_unavailable: 503,
+        transport_unavailable: 409,
         mid_work: 409,
         submit_failed: 502,
         send_failed: 502,
       };
-      const status = statusMap[result.reason ?? ""] ?? 500;
-      return c.json(result, status as 404);
+      const status = (statusMap[result.reason ?? ""] ?? 500) as 404 | 409 | 500 | 502 | 503;
+      return c.json(result, status);
     }
 
     return c.json(result);
@@ -79,7 +80,14 @@ export function transportRoutes(): Hono {
 
     const result = await transport.capture(body.session, { lines: body.lines });
     if (!result.ok) {
-      return c.json(result, 404);
+      const statusMap: Record<string, number> = {
+        session_missing: 404,
+        tmux_unavailable: 503,
+        transport_unavailable: 409,
+        capture_failed: 502,
+      };
+      const status = (statusMap[result.reason ?? ""] ?? 404) as 404 | 409 | 502 | 503;
+      return c.json(result, status);
     }
     return c.json(result);
   });

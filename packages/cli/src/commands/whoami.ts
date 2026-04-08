@@ -9,7 +9,9 @@ import type { StatusDeps } from "./status.js";
 interface WhoamiIdentity {
   rigName: string;
   logicalId: string;
+  attachmentType: string | null;
   podId: string | null;
+  podNamespace?: string | null;
   memberId: string;
   sessionName: string;
   runtime: string;
@@ -19,6 +21,7 @@ interface WhoamiPeer {
   logicalId: string;
   sessionName: string;
   runtime: string;
+  podNamespace?: string | null;
 }
 
 interface WhoamiEdge {
@@ -55,7 +58,9 @@ function buildPartialWhoamiResult(source: { nodeId?: string; sessionName?: strin
       rigName: null,
       nodeId: source.nodeId ?? null,
       logicalId: null,
+      attachmentType: null,
       podId: null,
+      podNamespace: null,
       podLabel: null,
       memberId: null,
       memberLabel: null,
@@ -202,9 +207,10 @@ export function whoamiCommand(depsOverride?: StatusDeps): Command {
       const id = data.identity;
       console.log(`Rig:        ${id.rigName}`);
       console.log(`Logical ID: ${id.logicalId}`);
-      console.log(`Pod:        ${id.podId ?? "—"} / ${id.memberId}`);
+      console.log(`Pod:        ${(id.podNamespace ?? id.podId) ?? "—"} / ${id.memberId}`);
       console.log(`Session:    ${id.sessionName}`);
       console.log(`Runtime:    ${id.runtime}`);
+      console.log(`Transport:  ${id.attachmentType === "external_cli" ? "external_cli (outbound only)" : id.attachmentType}`);
       console.log(`Resolved:   via ${data.resolvedBy.replace(/_/g, " ")}`);
 
       if (data.peers.length > 0) {

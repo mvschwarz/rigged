@@ -230,9 +230,11 @@ export class RigRepository {
     return {
       id: row.id,
       nodeId: row.node_id,
+      attachmentType: (row.attachment_type as Binding["attachmentType"]) ?? "tmux",
       tmuxSession: row.tmux_session,
       tmuxWindow: row.tmux_window,
       tmuxPane: row.tmux_pane,
+      externalSessionName: row.external_session_name ?? null,
       cmuxWorkspace: row.cmux_workspace,
       cmuxSurface: row.cmux_surface,
       updatedAt: row.updated_at,
@@ -283,9 +285,11 @@ interface EdgeRow {
 interface BindingRow {
   id: string;
   node_id: string;
+  attachment_type: string | null;
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  external_session_name: string | null;
   cmux_workspace: string | null;
   cmux_surface: string | null;
   updated_at: string;

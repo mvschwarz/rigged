@@ -43,6 +43,7 @@ import { SessionEnricher } from "./domain/session-enricher.js";
 import { DiscoveryRepository } from "./domain/discovery-repository.js";
 import { DiscoveryCoordinator } from "./domain/discovery-coordinator.js";
 import { ClaimService } from "./domain/claim-service.js";
+import { SelfAttachService } from "./domain/self-attach-service.js";
 import { RigLifecycleService } from "./domain/rig-lifecycle-service.js";
 import { RigExpansionService } from "./domain/rig-expansion-service.js";
 // TODO: AS-T12 — migrate to pod-aware bundle source resolver
@@ -80,6 +81,7 @@ import { startupContextSchema } from "./db/migrations/015_startup_context.js";
 import { chatMessagesSchema } from "./db/migrations/016_chat_messages.js";
 import { podNamespaceSchema } from "./db/migrations/017_pod_namespace.js";
 import { contextUsageSchema } from "./db/migrations/018_context_usage.js";
+import { externalCliAttachmentSchema } from "./db/migrations/019_external_cli_attachment.js";
 import { OPENRIG_HOME } from "./openrig-compat.js";
 import {
   getCompatibleOpenRigPath,
@@ -105,7 +107,7 @@ interface DaemonResult {
 export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> {
   const dbPath = opts?.dbPath ?? ":memory:";
   const db = createDb(dbPath);
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema, chatMessagesSchema, podNamespaceSchema, contextUsageSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, startupContextSchema, chatMessagesSchema, podNamespaceSchema, contextUsageSchema, externalCliAttachmentSchema]);
 
   const rigRepo = new RigRepository(db);
   const sessionRegistry = new SessionRegistry(db);
@@ -252,6 +254,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
   });
   const resumeMetadataRefresher = new ResumeMetadataRefresher({ sessionRegistry, tmuxAdapter });
   const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
+  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus });
   const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
 
@@ -283,6 +286,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     discoveryCoordinator,
     discoveryRepo,
     claimService,
+    selfAttachService,
     rigLifecycleService,
     rigExpansionService,
     psProjectionService: new PsProjectionService({ db }),

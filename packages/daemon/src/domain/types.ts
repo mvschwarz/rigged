@@ -58,9 +58,11 @@ export interface Edge {
 export interface Binding {
   id: string;
   nodeId: string;
+  attachmentType?: "tmux" | "external_cli";
   tmuxSession: string | null;
   tmuxWindow: string | null;
   tmuxPane: string | null;
+  externalSessionName?: string | null;
   cmuxWorkspace: string | null;
   cmuxSurface: string | null;
   updatedAt: string;
@@ -230,7 +232,9 @@ export interface NodeInventoryEntry {
   rigName: string;
   logicalId: string;
   podId: string | null;
+  podNamespace?: string | null;
   canonicalSessionName: string | null;
+  attachmentType?: "tmux" | "external_cli" | null;
   nodeKind: "agent" | "infrastructure";
   runtime: string | null;
   sessionStatus: string | null;
@@ -257,6 +261,7 @@ export interface NodeInventoryEntry {
 export interface NodeDetailPeer {
   logicalId: string;
   canonicalSessionName: string | null;
+  attachmentType?: "tmux" | "external_cli" | null;
   runtime: string | null;
 }
 

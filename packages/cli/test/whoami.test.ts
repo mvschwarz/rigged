@@ -33,12 +33,13 @@ const WHOAMI_RESPONSE = {
   resolvedBy: "node_id",
   identity: {
     rigId: "rig-1", rigName: "my-rig", nodeId: "node-1", logicalId: "dev.impl",
-    podId: "dev", podLabel: "Development", memberId: "impl", memberLabel: "Implementer",
+    attachmentType: "tmux",
+    podId: "pod-dev-123", podNamespace: "dev", podLabel: "Development", memberId: "impl", memberLabel: "Implementer",
     sessionName: "dev-impl@my-rig", runtime: "claude-code", cwd: "/tmp",
     agentRef: "local:agents/impl", profile: "default",
     resolvedSpecName: "impl", resolvedSpecVersion: "1.0",
   },
-  peers: [{ logicalId: "dev.qa", sessionName: "dev-qa@my-rig", runtime: "codex", podId: "dev", memberId: "qa" }],
+  peers: [{ logicalId: "dev.qa", sessionName: "dev-qa@my-rig", runtime: "codex", podId: "pod-dev-123", podNamespace: "dev", memberId: "qa" }],
   edges: {
     outgoing: [{ kind: "delegates_to", to: { logicalId: "dev.qa", sessionName: "dev-qa@my-rig" } }],
     incoming: [],
@@ -257,7 +258,9 @@ describe("Whoami CLI", () => {
     const output = logs.join("\n");
     expect(output).toContain("Rig:");
     expect(output).toContain("my-rig");
+    expect(output).toContain("Pod:        dev / impl");
     expect(output).toContain("Logical ID:");
+    expect(output).toContain("Transport:");
     expect(output).toContain("dev.impl");
     expect(output).toContain("Pod:");
     expect(output).toContain("Session:");

@@ -9,8 +9,11 @@ import { snapshotsSchema } from "../src/db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "../src/db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
+import { discoverySchema } from "../src/db/migrations/012_discovery.js";
+import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
 import { podNamespaceSchema } from "../src/db/migrations/017_pod_namespace.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { TranscriptStore } from "../src/domain/transcript-store.js";
@@ -18,7 +21,7 @@ import { WhoamiService } from "../src/domain/whoami-service.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, agentspecRebootSchema, podNamespaceSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema, externalCliAttachmentSchema]);
   return db;
 }
 
@@ -41,8 +44,9 @@ describe("WhoamiService", () => {
 
   function seedRig() {
     const rig = rigRepo.createRig("my-rig");
-    const nodeA = rigRepo.addNode(rig.id, "dev.impl", { role: "worker", runtime: "claude-code", label: "Implementer" });
-    const nodeB = rigRepo.addNode(rig.id, "dev.qa", { role: "reviewer", runtime: "codex", label: "QA" });
+    db.prepare("INSERT INTO pods (id, rig_id, namespace, label) VALUES (?, ?, ?, ?)").run("pod-dev", rig.id, "dev", "Development");
+    const nodeA = rigRepo.addNode(rig.id, "dev.impl", { role: "worker", runtime: "claude-code", label: "Implementer", podId: "pod-dev" });
+    const nodeB = rigRepo.addNode(rig.id, "dev.qa", { role: "reviewer", runtime: "codex", label: "QA", podId: "pod-dev" });
     rigRepo.addEdge(rig.id, nodeA.id, nodeB.id, "delegates_to");
 
     const sessA = sessionRegistry.registerSession(nodeA.id, "dev-impl@my-rig");
@@ -65,6 +69,7 @@ describe("WhoamiService", () => {
     expect(result!.identity.logicalId).toBe("dev.impl");
     expect(result!.identity.memberId).toBe("impl");
     expect(result!.identity.memberLabel).toBe("Implementer");
+    expect(result!.identity.podNamespace).toBe("dev");
     expect(result!.identity.sessionName).toBe("dev-impl@my-rig");
     expect(result!.identity.runtime).toBe("claude-code");
     expect(result!.identity.rigName).toBe("my-rig");
@@ -97,6 +102,7 @@ describe("WhoamiService", () => {
     expect(result!.peers).toHaveLength(1);
     expect(result!.peers[0]!.logicalId).toBe("dev.qa");
     expect(result!.peers[0]!.sessionName).toBe("dev-qa@my-rig");
+    expect(result!.peers[0]!.podNamespace).toBe("dev");
     // Should NOT include self
     expect(result!.peers.find((p) => p.logicalId === "dev.impl")).toBeUndefined();
   });
@@ -118,5 +124,21 @@ describe("WhoamiService", () => {
     sessionRegistry.registerSession(node2.id, "dev-impl@shared");
 
     expect(() => svc.resolve({ sessionName: "dev-impl@shared" })).toThrow(/ambiguous/i);
+  });
+
+  it("resolve surfaces external_cli attachment type and external session name", () => {
+    const rig = rigRepo.createRig("rigged-buildout");
+    const node = rigRepo.addNode(rig.id, "orch1.lead", { role: "orchestrator", runtime: "claude-code" });
+    sessionRegistry.registerClaimedSession(node.id, "orch1-lead@rigged-buildout");
+    sessionRegistry.updateBinding(node.id, {
+      attachmentType: "external_cli",
+      externalSessionName: "orch1-lead@rigged-buildout",
+    });
+
+    const result = svc.resolve({ nodeId: node.id });
+
+    expect(result).not.toBeNull();
+    expect(result!.identity.attachmentType).toBe("external_cli");
+    expect(result!.identity.sessionName).toBe("orch1-lead@rigged-buildout");
   });
 });

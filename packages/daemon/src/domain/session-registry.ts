@@ -6,9 +6,11 @@ import type { Session, Binding } from "./types.js";
 import { validateSessionName } from "./session-name.js";
 
 interface BindingFields {
+  attachmentType?: "tmux" | "external_cli";
   tmuxSession?: string;
   tmuxWindow?: string;
   tmuxPane?: string;
+  externalSessionName?: string;
   cmuxWorkspace?: string;
   cmuxSurface?: string;
 }
@@ -126,18 +128,22 @@ export class SessionRegistry {
         this.db
           .prepare(
             `UPDATE bindings SET
+              attachment_type = ?,
               tmux_session = ?,
               tmux_window = ?,
               tmux_pane = ?,
+              external_session_name = ?,
               cmux_workspace = ?,
               cmux_surface = ?,
               updated_at = datetime('now')
             WHERE node_id = ?`
           )
           .run(
+            fields.attachmentType ?? existing.attachment_type ?? "tmux",
             fields.tmuxSession ?? existing.tmux_session,
             fields.tmuxWindow ?? existing.tmux_window,
             fields.tmuxPane ?? existing.tmux_pane,
+            fields.externalSessionName ?? existing.external_session_name,
             fields.cmuxWorkspace ?? existing.cmux_workspace,
             fields.cmuxSurface ?? existing.cmux_surface,
             nodeId
@@ -146,15 +152,17 @@ export class SessionRegistry {
         const id = ulid();
         this.db
           .prepare(
-            `INSERT INTO bindings (id, node_id, tmux_session, tmux_window, tmux_pane, cmux_workspace, cmux_surface)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO bindings (id, node_id, attachment_type, tmux_session, tmux_window, tmux_pane, external_session_name, cmux_workspace, cmux_surface)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             id,
             nodeId,
+            fields.attachmentType ?? "tmux",
             fields.tmuxSession ?? null,
             fields.tmuxWindow ?? null,
             fields.tmuxPane ?? null,
+            fields.externalSessionName ?? null,
             fields.cmuxWorkspace ?? null,
             fields.cmuxSurface ?? null
           );
@@ -191,9 +199,11 @@ export class SessionRegistry {
     return {
       id: row.id,
       nodeId: row.node_id,
+      attachmentType: (row.attachment_type as Binding["attachmentType"]) ?? "tmux",
       tmuxSession: row.tmux_session,
       tmuxWindow: row.tmux_window,
       tmuxPane: row.tmux_pane,
+      externalSessionName: row.external_session_name ?? null,
       cmuxWorkspace: row.cmux_workspace,
       cmuxSurface: row.cmux_surface,
       updatedAt: row.updated_at,
@@ -221,9 +231,11 @@ interface SessionRow {
 interface BindingRow {
   id: string;
   node_id: string;
+  attachment_type: string | null;
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  external_session_name: string | null;
   cmux_workspace: string | null;
   cmux_surface: string | null;
   updated_at: string;

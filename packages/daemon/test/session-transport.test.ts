@@ -9,7 +9,10 @@ import { snapshotsSchema } from "../src/db/migrations/004_snapshots.js";
 import { checkpointsSchema } from "../src/db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
+import { discoverySchema } from "../src/db/migrations/012_discovery.js";
+import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { SessionTransport } from "../src/domain/session-transport.js";
@@ -17,7 +20,7 @@ import type { TmuxAdapter, TmuxResult } from "../src/adapters/tmux.js";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, agentspecRebootSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, externalCliAttachmentSchema]);
   return db;
 }
 
@@ -88,6 +91,20 @@ describe("SessionTransport", () => {
     const session = sessionRegistry.registerSession(node.id, "r00-legacy-worker-a");
     sessionRegistry.updateStatus(session.id, "running");
     sessionRegistry.updateBinding(node.id, { tmuxSession: "r00-legacy-worker-a" });
+    return { rig, node, session };
+  }
+
+  function seedExternalCliRig() {
+    const rig = rigRepo.createRig("rigged-buildout");
+    const node = rigRepo.addNode(rig.id, "orch1.lead", {
+      role: "orchestrator",
+      runtime: "claude-code",
+    });
+    const session = sessionRegistry.registerClaimedSession(node.id, "orch1-lead@rigged-buildout");
+    sessionRegistry.updateBinding(node.id, {
+      attachmentType: "external_cli",
+      externalSessionName: "orch1-lead@rigged-buildout",
+    });
     return { rig, node, session };
   }
 
@@ -254,6 +271,19 @@ describe("SessionTransport", () => {
     expect(result.error).toContain("tmux");
   });
 
+  it("send to external_cli target fails honestly before tmux transport", async () => {
+    seedExternalCliRig();
+    const hasSessionSpy = vi.fn(async () => true);
+    const transport = createTransport(mockTmux({ hasSession: hasSessionSpy }));
+
+    const result = await transport.send("orch1-lead@rigged-buildout", "hello");
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("transport_unavailable");
+    expect(result.error).toContain("external CLI");
+    expect(hasSessionSpy).not.toHaveBeenCalled();
+  });
+
   // Test 10: capture returns pane content
   it("capture returns pane content for existing session", async () => {
     seedCanonicalRig();
@@ -265,6 +295,18 @@ describe("SessionTransport", () => {
     const result = await transport.capture("dev-impl@my-rig");
     expect(result.ok).toBe(true);
     expect(result.content).toContain("line1");
+  });
+
+  it("capture for external_cli target fails honestly before tmux transport", async () => {
+    seedExternalCliRig();
+    const hasSessionSpy = vi.fn(async () => true);
+    const transport = createTransport(mockTmux({ hasSession: hasSessionSpy }));
+
+    const result = await transport.capture("orch1-lead@rigged-buildout");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("external CLI");
+    expect(hasSessionSpy).not.toHaveBeenCalled();
   });
 
   // Test 11: resolveSessions by rig returns running sessions

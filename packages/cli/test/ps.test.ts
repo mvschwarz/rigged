@@ -143,13 +143,13 @@ describe("Ps CLI", () => {
     ];
     nodesData["rig-1"] = [
       {
-        rigId: "rig-1", rigName: "test-rig", logicalId: "dev.impl", podId: "pod-1",
+        rigId: "rig-1", rigName: "test-rig", logicalId: "dev.impl", podId: "pod-1", podNamespace: "dev",
         canonicalSessionName: "dev-impl@test-rig", nodeKind: "agent", runtime: "claude-code",
         sessionStatus: "running", startupStatus: "ready", restoreOutcome: "n-a",
         tmuxAttachCommand: "tmux attach -t dev-impl@test-rig", resumeCommand: null, latestError: null,
       },
       {
-        rigId: "rig-1", rigName: "test-rig", logicalId: "infra.server", podId: "pod-1",
+        rigId: "rig-1", rigName: "test-rig", logicalId: "infra.server", podId: "pod-1", podNamespace: "dev",
         canonicalSessionName: "infra-server@test-rig", nodeKind: "infrastructure", runtime: "terminal",
         sessionStatus: "running", startupStatus: "ready", restoreOutcome: "n-a",
         tmuxAttachCommand: "tmux attach -t infra-server@test-rig", resumeCommand: null, latestError: null,
@@ -177,7 +177,7 @@ describe("Ps CLI", () => {
     ];
     nodesData["rig-old"] = [
       {
-        rigId: "rig-old", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-1",
+        rigId: "rig-old", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-1", podNamespace: "dev",
         canonicalSessionName: "dev-impl@demo-rig", nodeKind: "agent", runtime: "claude-code",
         sessionStatus: "exited", startupStatus: "failed", restoreOutcome: "failed",
         tmuxAttachCommand: null, resumeCommand: null, latestError: "old restore failed",
@@ -185,7 +185,7 @@ describe("Ps CLI", () => {
     ];
     nodesData["rig-new"] = [
       {
-        rigId: "rig-new", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-2",
+        rigId: "rig-new", rigName: "demo-rig", logicalId: "dev.impl", podId: "pod-2", podNamespace: "dev",
         canonicalSessionName: "dev-impl@demo-rig", nodeKind: "agent", runtime: "claude-code",
         sessionStatus: "running", startupStatus: "ready", restoreOutcome: "n-a",
         tmuxAttachCommand: null, resumeCommand: null, latestError: null,
@@ -205,7 +205,7 @@ describe("Ps CLI", () => {
     ];
     nodesData["rig-1"] = [
       {
-        rigId: "rig-1", rigName: "test-rig", logicalId: "dev.impl", podId: "pod-1",
+        rigId: "rig-1", rigName: "test-rig", logicalId: "dev.impl", podId: "pod-1", podNamespace: "dev",
         canonicalSessionName: "dev-impl@test-rig", nodeKind: "agent", runtime: "claude-code",
         sessionStatus: "running", startupStatus: "ready", restoreOutcome: "resumed",
         tmuxAttachCommand: null, resumeCommand: null, latestError: null,
@@ -218,6 +218,7 @@ describe("Ps CLI", () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0].restoreOutcome).toBe("resumed");
     expect(parsed[0].nodeKind).toBe("agent");
+    expect(parsed[0].podNamespace).toBe("dev");
   });
 
   it("ps --nodes includes infrastructure nodes", async () => {
@@ -226,7 +227,7 @@ describe("Ps CLI", () => {
     ];
     nodesData["rig-1"] = [
       {
-        rigId: "rig-1", rigName: "test-rig", logicalId: "infra.daemon", podId: "pod-1",
+        rigId: "rig-1", rigName: "test-rig", logicalId: "infra.daemon", podId: "pod-1", podNamespace: "infra",
         canonicalSessionName: "infra-daemon@test-rig", nodeKind: "infrastructure", runtime: "terminal",
         sessionStatus: "running", startupStatus: "ready", restoreOutcome: "n-a",
         tmuxAttachCommand: null, resumeCommand: null, latestError: null,

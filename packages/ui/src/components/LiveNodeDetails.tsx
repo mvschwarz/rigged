@@ -73,7 +73,7 @@ export function LiveNodeDetails({ rigId, logicalId }: LiveNodeDetailsProps) {
         <WorkflowHeader
           eyebrow="Live Node Details"
           title={data?.canonicalSessionName ?? logicalId}
-          description={`${data?.rigName ?? rigId} / ${inferPodName(logicalId) ?? displayPodName(data?.podId ?? null)} / ${logicalId}`}
+          description={`${data?.rigName ?? rigId} / ${data?.podNamespace ?? inferPodName(logicalId) ?? displayPodName(data?.podId ?? null)} / ${logicalId}`}
         />
 
         {isLoading && <div className="font-mono text-[10px] text-stone-400">Loading...</div>}

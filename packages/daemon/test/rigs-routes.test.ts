@@ -146,6 +146,130 @@ describe("Rig CRUD routes", () => {
     expect(res.status).toBe(400);
   });
 
+  it("POST /api/rigs/:id/attach-self binds an external_cli agent to an existing node", async () => {
+    const rig = repo.createRig("rigged-buildout");
+    const node = repo.addNode(rig.id, "orch1.lead", { runtime: "claude-code" });
+
+    const res = await app.request(`/api/rigs/${rig.id}/attach-self`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logicalId: "orch1.lead",
+        displayName: "orch1-lead@rigged-buildout",
+        cwd: "/Users/mschwarz/code/rigged",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.nodeId).toBe(node.id);
+    expect(body.attachmentType).toBe("external_cli");
+    expect(body.env.OPENRIG_NODE_ID).toBe(node.id);
+    expect(body.env.OPENRIG_SESSION_NAME).toBe("orch1-lead@rigged-buildout");
+  });
+
+  it("POST /api/rigs/:id/attach-self can self-attach a tmux-backed shell without discovery", async () => {
+    const rig = repo.createRig("rigged-buildout");
+    const node = repo.addNode(rig.id, "dev1.impl2", { runtime: "claude-code" });
+
+    const res = await app.request(`/api/rigs/${rig.id}/attach-self`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logicalId: "dev1.impl2",
+        attachmentType: "tmux",
+        tmuxSession: "dev1-impl2@rigged-buildout",
+        tmuxWindow: "@12",
+        tmuxPane: "%34",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.nodeId).toBe(node.id);
+    expect(body.attachmentType).toBe("tmux");
+    expect(body.env.OPENRIG_NODE_ID).toBe(node.id);
+    expect(body.env.OPENRIG_SESSION_NAME).toBe("dev1-impl2@rigged-buildout");
+
+    const rigAfter = repo.getRig(rig.id);
+    const attached = rigAfter?.nodes.find((candidate) => candidate.logicalId === "dev1.impl2");
+    expect(attached?.binding?.attachmentType).toBe("tmux");
+    expect(attached?.binding?.tmuxSession).toBe("dev1-impl2@rigged-buildout");
+    expect(attached?.binding?.tmuxWindow).toBe("@12");
+    expect(attached?.binding?.tmuxPane).toBe("%34");
+    expect(attached?.binding?.externalSessionName).toBeNull();
+  });
+
+  it("POST /api/rigs/:id/attach-self creates a new pod member when podNamespace + memberName are provided", async () => {
+    const rig = repo.createRig("rigged-buildout");
+    db.prepare("INSERT INTO pods (id, rig_id, namespace, label) VALUES (?, ?, ?, ?)").run("pod-orch1", rig.id, "orch1", "Orchestrator");
+
+    const res = await app.request(`/api/rigs/${rig.id}/attach-self`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        podNamespace: "orch1",
+        memberName: "lead",
+        runtime: "claude-code",
+        displayName: "orch1-lead@rigged-buildout",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.logicalId).toBe("orch1.lead");
+
+    const rigAfter = repo.getRig(rig.id);
+    const node = rigAfter?.nodes.find((candidate) => candidate.logicalId === "orch1.lead");
+    expect(node).toBeDefined();
+    expect(node?.binding?.attachmentType).toBe("external_cli");
+  });
+
+  it("POST /api/rigs/:id/attach-self rejects both logicalId and pod mode together", async () => {
+    const rig = repo.createRig("rigged-buildout");
+
+    const res = await app.request(`/api/rigs/${rig.id}/attach-self`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logicalId: "orch1.lead",
+        podNamespace: "orch1",
+        memberName: "lead",
+        runtime: "claude-code",
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("either logicalId");
+  });
+
+  it("POST /api/rigs/:id/attach-self returns 409 when the target node is already bound", async () => {
+    const rig = repo.createRig("rigged-buildout");
+    const node = repo.addNode(rig.id, "orch1.lead", { runtime: "claude-code" });
+    sessionRegistry.updateBinding(node.id, {
+      attachmentType: "tmux",
+      tmuxSession: "orch1-lead@rigged-buildout",
+    });
+    sessionRegistry.registerClaimedSession(node.id, "orch1-lead@rigged-buildout");
+
+    const res = await app.request(`/api/rigs/${rig.id}/attach-self`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logicalId: "orch1.lead",
+        displayName: "orch1-lead@rigged-buildout",
+      }),
+    });
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("already_bound");
+  });
+
   // -- T21: Graph projection endpoint --
 
   it("GET /api/rigs/:id/graph -> RF JSON with correct node/edge counts", async () => {

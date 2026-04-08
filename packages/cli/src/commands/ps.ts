@@ -19,6 +19,7 @@ interface NodeEntry {
   rigName: string;
   logicalId: string;
   podId: string | null;
+  podNamespace?: string | null;
   canonicalSessionName: string | null;
   nodeKind: "agent" | "infrastructure";
   runtime: string | null;
@@ -143,7 +144,7 @@ async function handleNodes(client: DaemonClient, json: boolean): Promise<void> {
   console.log(header);
   for (const n of allNodes) {
     const parts = n.logicalId.split(".");
-    const pod = parts.length > 1 ? parts[0]! : "—";
+    const pod = n.podNamespace ?? (parts.length > 1 ? parts[0]! : "—");
     const member = parts.length > 1 ? parts.slice(1).join(".") : n.logicalId;
     const rig = `${n.rigName}#${n.rigId}`;
     console.log(padNodeRow(

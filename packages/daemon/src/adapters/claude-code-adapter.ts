@@ -91,7 +91,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
   async deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult> {
     // Best-effort: provision context collector for managed Claude sessions
-    try { this.provisionContextCollector(binding); } catch { /* best-effort */ }
+    try { this.provisionContextCollector(binding); } catch (err) {
+      // Log but don't fail — collector provisioning is best-effort
+      console.error(`[openrig] context collector provisioning warning: ${(err as Error).message}`);
+    }
 
     let delivered = 0;
     const failed: Array<{ path: string; error: string }> = [];

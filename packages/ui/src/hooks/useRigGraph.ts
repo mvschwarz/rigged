@@ -16,5 +16,6 @@ export function useRigGraph(rigId: string) {
     queryKey: ["rig", rigId, "graph"],
     queryFn: () => fetchGraph(rigId),
     enabled: !!rigId,
+    refetchInterval: 30_000, // Refetch every 30s for context usage updates
   });
 }

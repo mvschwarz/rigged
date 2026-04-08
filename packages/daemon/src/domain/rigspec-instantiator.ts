@@ -1016,7 +1016,7 @@ export class PodRigInstantiator {
       cmuxWorkspace: null,
       cmuxSurface: null,
       updatedAt: "",
-      cwd: input.member.cwd,
+      cwd: input.member.cwd ? (nodePath.isAbsolute(input.member.cwd) ? input.member.cwd : nodePath.resolve(input.rigRoot, input.member.cwd)) : input.rigRoot,
     };
 
     const startupResult = await this.deps.startupOrchestrator.startNode({
@@ -1098,7 +1098,7 @@ export class PodRigInstantiator {
       cmuxWorkspace: null,
       cmuxSurface: null,
       updatedAt: "",
-      cwd: input.member.cwd,
+      cwd: input.member.cwd ? (nodePath.isAbsolute(input.member.cwd) ? input.member.cwd : nodePath.resolve(input.rigRoot, input.member.cwd)) : input.rigRoot,
     };
     const adapter = this.deps.adapters["terminal"];
     if (!adapter) {
@@ -1111,7 +1111,7 @@ export class PodRigInstantiator {
       conflicts: [],
       noOps: [],
       runtime: "terminal",
-      cwd: input.member.cwd,
+      cwd: input.member.cwd ? (nodePath.isAbsolute(input.member.cwd) ? input.member.cwd : nodePath.resolve(input.rigRoot, input.member.cwd)) : input.rigRoot,
     };
 
     const startupResult = await this.deps.startupOrchestrator.startNode({

@@ -80,5 +80,6 @@ export function useNodeDetail(rigId: string | null, logicalId: string | null) {
     queryKey: ["rig", rigId, "nodes", logicalId],
     queryFn: () => fetchNodeDetail(rigId!, logicalId!),
     enabled: !!rigId && !!logicalId,
+    refetchInterval: 30_000, // Refetch every 30s for context usage updates
   });
 }

@@ -3,6 +3,7 @@ import { DaemonClient } from "../client.js";
 import { getDaemonStatus, getDaemonUrl } from "../daemon-lifecycle.js";
 import { realDeps } from "./daemon.js";
 import type { StatusDeps } from "./status.js";
+import { resolveIdentitySource } from "./whoami.js";
 
 interface AskRigInfo {
   name: string;
@@ -24,6 +25,10 @@ interface AskResult {
   guidance?: string;
 }
 
+interface AskCommandDeps extends StatusDeps {
+  identityResolver?: typeof resolveIdentitySource;
+}
+
 export function askCommand(depsOverride?: StatusDeps): Command {
   const cmd = new Command("ask")
     .description("Search rig transcript history with a natural language question")
@@ -40,7 +45,7 @@ Exit codes:
   1  Daemon not running
   2  Failed to fetch data from daemon`);
 
-  const getDeps = (): StatusDeps => depsOverride ?? {
+  const getDeps = (): AskCommandDeps => (depsOverride as AskCommandDeps | undefined) ?? {
     lifecycleDeps: realDeps(),
     clientFactory: (url: string) => new DaemonClient(url),
   };
@@ -56,11 +61,12 @@ Exit codes:
     }
 
     const client = deps.clientFactory(getDaemonUrl(status));
+    const identity = (deps.identityResolver ?? resolveIdentitySource)({});
     const res = await client.post<AskResult>("/api/ask", {
       rig,
       question,
-      nodeId: process.env.OPENRIG_NODE_ID,
-      sessionName: process.env.OPENRIG_SESSION_NAME,
+      nodeId: identity?.nodeId,
+      sessionName: identity?.sessionName,
     });
 
     if (res.status >= 400) {

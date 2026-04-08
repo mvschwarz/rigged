@@ -18,6 +18,8 @@ interface BindingRow {
   tmux_session: string | null;
 }
 
+const CAPTURE_WARMUP_MS = 150;
+
 function resolveSessionToRig(
   db: Database.Database,
   rigRepo: RigRepository,
@@ -83,6 +85,16 @@ async function tryStartCaptureForSession(
   return result.started;
 }
 
+async function warmTranscriptTail(
+  transcriptStore: TranscriptStore,
+  rigName: string,
+  sessionName: string,
+  lines: number,
+): Promise<string | null> {
+  await new Promise((resolve) => setTimeout(resolve, CAPTURE_WARMUP_MS));
+  return transcriptStore.readTail(rigName, sessionName, lines);
+}
+
 export function transcriptRoutes(): Hono {
   const router = new Hono();
 
@@ -117,6 +129,12 @@ export function transcriptRoutes(): Hono {
         resolution.nodeId,
         sessionName,
       );
+      if (startedNow) {
+        const warmedContent = await warmTranscriptTail(transcriptStore, resolution.rigName, sessionName, lines);
+        if (warmedContent !== null && warmedContent !== "") {
+          return c.json({ session: sessionName, lines, content: warmedContent });
+        }
+      }
       return c.json(
         {
           error: startedNow

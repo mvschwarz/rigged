@@ -214,4 +214,31 @@ describe("Ask CLI", () => {
       else process.env.OPENRIG_SESSION_NAME = prevSessionName;
     }
   });
+
+  it("falls back to tmux-derived identity when OPENRIG env is absent", async () => {
+    const deps = runningDeps(port) as StatusDeps & {
+      identityResolver: () => { sessionName: string };
+    };
+    deps.identityResolver = () => ({ sessionName: "dev-impl@my-rig" });
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(askCommand(deps));
+
+    const prevNodeId = process.env.OPENRIG_NODE_ID;
+    const prevSessionName = process.env.OPENRIG_SESSION_NAME;
+    delete process.env.OPENRIG_NODE_ID;
+    delete process.env.OPENRIG_SESSION_NAME;
+    try {
+      await captureLogs(async () => {
+        await prog.parseAsync(["node", "rig", "ask", "my-rig", "who are my peers?"]);
+      });
+      expect(lastBody?.nodeId).toBeUndefined();
+      expect(lastBody?.sessionName).toBe("dev-impl@my-rig");
+    } finally {
+      if (prevNodeId === undefined) delete process.env.OPENRIG_NODE_ID;
+      else process.env.OPENRIG_NODE_ID = prevNodeId;
+      if (prevSessionName === undefined) delete process.env.OPENRIG_SESSION_NAME;
+      else process.env.OPENRIG_SESSION_NAME = prevSessionName;
+    }
+  });
 });

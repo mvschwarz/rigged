@@ -38,6 +38,33 @@ function isPromptRedrawDuplicate(line: string, nextLine?: string): boolean {
   return withoutPrompt.length > 0 && nextLine?.trim() === withoutPrompt;
 }
 
+function isUiChromeLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (trimmed === "? for shortcuts" || trimmed === "esc to interrupt") return true;
+  return /[─━]{8,}/.test(trimmed);
+}
+
+function isSpinnerOnlyLine(line: string): boolean {
+  return /^[\s✢✳✶✻✽·⏺❯]+$/.test(line);
+}
+
+function normalizeTuiFragment(line: string): string {
+  return line
+    .replace(/[✢✳✶✻✽·⏺❯]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelyTuiFragment(line: string): boolean {
+  const normalized = normalizeTuiFragment(line);
+  if (!normalized) return false;
+  if (!(/[✢✳✶✻✽·⏺❯]/.test(line) || /\s{2,}/.test(line))) return false;
+  if (/[0-9@:/[\]{}()'"`=.,!?_-]/.test(normalized)) return false;
+  if (/[^A-Za-z… ]/.test(normalized)) return false;
+  return normalized.length <= 12;
+}
+
 const TAIL_CHUNK_SIZE = 16 * 1024;
 
 /**
@@ -206,6 +233,9 @@ export class TranscriptStore {
       .filter((line) => line.trim() !== "")
       .filter((line) => !isBareShellPrompt(line));
     return filtered
+      .filter((line) => !isUiChromeLine(line))
+      .filter((line) => !isSpinnerOnlyLine(line))
+      .filter((line) => !isLikelyTuiFragment(line))
       .filter((line, index) => !isPromptRedrawDuplicate(line, filtered[index + 1]));
   }
 

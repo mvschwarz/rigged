@@ -192,6 +192,56 @@ describe("TranscriptStore", () => {
 
       expect(result).toBe("echo DEV_ALPHA_READY\nDEV_ALPHA_READY\n");
     });
+
+    it("drops TUI chrome and redraw fragments from transcript tails", () => {
+      const store = new TranscriptStore({ transcriptsRoot: tmpDir });
+      store.ensureTranscriptDir("my-rig");
+      const filePath = store.getTranscriptPath("my-rig", "dev@my-rig");
+      writeFileSync(
+        filePath,
+        [
+          "❯",
+          "  ? for shortcuts",
+          "  Round 2 drill from dev1-impl2@rigged-buildout",
+          "❯ Round 2 drill from dev1-impl2@rigged-buildout",
+          "· Quantumizing…",
+          "───────────────────────────────────────────────────────────── rev1-r1@rigged-buildout ──",
+          "  esc to interrupt",
+          "✢",
+          "✳",
+          "✶",
+          "✻",
+          "✽",
+          "  Q",
+          "✻  u",
+          "    a",
+          "  Q  n",
+          "✶  u  t",
+          "    a  u",
+          "✳    n  m",
+          "      t  i",
+          "✢      u  z",
+          "        m  i",
+          "·        i  n",
+          "          z  g",
+          "           i  …",
+          "⏺ Acknowledged. I see impl2's round 2 drill is running — their capture showed them",
+          "  executing rig whoami --json when I captured their pane.",
+        ].join("\n") + "\n",
+      );
+
+      const result = store.readTail("my-rig", "dev@my-rig", 20);
+
+      expect(result).toContain("Round 2 drill from dev1-impl2@rigged-buildout");
+      expect(result).toContain("Quantumizing…");
+      expect(result).toContain("Acknowledged. I see impl2's round 2 drill is running");
+      expect(result).not.toContain("? for shortcuts");
+      expect(result).not.toContain("esc to interrupt");
+      expect(result).not.toContain("rev1-r1@rigged-buildout ──");
+      expect(result).not.toContain("\n✢\n");
+      expect(result).not.toContain("Q  n");
+      expect(result).not.toContain("u  z");
+    });
   });
 
   describe("grep", () => {

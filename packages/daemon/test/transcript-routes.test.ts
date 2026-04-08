@@ -146,6 +146,34 @@ describe("transcript routes", () => {
     );
   });
 
+  it("GET /tail returns warmed content after lazy-start capture when output appears quickly", async () => {
+    const rig = rigRepo.createRig("my-rig");
+    const node = rigRepo.addNode(rig.id, "dev-impl", { role: "worker", runtime: "claude-code" });
+    sessionRegistry.registerSession(node.id, "dev-impl@my-rig");
+    sessionRegistry.updateBinding(node.id, { tmuxSession: "dev-impl@my-rig" });
+
+    const store = new TranscriptStore({ transcriptsRoot: tmpDir, enabled: true });
+    const readTailSpy = vi.spyOn(store, "readTail")
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce("READY\n");
+    vi.spyOn(store, "ensureTranscriptDir").mockReturnValue(true);
+    const startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
+    const app = createApp({
+      db,
+      rigRepo,
+      sessionRegistry,
+      transcriptStore: store,
+      tmuxAdapter: { startPipePane: startPipePaneSpy } as unknown as TmuxAdapter,
+    });
+
+    const res = await app.request("/api/transcripts/dev-impl@my-rig/tail");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.content).toBe("READY\n");
+    expect(startPipePaneSpy).toHaveBeenCalledOnce();
+    expect(readTailSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("GET /tail with non-positive lines normalizes to default", async () => {
     const { store } = seedRigWithTranscript("line1\nline2\nline3\n");
     const app = createApp({ db, rigRepo, sessionRegistry, transcriptStore: store });

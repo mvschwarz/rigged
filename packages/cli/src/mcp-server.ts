@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { DaemonClient, DaemonResponse } from "./client.js";
+import { CLI_VERSION } from "./version.js";
 
 type TextResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -48,7 +49,7 @@ function mapResult(
 export function createMcpServer(client: DaemonClient): McpServer {
   const server = new McpServer({
     name: "openrig",
-    version: "0.1.0",
+    version: CLI_VERSION,
   });
 
   // 1. rig_up — bootstrap/bundle install

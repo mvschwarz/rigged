@@ -3,7 +3,8 @@ import { mkdtempSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isDirectRun } from "../src/index.js";
+import { createProgram, isDirectRun } from "../src/index.js";
+import { CLI_VERSION } from "../src/version.js";
 
 describe("CLI entrypoint direct-run detection", () => {
   it("treats a symlinked bin path as direct execution", () => {
@@ -13,5 +14,10 @@ describe("CLI entrypoint direct-run detection", () => {
     symlinkSync(actualPath, symlinkPath);
 
     expect(isDirectRun(symlinkPath, pathToFileURL(actualPath).href)).toBe(true);
+  });
+
+  it("reports the package version through commander", () => {
+    const program = createProgram();
+    expect(program.version()).toBe(CLI_VERSION);
   });
 });

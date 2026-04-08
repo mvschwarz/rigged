@@ -41,6 +41,7 @@ import { launchCommand } from "./commands/launch.js";
 import { removeCommand } from "./commands/remove.js";
 import { shrinkCommand } from "./commands/shrink.js";
 import type { LifecycleDeps } from "./daemon-lifecycle.js";
+import { CLI_VERSION } from "./version.js";
 
 export interface ProgramDeps {
   daemonDeps?: LifecycleDeps;
@@ -87,7 +88,7 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program
     .name("rig")
     .description("CLI for the OpenRig local control plane")
-    .version("0.1.0");
+    .version(CLI_VERSION);
 
   program.addCommand(daemonCommand(depsOverride?.daemonDeps));
   program.addCommand(statusCommand(depsOverride?.statusDeps));

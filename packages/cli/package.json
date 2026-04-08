@@ -26,7 +26,7 @@
     "url": "https://esoteric.run"
   },
   "bin": {
-    "rig": "dist/index.js"
+    "rig": "dist/bin-wrapper.js"
   },
   "files": [
     "dist",

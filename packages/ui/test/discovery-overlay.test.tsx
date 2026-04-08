@@ -229,21 +229,11 @@ describe("DiscoveryOverlay", () => {
     });
   });
 
-  it("adopt creates a new managed node when logical id is blank", async () => {
-    let claimDone = false;
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (init?.method === "POST" && typeof url === "string" && url.includes("/claim")) {
-        claimDone = true;
-        return { ok: true, json: async () => ({ ok: true, nodeId: "n-1", sessionId: "s-1" }) };
-      }
+  // Blank logicalId no longer triggers claim — bind requires a node target
+  it("adopt confirm is disabled when logical id is blank", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
       if (typeof url === "string" && url.includes("/discovery")) {
-        const sessions = claimDone
-          ? [{ ...MOCK_SESSIONS[0]!, status: "claimed", claimedNodeId: "n-1" }]
-          : [MOCK_SESSIONS[0]!];
-        return {
-          ok: true,
-          json: async () => filterSessionsForQuery(url, sessions),
-        };
+        return { ok: true, json: async () => filterSessionsForQuery(url, MOCK_SESSIONS) };
       }
       if (typeof url === "string" && url.includes("/api/rigs/summary")) {
         return { ok: true, json: async () => [{ id: "rig-1", name: "r01-test", nodeCount: 3, latestSnapshotAt: null, latestSnapshotId: null }] };
@@ -253,21 +243,16 @@ describe("DiscoveryOverlay", () => {
 
     render(createTestRouter({ component: DiscoveryOverlay, path: "/discovery", initialPath: "/discovery" }));
 
-    // Wait for sessions to render
     await waitFor(() => expect(screen.getByTestId("adopt-btn")).toBeTruthy());
 
     act(() => { fireEvent.click(screen.getByTestId("adopt-btn")); });
     await waitFor(() => expect(screen.getByTestId("adopt-dialog")).toBeTruthy());
     act(() => { fireEvent.change(screen.getByTestId("adopt-rig-input"), { target: { value: "rig-1" } }); });
+    // Do NOT fill logical ID
     act(() => { fireEvent.click(screen.getByTestId("adopt-confirm")); });
 
-    await waitFor(() => {
-      expect(screen.queryByTestId("adopt-dialog")).toBeNull();
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId("discovery-empty")).toBeTruthy();
-    });
+    // Dialog should remain open — bind requires a node target
+    expect(screen.getByTestId("adopt-dialog")).toBeTruthy();
   });
 
   it("adopt invalidates rig graph after success", async () => {

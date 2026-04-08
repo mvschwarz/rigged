@@ -18,12 +18,6 @@ interface ClaimServiceDeps {
   tmuxAdapter?: TmuxAdapter;
 }
 
-interface ClaimOptions {
-  discoveredId: string;
-  rigId: string;
-  logicalId?: string;
-}
-
 interface BindOptions {
   discoveredId: string;
   rigId: string;
@@ -89,99 +83,6 @@ export class ClaimService {
     const hint = `--- OpenRig: You have been adopted into rig "${meta.rigName}" as ${meta.logicalId}. Run: rig whoami --json ---`;
     await this.tmuxAdapter.sendText(tmuxSession, hint);
     await this.tmuxAdapter.sendKeys(tmuxSession, ["C-m"]);
-  }
-
-  async claim(opts: ClaimOptions): Promise<ClaimResult> {
-    // Validate discovery record
-    const discovered = this.discoveryRepo.getDiscoveredSession(opts.discoveredId);
-    if (!discovered) {
-      return { ok: false, code: "not_found", error: "Discovery record not found" };
-    }
-    if (discovered.status !== "active") {
-      return { ok: false, code: "not_active", error: `Discovery record is ${discovered.status}, not active` };
-    }
-
-    // Validate rig exists
-    const rig = this.rigRepo.getRig(opts.rigId);
-    if (!rig) {
-      return { ok: false, code: "rig_not_found", error: "Target rig not found" };
-    }
-
-    // Derive logical ID
-    const logicalId = opts.logicalId ?? discovered.tmuxSession;
-
-    // Check for duplicate logical_id in the rig
-    if (rig.nodes.some((n) => n.logicalId === logicalId)) {
-      return { ok: false, code: "duplicate_logical_id", error: `Logical ID '${logicalId}' already exists in rig` };
-    }
-
-    // Atomic transaction: node + binding + session + discovery claim + event
-    const claimTx = this.db.transaction(() => {
-      // Create node with runtime from discovery hint
-      const runtime = discovered.runtimeHint === "unknown" || discovered.runtimeHint === "terminal"
-        ? undefined
-        : discovered.runtimeHint;
-      const node = this.rigRepo.addNode(opts.rigId, logicalId, {
-        runtime,
-        cwd: discovered.cwd ?? undefined,
-      });
-
-      // Create binding pointing to existing tmux session/pane
-      this.sessionRegistry.updateBinding(node.id, {
-        tmuxSession: discovered.tmuxSession,
-        tmuxWindow: discovered.tmuxWindow ?? undefined,
-        tmuxPane: discovered.tmuxPane ?? undefined,
-      });
-
-      // Create session with origin='claimed'
-      const session = this.sessionRegistry.registerClaimedSession(node.id, discovered.tmuxSession);
-
-      // Mark discovery record as claimed
-      this.discoveryRepo.markClaimed(discovered.id, node.id);
-
-      // Emit event (persisted within same transaction context)
-      this.eventBus.persistWithinTransaction({
-        type: "node.claimed",
-        rigId: opts.rigId,
-        nodeId: node.id,
-        logicalId,
-        discoveredId: discovered.id,
-      });
-
-      return { nodeId: node.id, sessionId: session.id };
-    });
-
-    try {
-      const { nodeId, sessionId } = claimTx();
-      // Notify in-memory subscribers after transaction commits
-      const event = this.db.prepare("SELECT * FROM events ORDER BY seq DESC LIMIT 1").get() as { seq: number; type: string; rig_id: string; node_id: string; payload: string; created_at: string };
-      if (event) {
-        this.eventBus.notifySubscribers({
-          type: "node.claimed",
-          rigId: opts.rigId,
-          nodeId,
-          logicalId,
-          discoveredId: discovered.id,
-          seq: event.seq,
-          createdAt: event.created_at,
-        });
-      }
-      // Best-effort: set OpenRig-owned tmux metadata on the adopted session
-      try {
-        await this.setRiggedMetadata(discovered.tmuxSession, {
-          nodeId, sessionName: discovered.tmuxSession,
-          rigId: opts.rigId, rigName: rig!.rig.name, logicalId,
-        });
-      } catch { /* best-effort */ }
-      // Best-effort: send post-claim identity hint
-      try {
-        await this.deliverClaimHint(discovered.tmuxSession, { rigName: rig!.rig.name, logicalId });
-      } catch { /* best-effort */ }
-
-      return { ok: true, nodeId, sessionId };
-    } catch (err) {
-      return { ok: false, code: "claim_error", error: (err as Error).message };
-    }
   }
 
   async bind(opts: BindOptions): Promise<ClaimResult> {

@@ -13,7 +13,6 @@ import {
 import {
   useDiscoveredSessions,
   useDiscoveryScan,
-  useClaimSession,
   useBindSession,
   type DiscoveredSession,
 } from "../hooks/useDiscovery.js";
@@ -247,7 +246,6 @@ export function DiscoveryOverlay() {
   });
   const scanMutation = useDiscoveryScan();
   const { data: rigs = [] } = useRigSummary();
-  const claimMutation = useClaimSession();
   const bindMutation = useBindSession();
   const visibleSessions = sessions;
 
@@ -261,7 +259,6 @@ export function DiscoveryOverlay() {
     setDialogOpen(true);
     setRigId("");
     setLogicalId("");
-    claimMutation.reset();
     bindMutation.reset();
   };
 
@@ -271,22 +268,15 @@ export function DiscoveryOverlay() {
   };
 
   const handleAdoptConfirm = () => {
-    if (!adoptTarget || !rigId) return;
-    if (logicalId.trim()) {
-      bindMutation.mutate(
-        { discoveredId: adoptTarget, rigId, logicalId: logicalId.trim() },
-        { onSuccess: finishAdopt },
-      );
-      return;
-    }
-    claimMutation.mutate(
-      { discoveredId: adoptTarget, rigId, logicalId: undefined },
+    if (!adoptTarget || !rigId || !logicalId.trim()) return;
+    bindMutation.mutate(
+      { discoveredId: adoptTarget, rigId, logicalId: logicalId.trim() },
       { onSuccess: finishAdopt },
     );
   };
 
-  const adoptError = bindMutation.error?.message ?? claimMutation.error?.message ?? null;
-  const adoptPending = bindMutation.isPending || claimMutation.isPending;
+  const adoptError = bindMutation.error?.message ?? null;
+  const adoptPending = bindMutation.isPending;
 
   return (
     <WorkspacePage>
@@ -342,7 +332,7 @@ export function DiscoveryOverlay() {
         <DialogContent data-testid="adopt-dialog">
           <DialogHeader>
             <DialogTitle className="text-headline-md uppercase">ADOPT SESSION</DialogTitle>
-            <DialogDescription>Bind into an existing logical node or create a new managed node.</DialogDescription>
+            <DialogDescription>Bind this session to an existing logical node in the rig.</DialogDescription>
           </DialogHeader>
           <div className="space-y-spacing-3">
             <div>
@@ -360,7 +350,7 @@ export function DiscoveryOverlay() {
               </select>
             </div>
             <div>
-              <label className="text-label-sm uppercase block mb-spacing-1">EXISTING LOGICAL ID (optional)</label>
+              <label className="text-label-sm uppercase block mb-spacing-1">LOGICAL ID (required)</label>
               <input
                 data-testid="adopt-logical-input"
                 type="text"
@@ -369,7 +359,7 @@ export function DiscoveryOverlay() {
                 className="w-full bg-transparent border-b border-foreground/20 py-spacing-1 text-body-md font-mono focus:outline-none focus:border-primary"
               />
               <p className="mt-spacing-1 text-label-sm text-foreground-muted">
-                Leave blank to create a new managed node. Fill this in to bind an existing logical node.
+                Enter the logical ID of an existing node in the target rig. For pod placement, use the Discovery drawer instead.
               </p>
             </div>
           </div>
@@ -383,7 +373,7 @@ export function DiscoveryOverlay() {
             <Button
               variant="tactical"
               onClick={handleAdoptConfirm}
-              disabled={!rigId || adoptPending}
+              disabled={!rigId || !logicalId.trim() || adoptPending}
               data-testid="adopt-confirm"
             >
               {adoptPending ? "ADOPTING..." : "ADOPT"}

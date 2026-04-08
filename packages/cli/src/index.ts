@@ -13,7 +13,6 @@ import { packageCommand } from "./commands/package.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { requirementsCommand } from "./commands/requirements.js";
 import { discoverCommand } from "./commands/discover.js";
-import { claimCommand } from "./commands/claim.js";
 import { bindCommand } from "./commands/bind.js";
 import { adoptCommand, type AdoptDeps } from "./commands/adopt.js";
 import { bundleCommand } from "./commands/bundle.js";
@@ -53,7 +52,6 @@ export interface ProgramDeps {
   bootstrapDeps?: StatusDeps;
   requirementsDeps?: StatusDeps;
   discoverDeps?: StatusDeps;
-  claimDeps?: StatusDeps;
   bindDeps?: StatusDeps;
   adoptDeps?: AdoptDeps;
   bundleDeps?: StatusDeps;
@@ -98,7 +96,6 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(bootstrapCommand(depsOverride?.bootstrapDeps));
   program.addCommand(requirementsCommand(depsOverride?.requirementsDeps));
   program.addCommand(discoverCommand(depsOverride?.discoverDeps));
-  program.addCommand(claimCommand(depsOverride?.claimDeps));
   program.addCommand(bindCommand(depsOverride?.bindDeps));
   program.addCommand(adoptCommand(depsOverride?.adoptDeps));
   program.addCommand(bundleCommand(depsOverride?.bundleDeps));

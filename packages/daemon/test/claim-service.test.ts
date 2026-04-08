@@ -78,219 +78,7 @@ describe("ClaimService", () => {
     return rigRepo.createRig("test-rig");
   }
 
-  // T1: Claim creates node in target rig
-  it("claim creates node in target rig", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes).toHaveLength(1);
-    expect(updatedRig!.nodes[0]!.logicalId).toBe("organic-session");
-  });
-
-  // T2: Claim creates binding with correct tmux refs
-  it("claim creates binding pointing to tmux session/pane", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery({ tmuxSession: "my-sess", tmuxPane: "%3" });
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const binding = sessionRegistry.getBindingForNode(result.nodeId);
-    expect(binding).toBeDefined();
-    expect(binding!.tmuxSession).toBe("my-sess");
-    expect(binding!.tmuxPane).toBe("%3");
-  });
-
-  // T3: Claim creates session with origin='claimed'
-  it("claim creates session with origin=claimed and status=running", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const sessions = sessionRegistry.getSessionsForRig(rig.id);
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]!.origin).toBe("claimed");
-    expect(sessions[0]!.status).toBe("running");
-    expect(sessions[0]!.sessionName).toBe("organic-session");
-  });
-
-  // T4: Discovery record marked claimed
-  it("discovery record marked claimed with nodeId", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    const updated = discoveryRepo.getDiscoveredSession(discovered.id);
-    expect(updated!.status).toBe("claimed");
-    expect(updated!.claimedNodeId).toBe(result.nodeId);
-  });
-
-  // T5: Created node has runtime from runtimeHint
-  it("created node has runtime matching discovery runtimeHint", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery({ runtimeHint: "codex" });
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes[0]!.runtime).toBe("codex");
-  });
-
-  // T6: Nonexistent rig -> error
-  it("claim into nonexistent rig returns rig_not_found", async () => {
-    const discovered = seedDiscovery();
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: "nonexistent" });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.code).toBe("rig_not_found");
-  });
-
-  // T7: Already claimed -> error
-  it("claim already-claimed session returns not_active", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    const second = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-
-    expect(second.ok).toBe(false);
-    if (second.ok) return;
-    expect(second.code).toBe("not_active");
-  });
-
-  // T8: Vanished session -> error
-  it("claim vanished session returns not_active", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-    discoveryRepo.markVanished([discovered.id]);
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.code).toBe("not_active");
-  });
-
-  // T9: node.claimed event emitted
-  it("node.claimed event emitted with correct payload", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-
-    const events = db.prepare("SELECT type, payload FROM events WHERE type = 'node.claimed'").all() as Array<{ type: string; payload: string }>;
-    expect(events).toHaveLength(1);
-    const payload = JSON.parse(events[0]!.payload);
-    expect(payload.rigId).toBe(rig.id);
-    expect(payload.discoveredId).toBe(discovered.id);
-    expect(payload.logicalId).toBe("organic-session");
-  });
-
-  // T10: User-provided logicalId used
-  it("user-provided logicalId used instead of tmux session name", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id, logicalId: "my-custom-id" });
-    expect(result.ok).toBe(true);
-
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes[0]!.logicalId).toBe("my-custom-id");
-  });
-
-  // T11: Mid-claim failure rolls back all writes
-  it("mid-claim failure rolls back all writes atomically", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    // Corrupt the event bus to throw during persistWithinTransaction
-    const origPersist = eventBus.persistWithinTransaction.bind(eventBus);
-    eventBus.persistWithinTransaction = () => { throw new Error("event persist failed"); };
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-
-    expect(result.ok).toBe(false);
-
-    // No node should exist (rolled back)
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes).toHaveLength(0);
-
-    // Discovery should still be active (not claimed)
-    const updatedDiscovery = discoveryRepo.getDiscoveredSession(discovered.id);
-    expect(updatedDiscovery!.status).toBe("active");
-
-    eventBus.persistWithinTransaction = origPersist;
-  });
-
-  // T12: claim sets tmux metadata on adopted session
-  it("claim sets @rigged_* tmux metadata on the adopted session", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery({ tmuxSession: "organic-sess" });
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    // setSessionOption should have been called 5 times (one per metadata key)
-    expect(setSessionOptionSpy).toHaveBeenCalledTimes(5);
-    const calls = setSessionOptionSpy.mock.calls as [string, string, string][];
-    // All calls should target the discovered tmux session name
-    for (const call of calls) {
-      expect(call[0]).toBe("organic-sess");
-    }
-    // Check specific metadata keys and values
-    const metaMap = new Map(calls.map((c) => [c[1], c[2]]));
-    expect(metaMap.get("@rigged_node_id")).toBe(result.nodeId);
-    expect(metaMap.get("@rigged_session_name")).toBe("organic-sess");
-    expect(metaMap.get("@rigged_rig_id")).toBe(rig.id);
-    expect(metaMap.get("@rigged_rig_name")).toBe("test-rig");
-    expect(metaMap.get("@rigged_logical_id")).toBe("organic-sess");
-  });
-
-  // T13: metadata failure does not fail claim
-  it("claim succeeds even if tmux metadata write fails", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery();
-
-    // Make metadata writes fail
-    setSessionOptionSpy.mockImplementation(async () => { throw new Error("tmux not available"); });
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
-    expect(result.ok).toBe(true);
-
-    // DB writes should still have succeeded
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes).toHaveLength(1);
-  });
-
-  // T14: claim with custom logicalId sets correct metadata
-  it("claim with custom logicalId writes that logicalId to tmux metadata", async () => {
-    const rig = seedRig();
-    const discovered = seedDiscovery({ tmuxSession: "my-tmux" });
-
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id, logicalId: "custom-id" });
-    expect(result.ok).toBe(true);
-
-    const calls = setSessionOptionSpy.mock.calls as [string, string, string][];
-    const metaMap = new Map(calls.map((c) => [c[1], c[2]]));
-    expect(metaMap.get("@rigged_logical_id")).toBe("custom-id");
-  });
+  // claim() method removed in bind consolidation — claim-specific tests deleted
 
   it("bind attaches a discovered session to an existing node", async () => {
     const rig = seedRig();
@@ -369,12 +157,13 @@ describe("ClaimService", () => {
     expect(metaMap.get("@rigged_logical_id")).toBe("dev.coder");
   });
 
-  // T17: claim delivers post-claim identity hint via sendText + sendKeys C-m
-  it("claim delivers post-claim identity hint via sendText + sendKeys", async () => {
+  // T17: bind delivers post-claim identity hint via sendText + sendKeys C-m
+  it("bind delivers post-claim identity hint via sendText + sendKeys", async () => {
     const rig = seedRig();
+    const node = rigRepo.addNode(rig.id, "adopted-sess", { runtime: "claude-code", cwd: "/tmp" });
     const discovered = seedDiscovery({ tmuxSession: "adopted-sess" });
 
-    await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
+    await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "adopted-sess" });
 
     expect(sendTextSpy).toHaveBeenCalled();
     const textCall = sendTextSpy.mock.calls[0] as [string, string];
@@ -433,9 +222,10 @@ describe("ClaimService", () => {
   // T20: hint text contains required identity fields
   it("hint text contains rig name, logicalId, and whoami reference", async () => {
     const rig = seedRig();
+    rigRepo.addNode(rig.id, "custom.id", { runtime: "claude-code", cwd: "/tmp" });
     const discovered = seedDiscovery({ tmuxSession: "my-session" });
 
-    await claimService.claim({ discoveredId: discovered.id, rigId: rig.id, logicalId: "custom.id" });
+    await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "custom.id" });
 
     const textCall = sendTextSpy.mock.calls[0] as [string, string];
     const hint = textCall[1];
@@ -444,18 +234,15 @@ describe("ClaimService", () => {
     expect(hint).toContain("rig whoami --json");
   });
 
-  // T21: hint delivery failure does not fail claim
-  it("claim succeeds even if hint delivery fails", async () => {
+  // T21: hint delivery failure does not fail bind
+  it("bind succeeds even if hint delivery fails", async () => {
     const rig = seedRig();
+    rigRepo.addNode(rig.id, "organic-session", { runtime: "claude-code", cwd: "/tmp" });
     const discovered = seedDiscovery();
 
     sendTextSpy.mockImplementation(async () => { throw new Error("tmux not available"); });
 
-    const result = await claimService.claim({ discoveredId: discovered.id, rigId: rig.id });
+    const result = await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "organic-session" });
     expect(result.ok).toBe(true);
-
-    // DB writes should still have succeeded
-    const updatedRig = rigRepo.getRig(rig.id);
-    expect(updatedRig!.nodes).toHaveLength(1);
   });
 });

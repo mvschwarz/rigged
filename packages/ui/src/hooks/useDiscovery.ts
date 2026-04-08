@@ -77,28 +77,7 @@ export function useDiscoveredSessionsConditional(enabled: boolean): DiscoveredSe
   return data ?? [];
 }
 
-/** Claim a discovered session into a rig. Invalidates discovery + rig graph. */
-export function useClaimSession() {
-  const queryClient = useQueryClient();
-  return useMutation<{ ok: true; nodeId: string; sessionId: string }, Error, { discoveredId: string; rigId: string; logicalId?: string }>({
-    mutationFn: async ({ discoveredId, rigId, logicalId }) => {
-      const res = await fetch(`/api/discovery/${encodeURIComponent(discoveredId)}/claim`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rigId, logicalId }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? `HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["discovery"] });
-      queryClient.invalidateQueries({ queryKey: ["rig", vars.rigId, "graph"] });
-    },
-  });
-}
+// useClaimSession removed — use useBindSession instead
 
 /** Bind a discovered session to an existing logical node. Invalidates discovery + rig graph. */
 export function useBindSession() {

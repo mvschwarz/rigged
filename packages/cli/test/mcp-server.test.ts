@@ -48,11 +48,11 @@ describe("MCP Server", () => {
     const names = result.tools.map((t) => t.name).sort();
     expect(names).toEqual([
       "rig_agent_validate",
+      "rig_bind",
       "rig_bundle_inspect",
       "rig_capture",
       "rig_chatroom_send",
       "rig_chatroom_watch",
-      "rig_claim",
       "rig_discover",
       "rig_down",
       "rig_ps",

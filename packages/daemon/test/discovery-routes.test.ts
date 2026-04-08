@@ -119,15 +119,16 @@ describe("Discovery API routes", () => {
     expect(body.runtimeHint).toBe("claude-code");
   });
 
-  // T4: POST /:id/claim success -> 201
-  it("POST /api/discovery/:id/claim creates managed node", async () => {
+  // T4: POST /:id/bind success -> 201 (bind to existing node)
+  it("POST /api/discovery/:id/bind attaches to existing node", async () => {
     const id = seedDiscovery();
     const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/workspace" });
 
-    const res = await app.request(`/api/discovery/${id}/claim`, {
+    const res = await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "orch.lead" }),
     });
 
     expect(res.status).toBe(201);
@@ -200,24 +201,25 @@ describe("Discovery API routes", () => {
     expect(claimedNode?.binding?.tmuxSession).toBe("research-scout");
   });
 
-  // T5a: Claim nonexistent discovery -> 404
-  it("claim nonexistent discovery returns 404", async () => {
+  // T5a: Bind nonexistent discovery -> 404
+  it("bind nonexistent discovery returns 404", async () => {
     const rig = seedRig();
-    const res = await app.request("/api/discovery/nonexistent/claim", {
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code" });
+    const res = await app.request("/api/discovery/nonexistent/bind", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "orch.lead" }),
     });
     expect(res.status).toBe(404);
   });
 
-  // T5b: Claim nonexistent rig -> 404
-  it("claim into nonexistent rig returns 404", async () => {
+  // T5b: Bind into nonexistent rig -> 404
+  it("bind into nonexistent rig returns 404", async () => {
     const id = seedDiscovery();
-    const res = await app.request(`/api/discovery/${id}/claim`, {
+    const res = await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: "nonexistent-rig" }),
+      body: JSON.stringify({ rigId: "nonexistent-rig", logicalId: "some-node" }),
     });
     expect(res.status).toBe(404);
   });
@@ -225,7 +227,7 @@ describe("Discovery API routes", () => {
   // T5c: Missing rigId -> 400
   it("claim with missing rigId returns 400", async () => {
     const id = seedDiscovery();
-    const res = await app.request(`/api/discovery/${id}/claim`, {
+    const res = await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -244,42 +246,45 @@ describe("Discovery API routes", () => {
     expect(res.status).toBe(400);
   });
 
-  // T6a: Already claimed -> 409
-  it("claim already-claimed session returns 409", async () => {
+  // T6a: Already bound -> 409
+  it("bind already-bound session returns 409", async () => {
     const id = seedDiscovery();
     const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "node-a", { runtime: "claude-code" });
+    setup.rigRepo.addNode(rig.id, "node-b", { runtime: "claude-code" });
 
-    // Claim once
-    await app.request(`/api/discovery/${id}/claim`, {
+    // Bind once
+    await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "node-a" }),
     });
 
-    // Claim again
-    const res = await app.request(`/api/discovery/${id}/claim`, {
+    // Bind same discovery again -> session is already claimed
+    const res = await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id, logicalId: "different" }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "node-b" }),
     });
     expect(res.status).toBe(409);
   });
 
-  // T6b: Duplicate logicalId -> 409
-  it("claim with duplicate logicalId returns 409", async () => {
+  // T6b: Bind to already-bound node -> 409
+  it("bind to already-bound node returns 409", async () => {
     const id1 = seedDiscovery("s1", "%0");
     const id2 = seedDiscovery("s2", "%0");
     const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "dev", { runtime: "claude-code" });
 
-    // Claim first with logical_id "dev"
-    await app.request(`/api/discovery/${id1}/claim`, {
+    // Bind first session to dev
+    await app.request(`/api/discovery/${id1}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rigId: rig.id, logicalId: "dev" }),
     });
 
-    // Claim second with same logical_id -> 409
-    const res = await app.request(`/api/discovery/${id2}/claim`, {
+    // Bind second session to same node -> 409 (already bound)
+    const res = await app.request(`/api/discovery/${id2}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rigId: rig.id, logicalId: "dev" }),
@@ -358,15 +363,16 @@ describe("Discovery API routes", () => {
     expect(payload.tmuxSession).toBe("ephemeral");
   });
 
-  // T12c: POST /:id/claim -> node.claimed event
-  it("POST /:id/claim emits node.claimed event", async () => {
+  // T12c: POST /:id/bind -> node.claimed event
+  it("POST /:id/bind emits node.claimed event", async () => {
     const id = seedDiscovery();
     const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code" });
 
-    await app.request(`/api/discovery/${id}/claim`, {
+    await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "orch.lead" }),
     });
 
     const events = getEvents(db).filter((e) => e.type === "node.claimed");
@@ -375,15 +381,16 @@ describe("Discovery API routes", () => {
     expect(payload.rigId).toBe(rig.id);
   });
 
-  // T13: POST /:id/claim sets @rigged_* tmux metadata through the async HTTP path
-  it("POST /:id/claim sets tmux metadata on the adopted session", async () => {
+  // T13: POST /:id/bind sets @rigged_* tmux metadata through the async HTTP path
+  it("POST /:id/bind sets tmux metadata on the adopted session", async () => {
     const id = seedDiscovery("claimed-target", "%0");
     const rig = seedRig();
+    setup.rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code" });
 
-    const res = await app.request(`/api/discovery/${id}/claim`, {
+    const res = await app.request(`/api/discovery/${id}/bind`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rigId: rig.id }),
+      body: JSON.stringify({ rigId: rig.id, logicalId: "orch.lead" }),
     });
 
     expect(res.status).toBe(201);
@@ -402,6 +409,6 @@ describe("Discovery API routes", () => {
     expect(metaMap.get("@rigged_session_name")).toBe("claimed-target");
     expect(metaMap.get("@rigged_rig_id")).toBe(rig.id);
     expect(metaMap.get("@rigged_rig_name")).toBe("test-rig");
-    expect(metaMap.get("@rigged_logical_id")).toBe("claimed-target");
+    expect(metaMap.get("@rigged_logical_id")).toBe("orch.lead");
   });
 });

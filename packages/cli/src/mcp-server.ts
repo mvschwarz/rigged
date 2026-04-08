@@ -193,18 +193,24 @@ export function createMcpServer(client: DaemonClient): McpServer {
     },
   );
 
-  // 9. rig_claim — claim discovered session
+  // 9. rig_bind — bind discovered session to a rig node (existing or new in pod)
   server.tool(
-    "rig_claim",
-    "Claim a discovered session into a rig",
+    "rig_bind",
+    "Bind a discovered session to an existing node or create a new node in a pod",
     {
       discoveryId: z.string().describe("Discovery session identifier"),
       rigId: z.string().describe("Target rig identifier"),
-      logicalId: z.string().optional().describe("Node name (default: tmux session name)"),
+      logicalId: z.string().optional().describe("Existing node logical ID (mode: bind to existing)"),
+      podNamespace: z.string().optional().describe("Pod namespace to create node in (mode: create in pod)"),
+      memberName: z.string().optional().describe("Member name for new node (required with podNamespace)"),
     },
-    async ({ discoveryId, rigId, logicalId }) => {
+    async ({ discoveryId, rigId, logicalId, podNamespace, memberName }) => {
       try {
-        const res = await client.post(`/api/discovery/${encodeURIComponent(discoveryId)}/claim`, { rigId, logicalId });
+        const body: Record<string, unknown> = { rigId };
+        if (logicalId) body["logicalId"] = logicalId;
+        if (podNamespace) body["podNamespace"] = podNamespace;
+        if (memberName) body["memberName"] = memberName;
+        const res = await client.post(`/api/discovery/${encodeURIComponent(discoveryId)}/bind`, body);
         return mapResult(res);
       } catch (err) {
         return { content: [{ type: "text" as const, text: (err as Error).message }], isError: true as const };

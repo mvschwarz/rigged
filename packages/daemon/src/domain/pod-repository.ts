@@ -58,6 +58,12 @@ export class PodRepository {
     return row ? this.rowToPod(row) : null;
   }
 
+  /** Get a pod by rig and authored namespace. Returns null if not found. */
+  getPodByNamespace(rigId: string, namespace: string): Pod | null {
+    const row = this.db.prepare("SELECT * FROM pods WHERE rig_id = ? AND namespace = ?").get(rigId, namespace) as PodRow | undefined;
+    return row ? this.rowToPod(row) : null;
+  }
+
   /**
    * Get all pods for a rig.
    * @param rigId - rig id

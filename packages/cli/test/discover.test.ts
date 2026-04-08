@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import { Command } from "commander";
 import { discoverCommand } from "../src/commands/discover.js";
-import { claimCommand } from "../src/commands/claim.js";
 import { bindCommand } from "../src/commands/bind.js";
 import { DaemonClient } from "../src/client.js";
 import { STATE_FILE, type LifecycleDeps, type DaemonState } from "../src/daemon-lifecycle.js";
@@ -83,12 +82,6 @@ describe("Discover + Claim CLI", () => {
       } else if (req.url?.match(/\/api\/discovery\/ds-1\/bind/) && req.method === "POST") {
         res.writeHead(201, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, nodeId: "node-1", sessionId: "sess-1" }));
-      } else if (req.url?.match(/\/api\/discovery\/ds-1\/claim/) && req.method === "POST") {
-        res.writeHead(201, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, nodeId: "node-1", sessionId: "sess-1" }));
-      } else if (req.url?.match(/\/api\/discovery\/nonexistent\/claim/) && req.method === "POST") {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, code: "not_found", error: "Discovery record not found" }));
       } else {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "not found" }));
@@ -146,18 +139,7 @@ describe("Discover + Claim CLI", () => {
   });
 
   // T10: claim success
-  it("claim creates node and prints confirmation", async () => {
-    const prog = new Command();
-    prog.exitOverride();
-    prog.addCommand(claimCommand(runningDeps(port)));
-
-    const { logs } = await captureLogs(async () => {
-      await prog.parseAsync(["node", "rig", "claim", "ds-1", "--rig", "rig-1"]);
-    });
-
-    expect(logs.some((l) => l.includes("Claimed as node"))).toBe(true);
-    expect(logs.some((l) => l.includes("node-1"))).toBe(true);
-  });
+  // claim test removed — claim command deleted in bind consolidation
 
   // T12: discover with 500 response -> exit 1 with error
   it("discover with scan failure returns exit 1 with error", async () => {
@@ -182,19 +164,7 @@ describe("Discover + Claim CLI", () => {
     failServer.close();
   });
 
-  // T13: claim nonexistent -> exit 1
-  it("claim nonexistent discovery returns exit 1", async () => {
-    const prog = new Command();
-    prog.exitOverride();
-    prog.addCommand(claimCommand(runningDeps(port)));
-
-    const { exitCode, logs } = await captureLogs(async () => {
-      await prog.parseAsync(["node", "rig", "claim", "nonexistent", "--rig", "rig-1"]);
-    });
-
-    expect(exitCode).toBe(1);
-    expect(logs.some((l) => l.includes("not found"))).toBe(true);
-  });
+  // claim nonexistent test removed — claim command deleted
 
   it("bind attaches discovered session to an existing node", async () => {
     const prog = new Command();

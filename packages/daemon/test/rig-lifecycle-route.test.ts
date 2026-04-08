@@ -26,7 +26,8 @@ describe("Rig lifecycle routes", () => {
       confidence: "high",
     });
 
-    const claimed = await setup.claimService.claim({
+    setup.rigRepo.addNode(rig.id, "external.helper", { runtime: "codex" });
+    const claimed = await setup.claimService.bind({
       discoveredId: discovered.id,
       rigId: rig.id,
       logicalId: "external.helper",
@@ -95,7 +96,8 @@ describe("Rig lifecycle routes", () => {
       confidence: "high",
     });
 
-    const claimed = await setup.claimService.claim({
+    setup.rigRepo.addNode(rig.id, "external.helper", { runtime: "codex" });
+    const claimed = await setup.claimService.bind({
       discoveredId: discovered.id,
       rigId: rig.id,
       logicalId: "external.helper",

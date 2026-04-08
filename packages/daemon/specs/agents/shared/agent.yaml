@@ -1,0 +1,10 @@
+name: shared
+version: "1.0"
+description: Shared builtin OpenRig resources for packaged starter agents
+
+resources:
+  skills:
+    - id: openrig-user
+      path: skills/openrig-user
+
+profiles: {}

@@ -5,9 +5,17 @@ description: Orchestrator lead — coordinates agents, monitors progress, bridge
 defaults:
   runtime: claude-code
 
+imports:
+  - ref: local:../shared
+
 profiles:
   default:
-    uses: []
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
 
 resources:
   guidance:

@@ -5,9 +5,17 @@ description: Product designer — shapes UX, interaction flows, and design-syste
 defaults:
   runtime: claude-code
 
+imports:
+  - ref: local:../shared
+
 profiles:
   default:
-    uses: []
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
 
 resources:
   guidance:

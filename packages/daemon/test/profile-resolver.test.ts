@@ -158,6 +158,32 @@ describe("Profile resolver + precedence engine", () => {
     }
   });
 
+  it("single imported unqualified skill keeps the unqualified effectiveId", () => {
+    const importSpec = makeSpec({
+      name: "shared",
+      resources: { skills: [{ id: "openrig-user", path: "skills/openrig-user" }], guidance: [], subagents: [], hooks: [], runtimeResources: [] },
+      profiles: {},
+    });
+    const ctx = makeCtx({
+      baseSpec: makeResolved(makeSpec({
+        resources: { skills: [], guidance: [], subagents: [], hooks: [], runtimeResources: [] },
+        profiles: {
+          default: { uses: { skills: ["openrig-user"], guidance: [], subagents: [], hooks: [], runtimeResources: [] } },
+        },
+      })),
+      importedSpecs: [makeResolved(importSpec, "/agents/shared")],
+    });
+
+    const result = resolveNodeConfig(ctx);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.config.selectedResources.skills).toHaveLength(1);
+      expect(result.config.selectedResources.skills[0]!.effectiveId).toBe("openrig-user");
+      expect(result.config.selectedResources.skills[0]!.sourcePath).toBe("/agents/shared");
+      expect(result.config.selectedResources.skills[0]!.sourceSpec).toBe("shared");
+    }
+  });
+
   // T4: rig member runtime overrides profile preference
   it("rig member runtime overrides profile preference", () => {
     const ctx = makeCtx({

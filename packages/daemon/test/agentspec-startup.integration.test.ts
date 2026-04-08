@@ -184,4 +184,85 @@ describe("AgentSpec startup integration", () => {
 
     db.close();
   });
+
+  it("builtin-style shared import projects openrig-user under the shipped unqualified skill id", () => {
+    const rigRoot = "/project/rigs/my-rig";
+    const rigSpecYaml = RigSpecCodec.serialize({
+      version: "0.2", name: "integration-rig",
+      pods: [{
+        id: "dev", label: "Dev",
+        members: [{
+          id: "impl", agentRef: "local:agents/impl", profile: "default",
+          runtime: "claude-code", cwd: ".",
+        }],
+        edges: [],
+      }],
+      edges: [],
+    });
+
+    const fs = mockFs({
+      [`${rigRoot}/agents/impl/agent.yaml`]: `
+name: impl
+version: "1.0.0"
+imports:
+  - ref: local:../shared
+resources:
+  skills: []
+profiles:
+  default:
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
+`.trim(),
+      [`${rigRoot}/agents/shared/agent.yaml`]: `
+name: shared
+version: "1.0.0"
+resources:
+  skills:
+    - id: openrig-user
+      path: skills/openrig-user
+profiles: {}
+`.trim(),
+      [`${rigRoot}/agents/shared/skills/openrig-user/SKILL.md`]: "---\nname: openrig-user\n---\n# OpenRig User\n",
+    });
+
+    const rawRig = RigSpecCodec.parse(rigSpecYaml);
+    const rigSpec = RigSpecSchema.normalize(rawRig as Record<string, unknown>);
+    const member = rigSpec.pods[0]!.members[0]!;
+
+    const resolveResult = resolveAgentRef(member.agentRef, rigRoot, fs);
+    expect(resolveResult.ok).toBe(true);
+    if (!resolveResult.ok) return;
+
+    const configResult = resolveNodeConfig({
+      baseSpec: resolveResult.resolved,
+      importedSpecs: resolveResult.imports,
+      collisions: resolveResult.collisions,
+      profileName: member.profile,
+      member,
+      pod: rigSpec.pods[0]!,
+      rig: rigSpec,
+      specRoot: rigRoot,
+    });
+    expect(configResult.ok).toBe(true);
+    if (!configResult.ok) return;
+
+    const planResult = planProjection({
+      config: configResult.config,
+      collisions: resolveResult.collisions,
+      fsOps: { readFile: fs.readFile, exists: fs.exists },
+    });
+    expect(planResult.ok).toBe(true);
+    if (!planResult.ok) return;
+
+    const projectedSkill = planResult.plan.entries.find((entry) => entry.category === "skill");
+    expect(projectedSkill).toBeDefined();
+    expect(projectedSkill!.effectiveId).toBe("openrig-user");
+    expect(projectedSkill!.sourceSpec).toBe("shared");
+    expect(projectedSkill!.sourcePath).toBe(`${rigRoot}/agents/shared`);
+    expect(projectedSkill!.absolutePath).toBe(`${rigRoot}/agents/shared/skills/openrig-user`);
+  });
 });

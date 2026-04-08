@@ -364,6 +364,28 @@ profiles:
     expect(result.errors.some((e) => e.includes("imported-ns:remote-skill"))).toBe(false);
   });
 
+  it("profile uses: imported unqualified skill is allowed when imports are declared", () => {
+    const raw = parseAgentSpec(`
+name: test
+version: "1.0"
+imports:
+  - ref: local:../shared
+resources:
+  skills: []
+profiles:
+  default:
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
+`);
+    const result = validateAgentSpec(raw);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
   // T12: runtime_resources without runtime field fail
   it("runtime_resources without runtime field fail", () => {
     const raw = parseAgentSpec(`

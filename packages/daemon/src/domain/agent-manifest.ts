@@ -118,6 +118,7 @@ export function validateAgentSpec(raw: unknown): ValidationResult {
   }
 
   const obj = raw as Record<string, unknown>;
+  const hasImports = Array.isArray(obj["imports"]) && obj["imports"].length > 0;
 
   // Required fields
   if (!obj["name"] || typeof obj["name"] !== "string") errors.push("name: required non-empty string");
@@ -216,7 +217,7 @@ export function validateAgentSpec(raw: unknown): ValidationResult {
                     // Otherwise accepted — import resolution in AS-T03
                   } else if (typeof ref === "string") {
                     // Unqualified ref must exist in local declarations
-                    if (!allLocalIds[category]?.has(ref)) {
+                    if (!allLocalIds[category]?.has(ref) && !hasImports) {
                       errors.push(`profiles.${profileName}.uses.${category}: resource "${ref}" not found in declared resources`);
                     }
                   }

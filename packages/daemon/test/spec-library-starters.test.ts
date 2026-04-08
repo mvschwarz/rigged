@@ -25,6 +25,8 @@ const AGENT_SPECS = [
   "agents/synthesizer/agent.yaml",
 ];
 
+const SHARED_AGENT_SPEC = "agents/shared/agent.yaml";
+
 describe("Starter specs", () => {
   const specReviewService = new SpecReviewService();
 
@@ -39,7 +41,7 @@ describe("Starter specs", () => {
   });
 
   it("all agent specs pass validation", () => {
-    for (const file of AGENT_SPECS) {
+    for (const file of [...AGENT_SPECS, SHARED_AGENT_SPEC]) {
       const yaml = readFileSync(join(SPECS_ROOT, file), "utf-8");
       const raw = parseAgentSpec(yaml);
       const result = validateAgentSpec(raw);
@@ -129,6 +131,29 @@ describe("Starter specs", () => {
       expect(content.toLowerCase()).toContain("responsibilities");
       // Must mention principles
       expect(content.toLowerCase()).toContain("principles");
+    }
+  });
+
+  it("shared packaged openrig-user skill exists and builtin agents opt into it", () => {
+    const sharedYaml = readFileSync(join(SPECS_ROOT, SHARED_AGENT_SPEC), "utf-8");
+    const sharedRaw = parseAgentSpec(sharedYaml) as Record<string, unknown>;
+    const sharedResources = (sharedRaw["resources"] ?? {}) as Record<string, unknown>;
+    const sharedSkills = (sharedResources["skills"] as Array<{ id: string; path: string }>) ?? [];
+    const openrigUser = sharedSkills.find((skill) => skill.id === "openrig-user");
+    expect(openrigUser).toBeDefined();
+    expect(existsSync(join(SPECS_ROOT, "agents/shared", openrigUser!.path, "SKILL.md"))).toBe(true);
+
+    for (const file of AGENT_SPECS) {
+      const yaml = readFileSync(join(SPECS_ROOT, file), "utf-8");
+      const raw = parseAgentSpec(yaml) as Record<string, unknown>;
+      const imports = (raw["imports"] as Array<{ ref: string }> | undefined) ?? [];
+      expect(imports.some((imp) => imp.ref === "local:../shared")).toBe(true);
+
+      const profiles = (raw["profiles"] as Record<string, Record<string, unknown>> | undefined) ?? {};
+      const defaultProfile = profiles["default"] ?? {};
+      const uses = (defaultProfile["uses"] as Record<string, unknown> | undefined) ?? {};
+      const skills = (uses["skills"] as string[] | undefined) ?? [];
+      expect(skills).toContain("openrig-user");
     }
   });
 });

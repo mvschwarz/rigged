@@ -5,9 +5,17 @@ description: Research synthesizer — consolidates findings into actionable summ
 defaults:
   runtime: codex
 
+imports:
+  - ref: local:../shared
+
 profiles:
   default:
-    uses: []
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
 
 resources:
   guidance:

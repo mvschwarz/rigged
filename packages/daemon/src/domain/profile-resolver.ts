@@ -204,7 +204,7 @@ function buildResourcePool(base: ResolvedAgentSpec, imports: ResolvedAgentSpec[]
         // If a base resource exists, the base owns the unqualified id (no collision).
         // If multiple imports share the same unqualified id (no base), it's ambiguous.
         if (!pool[cat].has(r.id)) {
-          pool[cat].set(r.id, [{ effectiveId: qualifiedId, sourceSpec: imp.spec.name, sourcePath: imp.sourcePath, resource: r as PoolEntry["resource"] }]);
+          pool[cat].set(r.id, [{ effectiveId: r.id, sourceSpec: imp.spec.name, sourcePath: imp.sourcePath, resource: r as PoolEntry["resource"] }]);
         } else {
           const existing = pool[cat].get(r.id)!;
           // Only add for ambiguity if the existing entry is NOT from the base spec

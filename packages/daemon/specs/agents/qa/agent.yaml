@@ -5,9 +5,17 @@ description: QA agent — gates every edit with adversarial but cooperative revi
 defaults:
   runtime: codex
 
+imports:
+  - ref: local:../shared
+
 profiles:
   default:
-    uses: []
+    uses:
+      skills: [openrig-user]
+      guidance: []
+      subagents: []
+      hooks: []
+      runtime_resources: []
 
 resources:
   guidance:

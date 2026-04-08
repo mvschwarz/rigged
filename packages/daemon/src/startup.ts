@@ -253,8 +253,8 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     discoveryRepo, sessionRegistry, eventBus,
   });
   const resumeMetadataRefresher = new ResumeMetadataRefresher({ sessionRegistry, tmuxAdapter });
-  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
-  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus });
+  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter, transcriptStore });
+  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus, tmuxAdapter, transcriptStore });
   const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
 
@@ -263,6 +263,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
   // Context usage store — created before deps so it can be threaded through WhoamiService + routes
   const { ContextUsageStore } = await import("./domain/context-usage-store.js");
   const contextUsageStore = new ContextUsageStore(db, { stateDir: OPENRIG_HOME });
+  const whoamiService = new WhoamiService({ db, rigRepo, sessionRegistry, transcriptStore, contextUsageStore });
 
   const deps: AppDeps = {
     rigRepo,
@@ -337,9 +338,10 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
         rigRepo,
         historyQuery,
         transcriptsEnabled: transcriptStore.enabled,
+        whoamiService,
       });
     })(),
-    whoamiService: new WhoamiService({ db, rigRepo, sessionRegistry, transcriptStore, contextUsageStore }),
+    whoamiService,
     contextUsageStore,
     specReviewService,
     specLibraryService: (() => {

@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type Database from "better-sqlite3";
 import type { RigRepository } from "../domain/rig-repository.js";
 import type { TranscriptStore } from "../domain/transcript-store.js";
+import type { TmuxAdapter } from "../adapters/tmux.js";
+import { startTmuxTranscriptCapture } from "../domain/transcript-capture.js";
 
 interface SessionRow {
   node_id: string;
@@ -11,11 +13,16 @@ interface NodeRow {
   rig_id: string;
 }
 
+interface BindingRow {
+  attachment_type: string | null;
+  tmux_session: string | null;
+}
+
 function resolveSessionToRig(
   db: Database.Database,
   rigRepo: RigRepository,
   sessionName: string,
-): { rigName: string } | { error: string; status: number } {
+): { rigName: string; nodeId: string } | { error: string; status: number } {
   // Find ALL sessions with this name to detect ambiguity
   const sessionRows = db
     .prepare("SELECT node_id FROM sessions WHERE session_name = ? ORDER BY id DESC")
@@ -55,16 +62,35 @@ function resolveSessionToRig(
     };
   }
 
-  return { rigName: rigNames.values().next().value! };
+  return { rigName: rigNames.values().next().value!, nodeId: sessionRows[0]!.node_id };
+}
+
+async function tryStartCaptureForSession(
+  db: Database.Database,
+  transcriptStore: TranscriptStore,
+  tmuxAdapter: TmuxAdapter | undefined,
+  rigName: string,
+  nodeId: string,
+  sessionName: string,
+): Promise<boolean> {
+  const binding = db
+    .prepare("SELECT attachment_type, tmux_session FROM bindings WHERE node_id = ?")
+    .get(nodeId) as BindingRow | undefined;
+  if (!binding) return false;
+  if ((binding.attachment_type ?? "tmux") !== "tmux") return false;
+  if (!binding.tmux_session || binding.tmux_session !== sessionName) return false;
+  const result = await startTmuxTranscriptCapture(tmuxAdapter, transcriptStore, rigName, sessionName);
+  return result.started;
 }
 
 export function transcriptRoutes(): Hono {
   const router = new Hono();
 
-  router.get("/:session/tail", (c) => {
+  router.get("/:session/tail", async (c) => {
     const transcriptStore = c.get("transcriptStore" as never) as TranscriptStore;
     const db = c.get("db" as never) as Database.Database;
     const rigRepo = c.get("rigRepo" as never) as RigRepository;
+    const tmuxAdapter = c.get("tmuxAdapter" as never) as TmuxAdapter | undefined;
     const sessionName = c.req.param("session");
     const rawLines = parseInt(c.req.query("lines") ?? "50", 10);
     const lines = isNaN(rawLines) || rawLines < 1 ? 50 : rawLines;
@@ -83,8 +109,20 @@ export function transcriptRoutes(): Hono {
 
     const content = transcriptStore.readTail(resolution.rigName, sessionName, lines);
     if (content === null) {
+      const startedNow = await tryStartCaptureForSession(
+        db,
+        transcriptStore,
+        tmuxAdapter,
+        resolution.rigName,
+        resolution.nodeId,
+        sessionName,
+      );
       return c.json(
-        { error: `No transcript for '${sessionName}'. Transcripts start automatically on next rig up.` },
+        {
+          error: startedNow
+            ? `No transcript for '${sessionName}' yet. Transcript capture was missing and has been started now. Retry after the session emits new output.`
+            : `No transcript for '${sessionName}'. Transcripts start automatically on next rig up.`,
+        },
         404,
       );
     }
@@ -92,10 +130,11 @@ export function transcriptRoutes(): Hono {
     return c.json({ session: sessionName, lines, content });
   });
 
-  router.get("/:session/grep", (c) => {
+  router.get("/:session/grep", async (c) => {
     const transcriptStore = c.get("transcriptStore" as never) as TranscriptStore;
     const db = c.get("db" as never) as Database.Database;
     const rigRepo = c.get("rigRepo" as never) as RigRepository;
+    const tmuxAdapter = c.get("tmuxAdapter" as never) as TmuxAdapter | undefined;
     const sessionName = c.req.param("session");
     const pattern = c.req.query("pattern");
 
@@ -127,8 +166,20 @@ export function transcriptRoutes(): Hono {
 
     const matches = transcriptStore.grep(resolution.rigName, sessionName, pattern);
     if (matches === null) {
+      const startedNow = await tryStartCaptureForSession(
+        db,
+        transcriptStore,
+        tmuxAdapter,
+        resolution.rigName,
+        resolution.nodeId,
+        sessionName,
+      );
       return c.json(
-        { error: `No transcript for '${sessionName}'. Transcripts start automatically on next rig up.` },
+        {
+          error: startedNow
+            ? `No transcript for '${sessionName}' yet. Transcript capture was missing and has been started now. Retry after the session emits new output.`
+            : `No transcript for '${sessionName}'. Transcripts start automatically on next rig up.`,
+        },
         404,
       );
     }

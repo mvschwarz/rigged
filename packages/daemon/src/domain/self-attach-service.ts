@@ -4,6 +4,9 @@ import type { PodRepository } from "./pod-repository.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { EventBus } from "./event-bus.js";
 import type { PersistedEvent } from "./types.js";
+import type { TmuxAdapter } from "../adapters/tmux.js";
+import type { TranscriptStore } from "./transcript-store.js";
+import { startTmuxTranscriptCapture } from "./transcript-capture.js";
 
 export type SelfAttachSuccess = {
   ok: true;
@@ -38,6 +41,8 @@ interface SelfAttachServiceDeps {
   podRepo: PodRepository;
   sessionRegistry: SessionRegistry;
   eventBus: EventBus;
+  tmuxAdapter?: TmuxAdapter;
+  transcriptStore?: TranscriptStore;
 }
 
 interface AttachToNodeOptions {
@@ -79,6 +84,8 @@ export class SelfAttachService {
   private podRepo: PodRepository;
   private sessionRegistry: SessionRegistry;
   private eventBus: EventBus;
+  private tmuxAdapter: TmuxAdapter | null;
+  private transcriptStore: TranscriptStore | null;
 
   constructor(deps: SelfAttachServiceDeps) {
     if (deps.db !== deps.rigRepo.db) throw new Error("SelfAttachService: rigRepo must share the same db handle");
@@ -90,6 +97,8 @@ export class SelfAttachService {
     this.podRepo = deps.podRepo;
     this.sessionRegistry = deps.sessionRegistry;
     this.eventBus = deps.eventBus;
+    this.tmuxAdapter = deps.tmuxAdapter ?? null;
+    this.transcriptStore = deps.transcriptStore ?? null;
   }
 
   async attachToNode(opts: AttachToNodeOptions): Promise<SelfAttachResult> {
@@ -118,6 +127,7 @@ export class SelfAttachService {
 
     return this.attachExistingNode({
       rigId: opts.rigId,
+      rigName: rig.rig.name,
       nodeId: node.id,
       logicalId: node.logicalId,
       context: this.resolveContext(node.logicalId, rig.rig.name, opts.displayName, opts.context),
@@ -167,6 +177,7 @@ export class SelfAttachService {
 
     try {
       const result = attachTx();
+      await this.maybeStartTranscriptCapture(rig.rig.name, result.sessionName, result.attachmentType);
       this.eventBus.notifySubscribers(result.event);
       return this.toSuccess(result.nodeId, result.logicalId, result.sessionId, result.sessionName, result.attachmentType);
     } catch (error) {
@@ -174,12 +185,13 @@ export class SelfAttachService {
     }
   }
 
-  private attachExistingNode(args: {
+  private async attachExistingNode(args: {
     rigId: string;
+    rigName: string;
     nodeId: string;
     logicalId: string;
     context: SelfAttachContext;
-  }): SelfAttachResult {
+  }): Promise<SelfAttachResult> {
     const attachTx = this.db.transaction(() =>
       this.attachExistingNodeWithinTransaction({
         rigId: args.rigId,
@@ -191,6 +203,25 @@ export class SelfAttachService {
 
     try {
       const result = attachTx();
+      return this.finalizeAttach(args.rigName, result);
+    } catch (error) {
+      return { ok: false, code: "already_bound", error: (error as Error).message };
+    }
+  }
+
+  private async finalizeAttach(
+    rigName: string,
+    result: {
+      nodeId: string;
+      logicalId: string;
+      sessionId: string;
+      sessionName: string;
+      attachmentType: "tmux" | "external_cli";
+      event: PersistedEvent;
+    },
+  ): Promise<SelfAttachResult> {
+    try {
+      await this.maybeStartTranscriptCapture(rigName, result.sessionName, result.attachmentType);
       this.eventBus.notifySubscribers(result.event);
       return this.toSuccess(result.nodeId, result.logicalId, result.sessionId, result.sessionName, result.attachmentType);
     } catch (error) {
@@ -257,6 +288,15 @@ export class SelfAttachService {
       attachmentType: "external_cli",
       sessionName: explicit || `${logicalId.replace(/\./g, "-")}@${rigName}`,
     };
+  }
+
+  private async maybeStartTranscriptCapture(
+    rigName: string,
+    sessionName: string,
+    attachmentType: "tmux" | "external_cli",
+  ): Promise<void> {
+    if (attachmentType !== "tmux") return;
+    await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rigName, sessionName);
   }
 
   private toSuccess(

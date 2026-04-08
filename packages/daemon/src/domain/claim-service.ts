@@ -4,6 +4,8 @@ import type { SessionRegistry } from "./session-registry.js";
 import type { DiscoveryRepository } from "./discovery-repository.js";
 import type { EventBus } from "./event-bus.js";
 import type { TmuxAdapter } from "../adapters/tmux.js";
+import type { TranscriptStore } from "./transcript-store.js";
+import { startTmuxTranscriptCapture } from "./transcript-capture.js";
 
 export type ClaimResult =
   | { ok: true; nodeId: string; sessionId: string }
@@ -16,6 +18,7 @@ interface ClaimServiceDeps {
   discoveryRepo: DiscoveryRepository;
   eventBus: EventBus;
   tmuxAdapter?: TmuxAdapter;
+  transcriptStore?: TranscriptStore;
 }
 
 interface BindOptions {
@@ -44,6 +47,7 @@ export class ClaimService {
   private discoveryRepo: DiscoveryRepository;
   private eventBus: EventBus;
   private tmuxAdapter: TmuxAdapter | null;
+  private transcriptStore: TranscriptStore | null;
 
   constructor(deps: ClaimServiceDeps) {
     if (deps.db !== deps.rigRepo.db) throw new Error("ClaimService: rigRepo must share the same db handle");
@@ -56,6 +60,7 @@ export class ClaimService {
     this.discoveryRepo = deps.discoveryRepo;
     this.eventBus = deps.eventBus;
     this.tmuxAdapter = deps.tmuxAdapter ?? null;
+    this.transcriptStore = deps.transcriptStore ?? null;
   }
 
   /** Best-effort: set OpenRig-owned tmux metadata on an adopted session. */
@@ -161,6 +166,9 @@ export class ClaimService {
           rigId: opts.rigId, rigName: rig!.rig.name, logicalId: opts.logicalId,
         });
       } catch { /* best-effort */ }
+      try {
+        await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rig!.rig.name, discovered.tmuxSession);
+      } catch { /* best-effort */ }
       // Best-effort: send post-claim identity hint
       try {
         await this.deliverClaimHint(discovered.tmuxSession, { rigName: rig!.rig.name, logicalId: opts.logicalId });
@@ -259,6 +267,9 @@ export class ClaimService {
           nodeId, sessionName: discovered.tmuxSession,
           rigId: opts.rigId, rigName: rig!.rig.name, logicalId,
         });
+      } catch { /* best-effort */ }
+      try {
+        await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rig!.rig.name, discovered.tmuxSession);
       } catch { /* best-effort */ }
       // Best-effort: send post-claim identity hint
       try {

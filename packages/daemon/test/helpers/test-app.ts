@@ -86,6 +86,7 @@ export function mockTmuxAdapter(): TmuxAdapter {
     hasSession: vi.fn(async () => false),
     sendText: vi.fn(async () => ({ ok: true as const })),
     sendKeys: vi.fn(async () => ({ ok: true as const })),
+    startPipePane: vi.fn(async () => ({ ok: true as const })),
     setSessionOption: vi.fn(async () => ({ ok: true as const })),
     getSessionOption: vi.fn(async () => null),
   } as unknown as TmuxAdapter;
@@ -118,6 +119,7 @@ export function createTestApp(
   const eventBus = new EventBus(db);
   const tmux = opts?.tmux ?? mockTmuxAdapter();
   const cmux = opts?.cmux ?? unavailableCmuxAdapter();
+  const transcriptStore = new TranscriptStore("/tmp/openrig-test-transcripts");
   const nodeLauncher = new NodeLauncher({ db, rigRepo, sessionRegistry, eventBus, tmuxAdapter: tmux });
   const snapshotRepo = new SnapshotRepository(db);
   const checkpointStore = new CheckpointStore(db);
@@ -196,12 +198,11 @@ export function createTestApp(
   const discoveryCoordinator = new DiscoveryCoordinator({
     scanner: tmuxScanner, fingerprinter, enricher, discoveryRepo, sessionRegistry, eventBus,
   });
-  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
-  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus });
+  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux, transcriptStore });
+  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus, tmuxAdapter: tmux, transcriptStore });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
   const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: tmux });
   const contextUsageStore = new ContextUsageStore(db, { stateDir: "/tmp/openrig-test" });
-  const transcriptStore = new TranscriptStore("/tmp/openrig-test-transcripts");
   const whoamiService = new WhoamiService({ db, rigRepo, sessionRegistry, transcriptStore, contextUsageStore });
 
   const podBundleSourceResolver = new PodBundleSourceResolver();

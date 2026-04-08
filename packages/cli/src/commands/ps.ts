@@ -165,27 +165,31 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
+function fitCell(value: string, width: number): string {
+  return truncate(value, width).padEnd(width);
+}
+
 function padRigRow(rig: string, nodes: string, running: string, status: string, uptime: string, snapshot: string): string {
   return [
-    rig.padEnd(14),
-    nodes.padEnd(7),
-    running.padEnd(9),
-    status.padEnd(10),
-    uptime.padEnd(11),
+    fitCell(rig, 24),
+    fitCell(nodes, 7),
+    fitCell(running, 9),
+    fitCell(status, 10),
+    fitCell(uptime, 11),
     snapshot,
   ].join("");
 }
 
 function padNodeRow(rig: string, pod: string, member: string, session: string, runtime: string, status: string, startup: string, restore: string, error: string): string {
   return [
-    rig.padEnd(22),
-    pod.padEnd(10),
-    member.padEnd(10),
-    session.padEnd(28),
-    runtime.padEnd(14),
-    status.padEnd(10),
-    startup.padEnd(10),
-    restore.padEnd(10),
+    fitCell(rig, 32),
+    fitCell(pod, 12),
+    fitCell(member, 16),
+    fitCell(session, 40),
+    fitCell(runtime, 14),
+    fitCell(status, 10),
+    fitCell(startup, 10),
+    fitCell(restore, 10),
     error,
   ].join("");
 }

@@ -15,6 +15,7 @@ function makeDeps(overrides?: Partial<AskDeps>): AskDeps {
       findRigsByName: vi.fn((_name: string): Rig[] => [
         { id: "rig-1", name: "my-rig", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
       ]),
+      getRig: vi.fn(() => null),
     },
     historyQuery: {
       search: vi.fn(async (): Promise<SearchResult> => ({
@@ -161,5 +162,65 @@ describe("AskService", () => {
 
     expect(result.insufficient).toBe(true);
     expect(result.guidance).toContain("transcript");
+  });
+
+  it("answers peer questions from structured whoami context without transcript search", async () => {
+    const searchSpy = vi.fn(async (): Promise<SearchResult> => ({
+      backend: "rg",
+      excerpts: [],
+      insufficient: true,
+    }));
+    const deps = makeDeps({
+      historyQuery: {
+        search: searchSpy,
+        searchChat: vi.fn(() => []),
+      },
+      whoamiService: {
+        resolve: vi.fn(() => ({
+          resolvedBy: "session_name",
+          identity: {
+            rigId: "rig-1",
+            rigName: "my-rig",
+            nodeId: "node-1",
+            logicalId: "dev.impl",
+            attachmentType: "tmux",
+            podId: "pod-dev",
+            podNamespace: "dev",
+            podLabel: "Development",
+            memberId: "impl",
+            memberLabel: "Implementer",
+            sessionName: "dev-impl@my-rig",
+            runtime: "claude-code",
+            cwd: "/tmp",
+            agentRef: null,
+            profile: null,
+            resolvedSpecName: null,
+            resolvedSpecVersion: null,
+          },
+          peers: [
+            {
+              logicalId: "dev.qa",
+              sessionName: "dev-qa@my-rig",
+              runtime: "codex",
+              podId: "pod-dev",
+              podNamespace: "dev",
+              memberId: "qa",
+            },
+          ],
+          edges: { outgoing: [], incoming: [] },
+          transcript: { enabled: true, path: null, tailCommand: null, grepCommand: null },
+          commands: { sendExamples: [], captureExamples: [] },
+        })),
+      },
+    });
+    const svc = new AskService(deps);
+
+    const result = await svc.ask("my-rig", "who are my peers?", { sessionName: "dev-impl@my-rig" });
+
+    expect(result.evidence.backend).toBe("structured");
+    expect(result.evidence.excerpts[0]).toContain("dev.qa");
+    expect(result.evidence.excerpts[0]).toContain("dev-qa@my-rig");
+    expect(result.insufficient).toBe(false);
+    expect(searchSpy).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,7 @@ import { discoverySchema } from "../src/db/migrations/012_discovery.js";
 import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
 import { podNamespaceSchema } from "../src/db/migrations/017_pod_namespace.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { EventBus } from "../src/domain/event-bus.js";
@@ -24,11 +25,12 @@ import { DiscoveryRepository } from "../src/domain/discovery-repository.js";
 import { ClaimService } from "../src/domain/claim-service.js";
 import { vi } from "vitest";
 import type { TmuxAdapter, TmuxResult } from "../src/adapters/tmux.js";
+import { TranscriptStore } from "../src/domain/transcript-store.js";
 
 const ALL_MIGRATIONS = [
   coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema,
   checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema,
-  packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema,
+  packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema, externalCliAttachmentSchema,
 ];
 
 describe("ClaimService", () => {
@@ -42,6 +44,8 @@ describe("ClaimService", () => {
   let setSessionOptionSpy: ReturnType<typeof vi.fn>;
   let sendTextSpy: ReturnType<typeof vi.fn>;
   let sendKeysSpy: ReturnType<typeof vi.fn>;
+  let startPipePaneSpy: ReturnType<typeof vi.fn>;
+  let transcriptStore: TranscriptStore;
 
   beforeEach(() => {
     db = createDb();
@@ -53,13 +57,24 @@ describe("ClaimService", () => {
     setSessionOptionSpy = vi.fn(async () => ({ ok: true as const }));
     sendTextSpy = vi.fn(async () => ({ ok: true as const }));
     sendKeysSpy = vi.fn(async () => ({ ok: true as const }));
+    startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
     mockTmux = {
       setSessionOption: setSessionOptionSpy,
       getSessionOption: vi.fn(async () => null),
       sendText: sendTextSpy,
       sendKeys: sendKeysSpy,
+      startPipePane: startPipePaneSpy,
     } as unknown as TmuxAdapter;
-    claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter: mockTmux });
+    transcriptStore = new TranscriptStore({ transcriptsRoot: "/tmp/openrig-claim-service-transcripts", enabled: true });
+    claimService = new ClaimService({
+      db,
+      rigRepo,
+      sessionRegistry,
+      discoveryRepo,
+      eventBus,
+      tmuxAdapter: mockTmux,
+      transcriptStore,
+    });
   });
 
   afterEach(() => { db.close(); });
@@ -244,5 +259,20 @@ describe("ClaimService", () => {
 
     const result = await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "organic-session" });
     expect(result.ok).toBe(true);
+  });
+
+  it("bind starts transcript capture for an adopted tmux session", async () => {
+    const rig = seedRig();
+    rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/projects/myapp" });
+    const discovered = seedDiscovery({ tmuxSession: "orch-lead@host" });
+    vi.spyOn(transcriptStore, "ensureTranscriptDir").mockReturnValue(true);
+
+    const result = await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "orch.lead" });
+
+    expect(result.ok).toBe(true);
+    expect(startPipePaneSpy).toHaveBeenCalledWith(
+      "orch-lead@host",
+      transcriptStore.getTranscriptPath("test-rig", "orch-lead@host"),
+    );
   });
 });

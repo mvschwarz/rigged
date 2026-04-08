@@ -1,17 +1,20 @@
 import type { PsEntry } from "./ps-projection.js";
 import type { Rig } from "./types.js";
 import type { SearchResult, ChatSearchResult } from "./history-query.js";
+import type { RigWithRelations } from "./types.js";
+import type { WhoamiResult } from "./whoami-service.js";
 
 export type { ChatSearchResult };
 
 export interface AskDeps {
   psProjectionService: { getEntries(): PsEntry[] };
-  rigRepo: { findRigsByName(name: string): Rig[] };
+  rigRepo: { findRigsByName(name: string): Rig[]; getRig(rigId: string): RigWithRelations | null };
   historyQuery: {
     search(rigName: string, question: string): Promise<SearchResult>;
     searchChat(rigId: string, question: string): ChatSearchResult[];
   };
   transcriptsEnabled: boolean;
+  whoamiService?: { resolve(query: { nodeId?: string; sessionName?: string }): WhoamiResult | null };
 }
 
 export interface AskRigInfo {
@@ -41,7 +44,7 @@ export class AskService {
     this.deps = deps;
   }
 
-  async ask(rigName: string, question: string): Promise<AskResult> {
+  async ask(rigName: string, question: string, context?: { nodeId?: string; sessionName?: string }): Promise<AskResult> {
     // Resolve rig
     const rigs = this.deps.rigRepo.findRigsByName(rigName);
 
@@ -71,6 +74,19 @@ export class AskService {
     const rigInfo: AskRigInfo = psEntry
       ? { name: psEntry.name, status: psEntry.status, nodeCount: psEntry.nodeCount, runningCount: psEntry.runningCount, uptime: psEntry.uptime }
       : { name: rigName, status: "unknown", nodeCount: 0, runningCount: 0, uptime: null };
+
+    const structured = this.answerStructuredQuestion(rigs[0]!.id, rigName, question, context);
+    if (structured) {
+      return {
+        question,
+        rig: rigInfo,
+        evidence: {
+          backend: "structured",
+          excerpts: structured,
+        },
+        insufficient: false,
+      };
+    }
 
     // Check transcripts enabled
     if (!this.deps.transcriptsEnabled) {
@@ -124,5 +140,50 @@ export class AskService {
       insufficient: isInsufficient,
       guidance,
     };
+  }
+
+  private answerStructuredQuestion(
+    rigId: string,
+    rigName: string,
+    question: string,
+    context?: { nodeId?: string; sessionName?: string },
+  ): string[] | null {
+    const normalized = question.trim().toLowerCase();
+    if (!normalized) return null;
+
+    if (this.looksLikePeerQuestion(normalized)) {
+      const identity = this.resolveIdentity(context);
+      if (identity && identity.identity.rigId === rigId) {
+        return identity.peers.map((peer) => this.formatPeerLine(peer.logicalId, peer.sessionName, peer.runtime, peer.podNamespace));
+      }
+      const rig = this.deps.rigRepo.getRig(rigId);
+      if (!rig) return null;
+      return rig.nodes.map((node) => {
+        const parts = node.logicalId.split(".");
+        const podNamespace = parts.length > 1 ? parts[0]! : null;
+        const sessionName = node.binding?.tmuxSession ?? node.binding?.externalSessionName ?? "—";
+        return this.formatPeerLine(node.logicalId, sessionName, node.runtime ?? "unknown", podNamespace);
+      });
+    }
+
+    return null;
+  }
+
+  private resolveIdentity(context?: { nodeId?: string; sessionName?: string }): WhoamiResult | null {
+    if (!context?.nodeId && !context?.sessionName) return null;
+    return this.deps.whoamiService?.resolve(context) ?? null;
+  }
+
+  private looksLikePeerQuestion(question: string): boolean {
+    return /(^|\b)(who are my peers|who are the peers|list peers|show peers|who is in (this|the) rig|list nodes|show nodes)(\b|$)/.test(question);
+  }
+
+  private formatPeerLine(
+    logicalId: string,
+    sessionName: string,
+    runtime: string,
+    podNamespace: string | null,
+  ): string {
+    return `${logicalId}  session=${sessionName}  runtime=${runtime}  pod=${podNamespace ?? "—"}`;
   }
 }

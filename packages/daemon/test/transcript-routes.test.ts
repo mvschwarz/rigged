@@ -14,24 +14,34 @@ import { checkpointsSchema } from "../src/db/migrations/005_checkpoints.js";
 import { resumeMetadataSchema } from "../src/db/migrations/006_resume_metadata.js";
 import { nodeSpecFieldsSchema } from "../src/db/migrations/007_node_spec_fields.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { TranscriptStore } from "../src/domain/transcript-store.js";
 import { transcriptRoutes } from "../src/routes/transcripts.js";
+import type { TmuxAdapter } from "../src/adapters/tmux.js";
+import { vi } from "vitest";
 
 function setupDb(): Database.Database {
   const db = createDb();
-  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, agentspecRebootSchema]);
+  migrate(db, [coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema, checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema, agentspecRebootSchema, externalCliAttachmentSchema]);
   return db;
 }
 
-function createApp(opts: { db: Database.Database; rigRepo: RigRepository; sessionRegistry: SessionRegistry; transcriptStore: TranscriptStore }): Hono {
+function createApp(opts: {
+  db: Database.Database;
+  rigRepo: RigRepository;
+  sessionRegistry: SessionRegistry;
+  transcriptStore: TranscriptStore;
+  tmuxAdapter?: TmuxAdapter;
+}): Hono {
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.set("rigRepo" as never, opts.rigRepo);
     c.set("sessionRegistry" as never, opts.sessionRegistry);
     c.set("transcriptStore" as never, opts.transcriptStore);
     c.set("db" as never, opts.db);
+    c.set("tmuxAdapter" as never, opts.tmuxAdapter);
     await next();
   });
   app.route("/api/transcripts", transcriptRoutes());
@@ -107,6 +117,33 @@ describe("transcript routes", () => {
     const body = await res.json();
     expect(body.error).toContain("No transcript");
     expect(body.error).toContain("rig up");
+  });
+
+  it("GET /tail starts transcript capture for a tmux-bound session with no transcript file", async () => {
+    const rig = rigRepo.createRig("my-rig");
+    const node = rigRepo.addNode(rig.id, "dev-impl", { role: "worker", runtime: "claude-code" });
+    sessionRegistry.registerSession(node.id, "dev-impl@my-rig");
+    sessionRegistry.updateBinding(node.id, { tmuxSession: "dev-impl@my-rig" });
+
+    const store = new TranscriptStore({ transcriptsRoot: tmpDir, enabled: true });
+    vi.spyOn(store, "ensureTranscriptDir").mockReturnValue(true);
+    const startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
+    const app = createApp({
+      db,
+      rigRepo,
+      sessionRegistry,
+      transcriptStore: store,
+      tmuxAdapter: { startPipePane: startPipePaneSpy } as unknown as TmuxAdapter,
+    });
+
+    const res = await app.request("/api/transcripts/dev-impl@my-rig/tail");
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toContain("started now");
+    expect(startPipePaneSpy).toHaveBeenCalledWith(
+      "dev-impl@my-rig",
+      store.getTranscriptPath("my-rig", "dev-impl@my-rig"),
+    );
   });
 
   it("GET /tail with non-positive lines normalizes to default", async () => {

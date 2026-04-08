@@ -17,12 +17,13 @@ import { discoverySchema } from "../src/db/migrations/012_discovery.js";
 import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
 import { podNamespaceSchema } from "../src/db/migrations/017_pod_namespace.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { createTestApp } from "./helpers/test-app.js";
 
 const ALL_MIGRATIONS = [
   coreSchema, bindingsSessionsSchema, eventsSchema, snapshotsSchema,
   checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema,
-  packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema,
+  packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema, discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema, externalCliAttachmentSchema,
 ];
 
 function getEvents(database: Database.Database): Array<{ type: string; payload: string }> {

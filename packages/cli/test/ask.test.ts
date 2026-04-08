@@ -74,11 +74,26 @@ const CHAT_ONLY_RESULT = {
   insufficient: false,
 };
 
+const STRUCTURED_PEERS_RESULT = {
+  question: "who are my peers?",
+  rig: { name: "my-rig", status: "running", nodeCount: 2, runningCount: 2, uptime: "1h 30m" },
+  evidence: {
+    backend: "structured",
+    excerpts: [
+      "dev.qa  session=dev-qa@my-rig  runtime=codex  pod=dev",
+      "rev1.r1  session=rev1-r1@my-rig  runtime=claude-code  pod=rev1",
+    ],
+  },
+  insufficient: false,
+};
+
 describe("Ask CLI", () => {
   let server: http.Server;
   let port: number;
+  let lastBody: Record<string, unknown> | null;
 
   beforeAll(async () => {
+    lastBody = null;
     server = http.createServer((req, res) => {
       let body = "";
       req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
@@ -89,9 +104,13 @@ describe("Ask CLI", () => {
           return;
         }
         const parsed = JSON.parse(body);
+        lastBody = parsed;
         if (parsed.rig === "my-rig" && parsed.question === "what did chat say about deployment?") {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(CHAT_ONLY_RESULT));
+        } else if (parsed.rig === "my-rig" && parsed.question === "who are my peers?") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(STRUCTURED_PEERS_RESULT));
         } else if (parsed.rig === "my-rig" && parsed.question.includes("deployment")) {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(EVIDENCE_RESULT));
@@ -171,5 +190,28 @@ describe("Ask CLI", () => {
     expect(output).toContain("Chat Evidence");
     expect(output).toContain("deployment checkpoint shared in chat");
     expect(output).not.toContain("No transcript evidence found.");
+  });
+
+  it("passes node identity context and prints structured peer answers cleanly", async () => {
+    const prevNodeId = process.env.OPENRIG_NODE_ID;
+    const prevSessionName = process.env.OPENRIG_SESSION_NAME;
+    process.env.OPENRIG_NODE_ID = "node-123";
+    process.env.OPENRIG_SESSION_NAME = "dev-impl@my-rig";
+    try {
+      const { logs } = await captureLogs(async () => {
+        await makeCmd().parseAsync(["node", "rig", "ask", "my-rig", "who are my peers?"]);
+      });
+      const output = logs.join("\n");
+      expect(output).toContain("Structured Answer");
+      expect(output).toContain("dev.qa");
+      expect(output).toContain("rev1.r1");
+      expect(lastBody?.nodeId).toBe("node-123");
+      expect(lastBody?.sessionName).toBe("dev-impl@my-rig");
+    } finally {
+      if (prevNodeId === undefined) delete process.env.OPENRIG_NODE_ID;
+      else process.env.OPENRIG_NODE_ID = prevNodeId;
+      if (prevSessionName === undefined) delete process.env.OPENRIG_SESSION_NAME;
+      else process.env.OPENRIG_SESSION_NAME = prevSessionName;
+    }
   });
 });

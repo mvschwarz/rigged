@@ -56,7 +56,12 @@ Exit codes:
     }
 
     const client = deps.clientFactory(getDaemonUrl(status));
-    const res = await client.post<AskResult>("/api/ask", { rig, question });
+    const res = await client.post<AskResult>("/api/ask", {
+      rig,
+      question,
+      nodeId: process.env.OPENRIG_NODE_ID,
+      sessionName: process.env.OPENRIG_SESSION_NAME,
+    });
 
     if (res.status >= 400) {
       console.error(`Failed to query rig (HTTP ${res.status}). Check daemon status with: rig status`);
@@ -90,9 +95,12 @@ Exit codes:
     }
 
     if (result.evidence.excerpts.length > 0) {
-      console.log(`Evidence (${result.evidence.excerpts.length} matches):`);
+      const heading = result.evidence.backend === "structured"
+        ? `Structured Answer (${result.evidence.excerpts.length} items):`
+        : `Transcript Evidence (${result.evidence.excerpts.length} matches):`;
+      console.log(heading);
       for (const excerpt of result.evidence.excerpts) {
-        console.log(`  ${excerpt}`);
+        console.log(`  - ${excerpt}`);
       }
     }
 
@@ -102,7 +110,7 @@ Exit codes:
       }
       console.log(`Chat Evidence (${result.evidence.chatExcerpts.length} matches):`);
       for (const excerpt of result.evidence.chatExcerpts) {
-        console.log(`  ${excerpt}`);
+        console.log(`  - ${excerpt}`);
       }
     }
 

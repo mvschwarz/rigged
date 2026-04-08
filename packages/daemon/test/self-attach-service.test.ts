@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { createDb } from "../src/db/connection.js";
 import { migrate } from "../src/db/migrate.js";
@@ -23,6 +23,8 @@ import { SessionRegistry } from "../src/domain/session-registry.js";
 import { EventBus } from "../src/domain/event-bus.js";
 import { PodRepository } from "../src/domain/pod-repository.js";
 import { SelfAttachService } from "../src/domain/self-attach-service.js";
+import { TranscriptStore } from "../src/domain/transcript-store.js";
+import type { TmuxAdapter } from "../src/adapters/tmux.js";
 
 const ALL_MIGRATIONS = [
   coreSchema,
@@ -50,6 +52,9 @@ describe("SelfAttachService", () => {
   let sessionRegistry: SessionRegistry;
   let eventBus: EventBus;
   let selfAttachService: SelfAttachService;
+  let tmuxAdapter: TmuxAdapter;
+  let startPipePaneSpy: ReturnType<typeof vi.fn>;
+  let transcriptStore: TranscriptStore;
 
   beforeEach(() => {
     db = createDb();
@@ -58,12 +63,19 @@ describe("SelfAttachService", () => {
     podRepo = new PodRepository(db);
     sessionRegistry = new SessionRegistry(db);
     eventBus = new EventBus(db);
+    startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
+    tmuxAdapter = {
+      startPipePane: startPipePaneSpy,
+    } as unknown as TmuxAdapter;
+    transcriptStore = new TranscriptStore({ transcriptsRoot: "/tmp/openrig-self-attach-transcripts", enabled: true });
     selfAttachService = new SelfAttachService({
       db,
       rigRepo,
       podRepo,
       sessionRegistry,
       eventBus,
+      tmuxAdapter,
+      transcriptStore,
     });
   });
 
@@ -177,5 +189,30 @@ describe("SelfAttachService", () => {
     expect(binding?.tmuxWindow).toBe("@12");
     expect(binding?.tmuxPane).toBe("%34");
     expect(binding?.externalSessionName).toBeNull();
+  });
+
+  it("attachToNode starts transcript capture when self-attaching from tmux", async () => {
+    const rig = rigRepo.createRig("rigged-buildout");
+    rigRepo.addNode(rig.id, "dev1.impl2", {
+      runtime: "claude-code",
+    });
+    vi.spyOn(transcriptStore, "ensureTranscriptDir").mockReturnValue(true);
+
+    const result = await selfAttachService.attachToNode({
+      rigId: rig.id,
+      logicalId: "dev1.impl2",
+      context: {
+        attachmentType: "tmux",
+        tmuxSession: "dev1-impl2@rigged-buildout",
+        tmuxWindow: "@12",
+        tmuxPane: "%34",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(startPipePaneSpy).toHaveBeenCalledWith(
+      "dev1-impl2@rigged-buildout",
+      transcriptStore.getTranscriptPath("rigged-buildout", "dev1-impl2@rigged-buildout"),
+    );
   });
 });

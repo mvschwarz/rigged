@@ -241,6 +241,45 @@ describe("Ps CLI", () => {
     expect(output).toContain("terminal");
   });
 
+  it("ps --nodes truncates long rig and session names so the table stays aligned", async () => {
+    psData = [
+      {
+        rigId: "rig-very-long-id-1234567890",
+        name: "rigged-buildout-with-an-extremely-long-name",
+        nodeCount: 1,
+        runningCount: 1,
+        status: "running",
+        uptime: "1m",
+        latestSnapshot: null,
+      },
+    ];
+    nodesData["rig-very-long-id-1234567890"] = [
+      {
+        rigId: "rig-very-long-id-1234567890",
+        rigName: "rigged-buildout-with-an-extremely-long-name",
+        logicalId: "research1.analyst",
+        podId: "pod-research",
+        podNamespace: "research1",
+        canonicalSessionName: "research1-analyst-with-an-extremely-long-session-name@rigged-buildout-with-an-extremely-long-name",
+        nodeKind: "agent",
+        runtime: "claude-code",
+        sessionStatus: "running",
+        startupStatus: "ready",
+        restoreOutcome: "n-a",
+        tmuxAttachCommand: null,
+        resumeCommand: null,
+        latestError: null,
+      },
+    ];
+
+    const { logs } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rig", "ps", "--nodes"]);
+    });
+    const lines = logs.join("\n").split("\n");
+    expect(lines[1]).toContain("…");
+    expect(lines[1]!.length).toBeLessThan(180);
+  });
+
   it("ps (no flag) still works backward compatible", async () => {
     psData = [
       { rigId: "rig-1", name: "compat-rig", nodeCount: 1, runningCount: 1, status: "running", uptime: "5m", latestSnapshot: null },

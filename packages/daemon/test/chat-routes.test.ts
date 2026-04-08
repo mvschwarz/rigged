@@ -132,4 +132,41 @@ describe("chat routes", () => {
 
     reader.cancel();
   });
+
+  it("POST /clear removes messages and returns count", async () => {
+    chatRepo.send(rigId, "alice", "msg1");
+    chatRepo.send(rigId, "bob", "msg2");
+
+    const res = await app.request(`/api/rigs/${rigId}/chat/clear`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.deleted).toBe(2);
+
+    // Verify room is empty
+    const historyRes = await app.request(`/api/rigs/${rigId}/chat/history`);
+    const history = await historyRes.json();
+    expect(history).toHaveLength(0);
+  });
+
+  it("POST /clear on empty room returns deleted: 0", async () => {
+    const res = await app.request(`/api/rigs/${rigId}/chat/clear`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.deleted).toBe(0);
+  });
+
+  it("POST /clear leaves other rigs' messages intact", async () => {
+    const otherRig = rigRepo.createRig("other-rig");
+    chatRepo.send(rigId, "alice", "target msg");
+    chatRepo.send(otherRig.id, "bob", "other msg");
+
+    await app.request(`/api/rigs/${rigId}/chat/clear`, { method: "POST" });
+
+    const targetHistory = await (await app.request(`/api/rigs/${rigId}/chat/history`)).json();
+    const otherHistory = await (await app.request(`/api/rigs/${otherRig.id}/chat/history`)).json();
+    expect(targetHistory).toHaveLength(0);
+    expect(otherHistory).toHaveLength(1);
+  });
 });

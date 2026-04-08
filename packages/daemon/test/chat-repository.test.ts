@@ -77,4 +77,33 @@ describe("ChatRepository", () => {
     expect(msg.body).toBe("daily standup");
     expect(msg.sender).toBe("alice");
   });
+
+  // Clear tests
+  it("clear removes all messages for the target rig", () => {
+    chatRepo.send(rigId, "alice", "msg1");
+    chatRepo.send(rigId, "bob", "msg2");
+    chatRepo.send(rigId, "alice", "msg3");
+
+    const result = chatRepo.clear(rigId);
+    expect(result.deleted).toBe(3);
+    expect(chatRepo.history(rigId)).toHaveLength(0);
+  });
+
+  it("clear returns 0 for empty room", () => {
+    const result = chatRepo.clear(rigId);
+    expect(result.deleted).toBe(0);
+  });
+
+  it("clear leaves other rigs' messages intact", () => {
+    const otherRig = rigRepo.createRig("other-rig");
+    const otherRigId = otherRig.id;
+    chatRepo.send(rigId, "alice", "target rig msg");
+    chatRepo.send(otherRigId, "bob", "other rig msg");
+
+    chatRepo.clear(rigId);
+
+    expect(chatRepo.history(rigId)).toHaveLength(0);
+    expect(chatRepo.history(otherRigId)).toHaveLength(1);
+    expect(chatRepo.history(otherRigId)[0]!.body).toBe("other rig msg");
+  });
 });

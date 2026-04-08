@@ -146,6 +146,13 @@ export class ChatRepository {
     return rows.map((r) => this.rowToMessage(r));
   }
 
+  clear(rigId: string): { deleted: number } {
+    const result = this.db
+      .prepare("DELETE FROM chat_messages WHERE rig_id = ?")
+      .run(rigId);
+    return { deleted: result.changes };
+  }
+
   private rowToMessage(row: ChatMessageRow): ChatMessage {
     return {
       id: row.id,

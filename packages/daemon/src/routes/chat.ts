@@ -142,5 +142,15 @@ export function chatRoutes(): Hono {
     return c.json(msg, 201);
   });
 
+  // POST /clear — delete all messages for this rig
+  app.post("/clear", (c) => {
+    const rigId = c.req.param("rigId");
+    if (!rigId) return c.json({ error: "Missing rigId" }, 400);
+
+    const chatRepo = getChatRepo(c);
+    const result = chatRepo.clear(rigId);
+    return c.json({ ok: true, deleted: result.deleted });
+  });
+
   return app;
 }

@@ -97,6 +97,12 @@ describe("Chatroom CLI", () => {
           return;
         }
 
+        if (url.includes("/chat/clear") && req.method === "POST") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, deleted: 2 }));
+          return;
+        }
+
         if (url.includes("/chat/watch")) {
           res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
           res.write(`data: ${JSON.stringify({ id: "msg-1", sender: "alice", kind: "message", body: "streamed", createdAt: "2026-03-31T10:00:00Z" })}\n\n`);
@@ -215,5 +221,14 @@ describe("Chatroom CLI", () => {
     // Either it created the session or it reported an error about an existing session
     const tmuxSucceeded = output.includes("chatroom@my-rig");
     expect(tmuxSucceeded).toBe(true);
+  });
+
+  it("chatroom clear prints deleted count", async () => {
+    const { logs } = await captureLogs(async () => {
+      await makeCmd().parseAsync(["node", "rig", "chatroom", "clear", "my-rig"]);
+    });
+
+    const output = logs.join("\n");
+    expect(output).toContain("Cleared 2 messages from my-rig chatroom.");
   });
 });

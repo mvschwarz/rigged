@@ -240,5 +240,33 @@ export function chatroomCommand(depsOverride?: StatusDeps): Command {
       console.log(`--- topic: ${topicName} ---`);
     });
 
+  // chatroom clear <rig>
+  cmd
+    .command("clear")
+    .argument("<rig>", "Rig name")
+    .action(async (rig: string) => {
+      const client = await getClient();
+      if (!client) return;
+
+      let rigId: string;
+      try {
+        rigId = await resolveRigId(client, rig);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exitCode = 1;
+        return;
+      }
+
+      const res = await client.post<{ ok: boolean; deleted: number }>(`/api/rigs/${encodeURIComponent(rigId)}/chat/clear`, {});
+
+      if (res.status >= 400) {
+        console.error(`Clear failed (HTTP ${res.status})`);
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log(`Cleared ${res.data.deleted} messages from ${rig} chatroom.`);
+    });
+
   return cmd;
 }

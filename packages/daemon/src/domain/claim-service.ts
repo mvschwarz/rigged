@@ -19,6 +19,9 @@ interface ClaimServiceDeps {
   eventBus: EventBus;
   tmuxAdapter?: TmuxAdapter;
   transcriptStore?: TranscriptStore;
+  claudeContextProvisioner?: {
+    ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void;
+  };
 }
 
 interface BindOptions {
@@ -48,6 +51,7 @@ export class ClaimService {
   private eventBus: EventBus;
   private tmuxAdapter: TmuxAdapter | null;
   private transcriptStore: TranscriptStore | null;
+  private claudeContextProvisioner: ClaimServiceDeps["claudeContextProvisioner"] | null;
 
   constructor(deps: ClaimServiceDeps) {
     if (deps.db !== deps.rigRepo.db) throw new Error("ClaimService: rigRepo must share the same db handle");
@@ -61,6 +65,7 @@ export class ClaimService {
     this.eventBus = deps.eventBus;
     this.tmuxAdapter = deps.tmuxAdapter ?? null;
     this.transcriptStore = deps.transcriptStore ?? null;
+    this.claudeContextProvisioner = deps.claudeContextProvisioner ?? null;
   }
 
   /** Best-effort: set OpenRig-owned tmux metadata on an adopted session. */
@@ -88,6 +93,16 @@ export class ClaimService {
     const hint = `--- OpenRig: You have been adopted into rig "${meta.rigName}" as ${meta.logicalId}. Run: rig whoami --json ---`;
     await this.tmuxAdapter.sendText(tmuxSession, hint);
     await this.tmuxAdapter.sendKeys(tmuxSession, ["C-m"]);
+  }
+
+  private maybeProvisionContextCollector(runtime: string | null | undefined, cwd: string | null | undefined, tmuxSession: string): void {
+    if (runtime !== "claude-code") return;
+    try {
+      this.claudeContextProvisioner?.ensureContextCollector({
+        cwd: cwd ?? undefined,
+        tmuxSession,
+      });
+    } catch { /* best-effort */ }
   }
 
   async bind(opts: BindOptions): Promise<ClaimResult> {
@@ -166,6 +181,7 @@ export class ClaimService {
           rigId: opts.rigId, rigName: rig!.rig.name, logicalId: opts.logicalId,
         });
       } catch { /* best-effort */ }
+      this.maybeProvisionContextCollector(node.runtime ?? discoveredRuntime, node.cwd ?? discovered.cwd, discovered.tmuxSession);
       try {
         await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rig!.rig.name, discovered.tmuxSession);
       } catch { /* best-effort */ }
@@ -218,12 +234,13 @@ export class ClaimService {
       return { ok: false, code: "duplicate_logical_id", error: `Logical ID '${logicalId}' already exists in rig` };
     }
 
+    const discoveredRuntime = discovered.runtimeHint === "unknown" || discovered.runtimeHint === "terminal"
+      ? undefined
+      : discovered.runtimeHint;
+
     const claimTx = this.db.transaction(() => {
-      const runtime = discovered.runtimeHint === "unknown" || discovered.runtimeHint === "terminal"
-        ? undefined
-        : discovered.runtimeHint;
       const node = this.rigRepo.addNode(opts.rigId, logicalId, {
-        runtime,
+        runtime: discoveredRuntime,
         cwd: discovered.cwd ?? undefined,
         podId: opts.podId,
       });
@@ -268,6 +285,7 @@ export class ClaimService {
           rigId: opts.rigId, rigName: rig!.rig.name, logicalId,
         });
       } catch { /* best-effort */ }
+      this.maybeProvisionContextCollector(discoveredRuntime, discovered.cwd, discovered.tmuxSession);
       try {
         await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rig!.rig.name, discovered.tmuxSession);
       } catch { /* best-effort */ }

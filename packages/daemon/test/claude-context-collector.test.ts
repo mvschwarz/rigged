@@ -66,6 +66,17 @@ describe("Claude Status Line Collector Script", () => {
     expect(existsSync(outputPath)).toBe(false);
   });
 
+  it("writes to a session-specific sidecar when given a context directory", () => {
+    const outputDir = join(tmpDir, "context");
+    execSync(`echo '${VALID_STATUS_LINE}' | node ${collectorPath} ${outputDir}`, { encoding: "utf-8" });
+
+    const sessionSidecar = join(outputDir, "dev-impl@test.json");
+    expect(existsSync(sessionSidecar)).toBe(true);
+    const content = JSON.parse(readFileSync(sessionSidecar, "utf-8"));
+    expect(content.session_name).toBe("dev-impl@test");
+    expect(content.context_window.used_percentage).toBe(67);
+  });
+
   // T3b: No output path arg — silent exit
   it("silently exits with no output path argument", () => {
     // Should not throw
@@ -129,7 +140,7 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
     const settings = JSON.parse(written[settingsPath]!);
     expect(settings.statusLine).toBeDefined();
     expect(settings.statusLine.command).toContain("context-collector.cjs");
-    expect(settings.statusLine.command).toContain(tmpDir);
+    expect(settings.statusLine.command).toContain(join(tmpDir, "context"));
   });
 
   // T5: deliverStartup copies collector script to project
@@ -200,5 +211,20 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
     expect(settings.theme).toBe("dark");
     expect(settings.statusLine).toBeDefined();
     expect(settings.statusLine.command).toContain("context-collector.cjs");
+  });
+
+  it("ensureContextCollector is a public best-effort seam for adopted tmux sessions", () => {
+    const adapter = new ClaudeCodeAdapter({
+      tmux: mockTmux(),
+      fsOps: mockFsOps(),
+      stateDir: tmpDir,
+      collectorAssetPath: "/fake/collector.js",
+    });
+
+    adapter.ensureContextCollector({ cwd: "/project", tmuxSession: "dev-impl@test" } as any);
+
+    const settings = JSON.parse(written["/project/.claude/settings.local.json"]!);
+    expect(settings.statusLine.command).toContain(join(tmpDir, "context"));
+    expect(written["/project/.openrig/context-collector.cjs"]).toBe("copied:/fake/collector.js");
   });
 });

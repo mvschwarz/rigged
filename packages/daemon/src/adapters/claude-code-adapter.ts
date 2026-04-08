@@ -91,7 +91,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
   async deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult> {
     // Best-effort: provision context collector for managed Claude sessions
-    try { this.provisionContextCollector(binding); } catch (err) {
+    try { this.ensureContextCollector(binding); } catch (err) {
       // Log but don't fail — collector provisioning is best-effort
       console.error(`[openrig] context collector provisioning warning: ${(err as Error).message}`);
     }
@@ -176,6 +176,11 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     }
     const alive = await this.tmux.hasSession(binding.tmuxSession);
     return alive ? { ready: true } : { ready: false, reason: "tmux session not responsive" };
+  }
+
+  /** Best-effort public seam for tmux-bound Claude sessions adopted outside the launch path. */
+  ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void {
+    this.provisionContextCollector(binding);
   }
 
   // -- Private helpers --
@@ -324,13 +329,9 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
    * Writes a collector script and merges status line config into .claude/settings.local.json.
    * Idempotent: safe to call multiple times (merge preserves existing settings).
    */
-  private provisionContextCollector(binding: NodeBinding): void {
+  private provisionContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void {
     if (!this.stateDir || !this.collectorAssetPath || !binding.cwd) return;
-
-    const sessionName = binding.tmuxSession ?? "unknown";
-    // Compute sidecar path same as ContextUsageStore
-    const safeName = sessionName.replace(/[^a-zA-Z0-9@._-]/g, "_");
-    const sidecarPath = nodePath.join(this.stateDir, "context", `${safeName}.json`);
+    const contextDir = nodePath.join(this.stateDir, "context");
 
     // 1. Copy collector script to project
     const collectorDest = nodePath.join(binding.cwd, ".openrig", "context-collector.cjs");
@@ -348,7 +349,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       }
     } catch { /* corrupt file — overwrite */ }
 
-    const collectorCmd = `node ${collectorDest} ${sidecarPath}`;
+    const collectorCmd = `node ${collectorDest} ${contextDir}`;
     existing["statusLine"] = {
       ...(typeof existing["statusLine"] === "object" && existing["statusLine"] !== null ? existing["statusLine"] as Record<string, unknown> : {}),
       command: collectorCmd,

@@ -3,13 +3,13 @@
 // Reads Claude status line JSON from stdin, extracts context window data,
 // and writes atomically to a sidecar file.
 //
-// Usage: node claude-statusline-context.js <sidecar-output-path>
+// Usage: node claude-statusline-context.js <sidecar-output-path-or-dir>
 
 const fs = require("fs");
 const path = require("path");
 
-const outputPath = process.argv[2];
-if (!outputPath) {
+const outputTarget = process.argv[2];
+if (!outputTarget) {
   process.exit(0); // No output path — silently exit
 }
 
@@ -39,6 +39,11 @@ process.stdin.on("end", () => {
       sampled_at: new Date().toISOString(),
     };
 
+    const outputPath = resolveOutputPath(outputTarget, raw);
+    if (!outputPath) {
+      process.exit(0);
+    }
+
     // Atomic write: write to .tmp then rename
     const tmpPath = outputPath + ".tmp";
     const dir = path.dirname(outputPath);
@@ -52,3 +57,17 @@ process.stdin.on("end", () => {
     process.exit(0);
   }
 });
+
+function resolveOutputPath(target, raw) {
+  if (target.endsWith(".json")) {
+    return target;
+  }
+
+  const sessionKey = raw.session_name || raw.session_id;
+  if (!sessionKey) {
+    return null;
+  }
+
+  const safe = String(sessionKey).replace(/[^a-zA-Z0-9@._-]/g, "_");
+  return path.join(target, safe + ".json");
+}

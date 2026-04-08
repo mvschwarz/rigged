@@ -7,6 +7,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 30_000;
 interface EligibleSession {
   node_id: string;
   session_name: string;
+  cwd: string | null;
 }
 
 /**
@@ -17,11 +18,17 @@ interface EligibleSession {
 export class ContextMonitor {
   private db: Database.Database;
   private store: ContextUsageStore;
+  private claudeContextProvisioner: { ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void } | null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(db: Database.Database, store: ContextUsageStore) {
+  constructor(
+    db: Database.Database,
+    store: ContextUsageStore,
+    claudeContextProvisioner?: { ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void },
+  ) {
     this.db = db;
     this.store = store;
+    this.claudeContextProvisioner = claudeContextProvisioner ?? null;
   }
 
   /** Discover active managed Claude sessions and poll their sidecar files. */
@@ -29,6 +36,10 @@ export class ContextMonitor {
     const sessions = this.getEligibleSessions();
     for (const session of sessions) {
       try {
+        this.claudeContextProvisioner?.ensureContextCollector({
+          cwd: session.cwd ?? undefined,
+          tmuxSession: session.session_name,
+        });
         const usage = this.store.readAndNormalize(session.session_name);
         this.store.persist(session.node_id, usage);
       } catch {
@@ -61,11 +72,15 @@ export class ContextMonitor {
   /** Query for managed Claude sessions that are currently running. */
   private getEligibleSessions(): EligibleSession[] {
     return this.db.prepare(`
-      SELECT n.id as node_id, s.session_name
+      SELECT n.id as node_id, s.session_name, n.cwd
       FROM nodes n
       JOIN sessions s ON s.node_id = n.id
         AND s.id = (SELECT s2.id FROM sessions s2 WHERE s2.node_id = n.id ORDER BY s2.id DESC LIMIT 1)
-      WHERE n.runtime = 'claude-code' AND s.status = 'running' AND s.origin = 'launched'
+      LEFT JOIN bindings b ON b.node_id = n.id
+      WHERE n.runtime = 'claude-code'
+        AND s.status = 'running'
+        AND COALESCE(b.attachment_type, 'tmux') = 'tmux'
+        AND COALESCE(b.tmux_session, s.session_name) IS NOT NULL
     `).all() as EligibleSession[];
   }
 }

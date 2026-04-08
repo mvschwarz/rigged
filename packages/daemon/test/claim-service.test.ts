@@ -45,6 +45,7 @@ describe("ClaimService", () => {
   let sendTextSpy: ReturnType<typeof vi.fn>;
   let sendKeysSpy: ReturnType<typeof vi.fn>;
   let startPipePaneSpy: ReturnType<typeof vi.fn>;
+  let ensureContextCollectorSpy: ReturnType<typeof vi.fn>;
   let transcriptStore: TranscriptStore;
 
   beforeEach(() => {
@@ -58,6 +59,7 @@ describe("ClaimService", () => {
     sendTextSpy = vi.fn(async () => ({ ok: true as const }));
     sendKeysSpy = vi.fn(async () => ({ ok: true as const }));
     startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
+    ensureContextCollectorSpy = vi.fn();
     mockTmux = {
       setSessionOption: setSessionOptionSpy,
       getSessionOption: vi.fn(async () => null),
@@ -74,6 +76,9 @@ describe("ClaimService", () => {
       eventBus,
       tmuxAdapter: mockTmux,
       transcriptStore,
+      claudeContextProvisioner: {
+        ensureContextCollector: ensureContextCollectorSpy,
+      },
     });
   });
 
@@ -274,5 +279,19 @@ describe("ClaimService", () => {
       "orch-lead@host",
       transcriptStore.getTranscriptPath("test-rig", "orch-lead@host"),
     );
+  });
+
+  it("bind provisions Claude context collection for adopted tmux sessions", async () => {
+    const rig = seedRig();
+    rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code", cwd: "/projects/myapp" });
+    const discovered = seedDiscovery({ tmuxSession: "orch-lead@host" });
+
+    const result = await claimService.bind({ discoveredId: discovered.id, rigId: rig.id, logicalId: "orch.lead" });
+
+    expect(result.ok).toBe(true);
+    expect(ensureContextCollectorSpy).toHaveBeenCalledWith({
+      cwd: "/projects/myapp",
+      tmuxSession: "orch-lead@host",
+    });
   });
 });

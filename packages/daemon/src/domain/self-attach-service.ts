@@ -43,6 +43,9 @@ interface SelfAttachServiceDeps {
   eventBus: EventBus;
   tmuxAdapter?: TmuxAdapter;
   transcriptStore?: TranscriptStore;
+  claudeContextProvisioner?: {
+    ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void;
+  };
 }
 
 interface AttachToNodeOptions {
@@ -86,6 +89,7 @@ export class SelfAttachService {
   private eventBus: EventBus;
   private tmuxAdapter: TmuxAdapter | null;
   private transcriptStore: TranscriptStore | null;
+  private claudeContextProvisioner: SelfAttachServiceDeps["claudeContextProvisioner"] | null;
 
   constructor(deps: SelfAttachServiceDeps) {
     if (deps.db !== deps.rigRepo.db) throw new Error("SelfAttachService: rigRepo must share the same db handle");
@@ -99,6 +103,7 @@ export class SelfAttachService {
     this.eventBus = deps.eventBus;
     this.tmuxAdapter = deps.tmuxAdapter ?? null;
     this.transcriptStore = deps.transcriptStore ?? null;
+    this.claudeContextProvisioner = deps.claudeContextProvisioner ?? null;
   }
 
   async attachToNode(opts: AttachToNodeOptions): Promise<SelfAttachResult> {
@@ -130,6 +135,8 @@ export class SelfAttachService {
       rigName: rig.rig.name,
       nodeId: node.id,
       logicalId: node.logicalId,
+      runtime: node.runtime ?? opts.runtime,
+      cwd: node.cwd ?? opts.cwd,
       context: this.resolveContext(node.logicalId, rig.rig.name, opts.displayName, opts.context),
     });
   }
@@ -177,6 +184,7 @@ export class SelfAttachService {
 
     try {
       const result = attachTx();
+      this.maybeProvisionContextCollector(opts.runtime, opts.cwd, result.sessionName, result.attachmentType);
       await this.maybeStartTranscriptCapture(rig.rig.name, result.sessionName, result.attachmentType);
       this.eventBus.notifySubscribers(result.event);
       return this.toSuccess(result.nodeId, result.logicalId, result.sessionId, result.sessionName, result.attachmentType);
@@ -190,6 +198,8 @@ export class SelfAttachService {
     rigName: string;
     nodeId: string;
     logicalId: string;
+    runtime?: string | null;
+    cwd?: string | null;
     context: SelfAttachContext;
   }): Promise<SelfAttachResult> {
     const attachTx = this.db.transaction(() =>
@@ -203,7 +213,7 @@ export class SelfAttachService {
 
     try {
       const result = attachTx();
-      return this.finalizeAttach(args.rigName, result);
+      return this.finalizeAttach(args.rigName, result, args.runtime, args.cwd);
     } catch (error) {
       return { ok: false, code: "already_bound", error: (error as Error).message };
     }
@@ -219,8 +229,11 @@ export class SelfAttachService {
       attachmentType: "tmux" | "external_cli";
       event: PersistedEvent;
     },
+    runtime?: string | null,
+    cwd?: string | null,
   ): Promise<SelfAttachResult> {
     try {
+      this.maybeProvisionContextCollector(runtime, cwd, result.sessionName, result.attachmentType);
       await this.maybeStartTranscriptCapture(rigName, result.sessionName, result.attachmentType);
       this.eventBus.notifySubscribers(result.event);
       return this.toSuccess(result.nodeId, result.logicalId, result.sessionId, result.sessionName, result.attachmentType);
@@ -297,6 +310,21 @@ export class SelfAttachService {
   ): Promise<void> {
     if (attachmentType !== "tmux") return;
     await startTmuxTranscriptCapture(this.tmuxAdapter, this.transcriptStore, rigName, sessionName);
+  }
+
+  private maybeProvisionContextCollector(
+    runtime: string | null | undefined,
+    cwd: string | null | undefined,
+    sessionName: string,
+    attachmentType: "tmux" | "external_cli",
+  ): void {
+    if (attachmentType !== "tmux" || runtime !== "claude-code") return;
+    try {
+      this.claudeContextProvisioner?.ensureContextCollector({
+        cwd: cwd ?? undefined,
+        tmuxSession: sessionName,
+      });
+    } catch { /* best-effort */ }
   }
 
   private toSuccess(

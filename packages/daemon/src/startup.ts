@@ -253,8 +253,14 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
     discoveryRepo, sessionRegistry, eventBus,
   });
   const resumeMetadataRefresher = new ResumeMetadataRefresher({ sessionRegistry, tmuxAdapter });
-  const claimService = new ClaimService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter, transcriptStore });
-  const selfAttachService = new SelfAttachService({ db, rigRepo, podRepo, sessionRegistry, eventBus, tmuxAdapter, transcriptStore });
+  const claimService = new ClaimService({
+    db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter, transcriptStore,
+    claudeContextProvisioner: claudeAdapter,
+  });
+  const selfAttachService = new SelfAttachService({
+    db, rigRepo, podRepo, sessionRegistry, eventBus, tmuxAdapter, transcriptStore,
+    claudeContextProvisioner: claudeAdapter,
+  });
   const rigLifecycleService = new RigLifecycleService({ db, rigRepo, sessionRegistry, discoveryRepo, eventBus, tmuxAdapter });
   const rigExpansionService = new RigExpansionService({ db, rigRepo, eventBus, nodeLauncher, podInstantiator, sessionRegistry });
 
@@ -370,7 +376,7 @@ export async function createDaemon(opts?: DaemonOptions): Promise<DaemonResult> 
 
   // Context monitor — caller (index.ts) starts polling after listen
   const { ContextMonitor } = await import("./domain/context-monitor.js");
-  const contextMonitor = new ContextMonitor(db, contextUsageStore);
+  const contextMonitor = new ContextMonitor(db, contextUsageStore, claudeAdapter);
 
   return { app, db, deps, contextMonitor };
 }

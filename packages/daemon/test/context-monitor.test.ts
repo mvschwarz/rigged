@@ -21,6 +21,7 @@ import { discoveryFkFix } from "../src/db/migrations/013_discovery_fk_fix.js";
 import { agentspecRebootSchema } from "../src/db/migrations/014_agentspec_reboot.js";
 import { podNamespaceSchema } from "../src/db/migrations/017_pod_namespace.js";
 import { contextUsageSchema } from "../src/db/migrations/018_context_usage.js";
+import { externalCliAttachmentSchema } from "../src/db/migrations/019_external_cli_attachment.js";
 import { RigRepository } from "../src/domain/rig-repository.js";
 import { SessionRegistry } from "../src/domain/session-registry.js";
 import { ContextUsageStore } from "../src/domain/context-usage-store.js";
@@ -31,7 +32,7 @@ const ALL_MIGRATIONS = [
   checkpointsSchema, resumeMetadataSchema, nodeSpecFieldsSchema,
   packagesSchema, installJournalSchema, journalSeqSchema, bootstrapSchema,
   discoverySchema, discoveryFkFix, agentspecRebootSchema, podNamespaceSchema,
-  contextUsageSchema,
+  contextUsageSchema, externalCliAttachmentSchema,
 ];
 
 describe("ContextMonitor", () => {
@@ -40,6 +41,7 @@ describe("ContextMonitor", () => {
   let sessionRegistry: SessionRegistry;
   let store: ContextUsageStore;
   let monitor: ContextMonitor;
+  let ensureContextCollectorSpy: ReturnType<typeof vi.fn>;
   let tmpDir: string;
 
   beforeEach(() => {
@@ -50,7 +52,10 @@ describe("ContextMonitor", () => {
     tmpDir = join(tmpdir(), `context-monitor-${Date.now()}`);
     mkdirSync(join(tmpDir, "context"), { recursive: true });
     store = new ContextUsageStore(db, { stateDir: tmpDir });
-    monitor = new ContextMonitor(db, store);
+    ensureContextCollectorSpy = vi.fn();
+    monitor = new ContextMonitor(db, store, {
+      ensureContextCollector: ensureContextCollectorSpy,
+    });
   });
 
   afterEach(() => {
@@ -78,7 +83,18 @@ describe("ContextMonitor", () => {
   function seedClaimedNode() {
     const rig = rigRepo.createRig("test-rig-3");
     const node = rigRepo.addNode(rig.id, "adopted.node", { runtime: "claude-code" });
-    sessionRegistry.registerClaimedSession(node.id, "adopted-session");
+    const session = sessionRegistry.registerClaimedSession(node.id, "adopted-session");
+    db.prepare("UPDATE sessions SET status = 'running' WHERE id = ?").run(session.id);
+    sessionRegistry.updateBinding(node.id, { tmuxSession: "adopted-session" });
+    return { rig, node };
+  }
+
+  function seedExternalCliClaudeNode() {
+    const rig = rigRepo.createRig("test-rig-4");
+    const node = rigRepo.addNode(rig.id, "orch.lead", { runtime: "claude-code" });
+    const session = sessionRegistry.registerClaimedSession(node.id, "orch-lead@test");
+    db.prepare("UPDATE sessions SET status = 'running' WHERE id = ?").run(session.id);
+    sessionRegistry.updateBinding(node.id, { attachmentType: "external_cli", externalSessionName: "orch-lead@test" });
     return { rig, node };
   }
 
@@ -112,6 +128,10 @@ describe("ContextMonitor", () => {
     const usage = store.getForNode(node.id, sessionName);
     expect(usage.availability).toBe("known");
     expect(usage.usedPercentage).toBe(67);
+    expect(ensureContextCollectorSpy).toHaveBeenCalledWith({
+      cwd: undefined,
+      tmuxSession: sessionName,
+    });
   });
 
   // T2: pollOnce skips non-Claude runtimes
@@ -191,15 +211,26 @@ describe("ContextMonitor", () => {
     expect(rig!.nodes).toHaveLength(1); // Only the one we seeded
   });
 
-  // T9: Claimed/adopted Claude sessions are NOT polled
-  it("claimed sessions are not polled", () => {
+  // T9: Claimed/adopted Claude tmux sessions are polled
+  it("claimed tmux sessions are polled", () => {
     const { node } = seedClaimedNode();
-    writeSidecar("adopted-session", VALID_SIDECAR);
+    writeSidecar("adopted-session", { ...VALID_SIDECAR, session_name: "adopted-session" });
 
     monitor.pollOnce();
 
     const usage = store.getForNode(node.id, "adopted-session");
+    expect(usage.availability).toBe("known");
+    expect(usage.usedPercentage).toBe(67);
+  });
+
+  it("external_cli Claude sessions are not polled", () => {
+    const { node } = seedExternalCliClaudeNode();
+    writeSidecar("orch-lead@test", VALID_SIDECAR);
+
+    monitor.pollOnce();
+
+    const usage = store.getForNode(node.id, "orch-lead@test");
     expect(usage.availability).toBe("unknown");
-    expect(usage.reason).toBe("no_data"); // Not polled at all
+    expect(usage.reason).toBe("no_data");
   });
 });

@@ -54,6 +54,7 @@ describe("SelfAttachService", () => {
   let selfAttachService: SelfAttachService;
   let tmuxAdapter: TmuxAdapter;
   let startPipePaneSpy: ReturnType<typeof vi.fn>;
+  let ensureContextCollectorSpy: ReturnType<typeof vi.fn>;
   let transcriptStore: TranscriptStore;
 
   beforeEach(() => {
@@ -64,6 +65,7 @@ describe("SelfAttachService", () => {
     sessionRegistry = new SessionRegistry(db);
     eventBus = new EventBus(db);
     startPipePaneSpy = vi.fn(async () => ({ ok: true as const }));
+    ensureContextCollectorSpy = vi.fn();
     tmuxAdapter = {
       startPipePane: startPipePaneSpy,
     } as unknown as TmuxAdapter;
@@ -76,6 +78,9 @@ describe("SelfAttachService", () => {
       eventBus,
       tmuxAdapter,
       transcriptStore,
+      claudeContextProvisioner: {
+        ensureContextCollector: ensureContextCollectorSpy,
+      },
     });
   });
 
@@ -214,5 +219,28 @@ describe("SelfAttachService", () => {
       "dev1-impl2@rigged-buildout",
       transcriptStore.getTranscriptPath("rigged-buildout", "dev1-impl2@rigged-buildout"),
     );
+  });
+
+  it("attachToNode provisions Claude context collection when self-attaching from tmux", async () => {
+    const rig = rigRepo.createRig("rigged-buildout");
+    rigRepo.addNode(rig.id, "dev1.impl2", {
+      runtime: "claude-code",
+      cwd: "/Users/mschwarz/code/rigged",
+    });
+
+    const result = await selfAttachService.attachToNode({
+      rigId: rig.id,
+      logicalId: "dev1.impl2",
+      context: {
+        attachmentType: "tmux",
+        tmuxSession: "dev1-impl2@rigged-buildout",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(ensureContextCollectorSpy).toHaveBeenCalledWith({
+      cwd: "/Users/mschwarz/code/rigged",
+      tmuxSession: "dev1-impl2@rigged-buildout",
+    });
   });
 });

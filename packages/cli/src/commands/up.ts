@@ -13,7 +13,7 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
     .argument("<source>", "Path to .yaml rig spec or .rigbundle")
     .option("--plan", "Plan mode — preview without executing")
     .option("--yes", "Auto-approve trusted actions")
-    .option("--target <root>", "Target root directory for package installation")
+    .option("--target <root>", "Target root directory for package installation (.rigbundle only; does not change agent cwd)")
     .option("--json", "JSON output for agents")
     .action(async (source: string, opts: { plan?: boolean; yes?: boolean; target?: string; json?: boolean }) => {
       const deps = getDepsF();
@@ -93,8 +93,9 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
           const rigRes = await client.get<Array<{ id: string; name: string }>>("/api/rigs/summary");
           const rigMatches = (rigRes.data ?? []).filter((r) => r.name === source);
           if (rigMatches.length > 0) {
-            console.error(`'${source}' is ambiguous — it matches both an existing rig and a library spec.`);
+            console.error(`'${source}' is ambiguous — it matches both an existing rig restore target and a library spec.`);
             console.error(`  To launch the library spec: rig up ${entry.sourcePath}`);
+            console.error(`  The rig-name match refers to a stopped rig / snapshot-backed restore path.`);
             console.error(`  To power on the existing rig: rename or remove the library spec first, then retry.`);
             process.exitCode = 1;
             return;
@@ -138,7 +139,12 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
           const errors = (res.data["errors"] as string[]) ?? [];
           console.error(`Preflight check failed:\n${errors.map((e) => `  ${e}`).join("\n")}\nFix: resolve the issues above and retry.`);
         } else {
-          console.error(`Up failed: ${res.data["error"] ?? "unknown error"} (HTTP ${res.status}). Check daemon logs or validate your spec with: rig spec validate <path>`);
+          const errorText = String(res.data["error"] ?? "unknown error");
+          console.error(`Up failed: ${errorText} (HTTP ${res.status}). Check daemon logs or validate your spec with: rig spec validate <path>`);
+          if (/agent_ref resolution failed|No agent\.yaml found/i.test(errorText)) {
+            console.error("Hint: local: agent_ref paths resolve relative to the rig spec directory, not your shell cwd.");
+            console.error("      Keep the agents/ tree beside the rig YAML, or switch those refs to path:/absolute/path.");
+          }
         }
         const stages = (res.data["stages"] as Array<{ stage: string; status: string }>) ?? [];
         for (const s of stages) {

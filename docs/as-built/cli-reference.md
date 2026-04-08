@@ -183,6 +183,11 @@ Actual source resolution:
   - if no library match, treats it as an existing rig restore/power-on target
   - if both a library spec and existing rig share the same name, exits with an ambiguity error
 
+Current behavior notes:
+- `--target <root>` is only for bundle/package installation. It does not override agent working directories.
+- `local:` `agent_ref` values resolve relative to the rig spec directory, not the caller shell cwd.
+- If you copy a built-in spec to a new directory, keep its `agents/` tree beside it or rewrite those refs to `path:/absolute/path`.
+
 Success modes:
 - fresh boot
 - restored existing rig
@@ -400,6 +405,7 @@ Identity resolution order:
 Notes:
 - If the daemon is unreachable but an identity source can still be resolved, `--json` returns a partial result instead of crashing.
 - Human-readable output includes transcript location and context usage when available.
+- In Claude Code projects, unattended `rig whoami` on boot may require the local permissions allow list to include `Bash(rig:*)`.
 
 ### `rig transcript`
 

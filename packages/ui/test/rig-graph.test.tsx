@@ -886,7 +886,7 @@ describe("RigGraph SSE integration", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/reconnecting/i)).toBeDefined();
+      expect(screen.getByText(/Live updates disconnected from daemon/i)).toBeDefined();
     });
   });
 
@@ -904,7 +904,7 @@ describe("RigGraph SSE integration", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/reconnecting/i)).toBeDefined();
+      expect(screen.getByText(/Live updates disconnected from daemon/i)).toBeDefined();
     });
 
     mockFetch.mockClear();

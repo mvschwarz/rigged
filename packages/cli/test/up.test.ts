@@ -88,6 +88,12 @@ describe("Up CLI", () => {
     return prog;
   }
 
+  it("help makes --target scope explicit", () => {
+    const help = makeCmd().commands.find((c) => c.name() === "up")!.helpInformation();
+    expect(help).toContain("Target root directory for package installation");
+    expect(help).toContain("does not change agent cwd");
+  });
+
   // T7: up from .yaml -> stages + rig ID
   it("up prints stages and rig ID", async () => {
     const { logs } = await captureLogs(async () => {
@@ -157,6 +163,34 @@ describe("Up CLI", () => {
       await prog.parseAsync(["node", "rig", "up", "/tmp/rig.yaml"]);
     });
 
+    expect(exitCode).toBe(2);
+    failServer.close();
+  });
+
+  it("agent_ref resolution failures include local-ref guidance", async () => {
+    const failServer = http.createServer((_, res) => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        status: "failed",
+        error: "dev.impl: agent_ref resolution failed: No agent.yaml found at /tmp/agents/impl/agent.yaml",
+        stages: [],
+        errors: [],
+      }));
+    });
+    await new Promise<void>((resolve) => { failServer.listen(0, resolve); });
+    const failPort = (failServer.address() as { port: number }).port;
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(upCommand(runningDeps(failPort)));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rig", "up", "/tmp/rig.yaml"]);
+    });
+
+    const output = logs.join("\n");
+    expect(output).toContain("agent_ref resolution failed");
+    expect(output).toContain("local: agent_ref paths resolve relative to the rig spec directory");
     expect(exitCode).toBe(2);
     failServer.close();
   });
@@ -400,6 +434,7 @@ describe("Up CLI", () => {
     for (const l of origListeners) server.on("request", l as (...args: unknown[]) => void);
 
     expect(logs.join("\n")).toContain("ambiguous");
+    expect(logs.join("\n")).toContain("existing rig restore target");
     expect(logs.join("\n")).toContain("/specs/alpha.yaml");
     expect(exitCode).toBe(1);
   });

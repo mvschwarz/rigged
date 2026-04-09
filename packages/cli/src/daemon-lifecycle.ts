@@ -60,6 +60,14 @@ const DEFAULT_PORT = 7433;
 const DEFAULT_DB = "openrig.sqlite";
 const HEALTHZ_RETRIES = 20;
 const HEALTHZ_DELAY_MS = 250;
+const HEALTHZ_PROBE_TIMEOUT_MS = 250;
+
+class HealthProbeTimeoutError extends Error {
+  constructor(url: string) {
+    super(`healthz probe timed out for ${url}`);
+    this.name = "HealthProbeTimeoutError";
+  }
+}
 
 function summarizeDaemonStartFailure(healthzUrl: string, logContent: string | null): string {
   const generic = `Daemon failed to start: healthz at ${healthzUrl} not responding`;
@@ -132,15 +140,17 @@ function resolveLifecycleFile(deps: LifecycleDeps, filename: "daemon.json" | "da
 /** Check if a PID is an OpenRig daemon. Returns:
  *  - "openrig" — healthz responded (ok or not) → this is our daemon
  *  - "not_openrig" — connection refused → PID is alive but not listening on our port
+ *  - "unresponsive" — pid is alive but healthz probe timed out
  *  - "dead" — PID not alive */
-async function checkPid(state: DaemonState, deps: LifecycleDeps): Promise<"openrig" | "not_openrig" | "dead"> {
+async function checkPid(state: DaemonState, deps: LifecycleDeps): Promise<"openrig" | "not_openrig" | "unresponsive" | "dead"> {
   if (!deps.isProcessAlive(state.pid)) return "dead";
   const host = state.host ?? "127.0.0.1";
   try {
-    await deps.fetch(`http://${host}:${state.port}/healthz`);
+    await fetchDaemonProbe(deps, `http://${host}:${state.port}/healthz`);
     // Any response (ok or not) means something is listening on our port → OpenRig
     return "openrig";
-  } catch {
+  } catch (err) {
+    if (err instanceof HealthProbeTimeoutError) return "unresponsive";
     // Connection refused → PID alive but not our daemon
     return "not_openrig";
   }
@@ -154,6 +164,9 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
     if (pidState === "openrig") {
       // Our daemon is running (possibly unhealthy, but alive on our port)
       throw new Error(`Daemon already running (pid ${existing.pid} on port ${existing.port})`);
+    }
+    if (pidState === "unresponsive") {
+      throw new Error(`Existing daemon process (pid ${existing.pid} on port ${existing.port}) is unresponsive — recover it before starting a new daemon.`);
     }
     // "dead" or "not_rigged" → stale state, safe to proceed
   }
@@ -189,7 +202,7 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
   let healthy = false;
   for (let i = 0; i < HEALTHZ_RETRIES; i++) {
     try {
-      const res = await deps.fetch(healthzUrl);
+      const res = await fetchDaemonProbe(deps, healthzUrl);
       if (res.ok) {
         healthy = true;
         break;
@@ -235,7 +248,7 @@ export async function stopDaemon(deps: LifecycleDeps): Promise<void> {
     return;
   }
 
-  // pidState === "openrig" — safe to SIGTERM
+  // pidState === "openrig" or "unresponsive" — safe to SIGTERM
   deps.kill(state.pid, "SIGTERM");
 
   // Wait briefly for process to exit
@@ -260,7 +273,7 @@ export async function getDaemonStatus(deps: LifecycleDeps): Promise<DaemonStatus
   const openrigUrl = readOpenRigEnv("OPENRIG_URL", "RIGGED_URL");
   if (openrigUrl) {
     try {
-      const res = await deps.fetch(`${openrigUrl}/healthz`);
+      const res = await fetchDaemonProbe(deps, `${openrigUrl}/healthz`);
       const url = new URL(openrigUrl);
       return { state: "running", port: Number(url.port) || 7433, host: url.hostname || "127.0.0.1", healthy: res.ok };
     } catch {
@@ -281,7 +294,7 @@ export async function getDaemonStatus(deps: LifecycleDeps): Promise<DaemonStatus
   const host = state.host ?? "127.0.0.1";
   let healthy = false;
   try {
-    const res = await deps.fetch(`http://${host}:${state.port}/healthz`);
+    const res = await fetchDaemonProbe(deps, `http://${host}:${state.port}/healthz`);
     healthy = res.ok;
   } catch {
     // healthz unreachable
@@ -308,4 +321,13 @@ export function tailLogs(deps: LifecycleDeps, opts: { follow: boolean }): void {
     detached: false,
   });
   child.unref();
+}
+
+async function fetchDaemonProbe(deps: LifecycleDeps, url: string): Promise<{ ok: boolean }> {
+  return await Promise.race([
+    deps.fetch(url),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new HealthProbeTimeoutError(url)), HEALTHZ_PROBE_TIMEOUT_MS);
+    }),
+  ]);
 }

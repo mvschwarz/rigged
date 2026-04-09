@@ -1,5 +1,6 @@
 import { ConfigStore } from "./config-store.js";
 import { readOpenRigEnv } from "./openrig-compat.js";
+import { fetchWithTimeout } from "./fetch-with-timeout.js";
 
 export class DaemonConnectionError extends Error {
   constructor(message: string) {
@@ -13,23 +14,32 @@ export interface DaemonResponse<T = unknown> {
   data: T;
 }
 
+interface DaemonClientOptions {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}
+
 export class DaemonClient {
   readonly baseUrl: string;
+  private fetchImpl: typeof fetch = fetch;
+  private timeoutMs = 5_000;
 
-  constructor(baseUrl?: string) {
+  constructor(baseUrl?: string, options?: DaemonClientOptions) {
     if (baseUrl) {
       this.baseUrl = baseUrl;
     } else {
       const envUrl = readOpenRigEnv("OPENRIG_URL", "RIGGED_URL");
       if (envUrl) {
         this.baseUrl = envUrl;
-        return;
+      } else {
+        // Resolve from config (env > file > defaults)
+        const config = new ConfigStore().resolve();
+        this.baseUrl = `http://${config.daemon.host}:${config.daemon.port}`;
       }
-
-      // Resolve from config (env > file > defaults)
-      const config = new ConfigStore().resolve();
-      this.baseUrl = `http://${config.daemon.host}:${config.daemon.port}`;
     }
+
+    this.fetchImpl = options?.fetchImpl ?? fetch;
+    this.timeoutMs = options?.timeoutMs ?? 5_000;
   }
 
   async get<T = unknown>(path: string): Promise<DaemonResponse<T>> {
@@ -70,7 +80,15 @@ export class DaemonClient {
 
   private async fetch(path: string, init: RequestInit): Promise<Response> {
     try {
-      return await fetch(`${this.baseUrl}${path}`, init);
+      return await fetchWithTimeout(
+        this.fetchImpl,
+        `${this.baseUrl}${path}`,
+        init,
+        {
+          timeoutMs: this.timeoutMs,
+          timeoutMessage: `Request to ${this.baseUrl}${path} timed out after ${this.timeoutMs}ms`,
+        },
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new DaemonConnectionError(`Cannot connect to the OpenRig daemon at ${this.baseUrl}: ${msg}`);

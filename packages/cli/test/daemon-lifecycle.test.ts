@@ -16,6 +16,10 @@ import {
   type DaemonState,
 } from "../src/daemon-lifecycle.js";
 
+function neverFetch(): Promise<{ ok: boolean }> {
+  return new Promise(() => {});
+}
+
 function mockDeps(overrides?: Partial<LifecycleDeps>): LifecycleDeps {
   return {
     spawn: vi.fn(() => ({ pid: 12345, unref: vi.fn() }) as unknown as ChildProcess),
@@ -299,6 +303,28 @@ describe("Daemon Lifecycle", () => {
     expect(deps.removeFile).not.toHaveBeenCalled();
   });
 
+  it("status: hanging healthz probe resolves boundedly as unhealthy instead of hanging forever", async () => {
+    vi.useFakeTimers();
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn(() => true),
+      fetch: vi.fn(() => neverFetch()),
+    });
+
+    const statusPromise = getDaemonStatus(deps);
+    await vi.runAllTimersAsync();
+    const status = await statusPromise;
+
+    expect(status.state).toBe("running");
+    expect(status.healthy).toBe(false);
+    vi.useRealTimers();
+  });
+
   // Test 18: stop with process that won't die -> throws, daemon.json preserved
   it("stop: process survives SIGTERM -> throws, daemon.json NOT removed", async () => {
     const state: DaemonState = { pid: 111, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
@@ -341,6 +367,29 @@ describe("Daemon Lifecycle", () => {
     expect(result.pid).toBe(12345); // new daemon spawned
   });
 
+  it("start: hanging healthz probe on existing pid throws unresponsive error instead of spawning a second daemon", async () => {
+    vi.useFakeTimers();
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn(() => true),
+      fetch: vi.fn(() => neverFetch()),
+    });
+
+    const startPromise = startDaemon({ port: 7433 }, deps).catch((error) => error as Error);
+    await vi.runAllTimersAsync();
+    const error = await startPromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/unresponsive/i);
+    expect(deps.spawn).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   // Test 20: stop with stale PID (alive but not rig) -> cleans up state, no SIGTERM
   it("stop: stale PID (alive but not rig) -> removes state, does not kill", async () => {
     const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
@@ -357,6 +406,30 @@ describe("Daemon Lifecycle", () => {
     await stopDaemon(deps);
     expect(deps.kill).not.toHaveBeenCalled();
     expect(deps.removeFile).toHaveBeenCalledWith(STATE_FILE);
+  });
+
+  it("stop: hanging healthz probe still issues SIGTERM and completes boundedly", async () => {
+    vi.useFakeTimers();
+    const state: DaemonState = { pid: 999, port: 7433, db: "x.db", startedAt: "2026-01-01T00:00:00Z" };
+    const deps = mockDeps({
+      exists: vi.fn((p: string) => p === STATE_FILE),
+      readFile: vi.fn((p: string) => {
+        if (p === STATE_FILE) return JSON.stringify(state);
+        return null;
+      }),
+      isProcessAlive: vi.fn()
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false),
+      fetch: vi.fn(() => neverFetch()),
+    });
+
+    const stopPromise = stopDaemon(deps);
+    await vi.runAllTimersAsync();
+    await stopPromise;
+
+    expect(deps.kill).toHaveBeenCalledWith(999, "SIGTERM");
+    expect(deps.removeFile).toHaveBeenCalledWith(STATE_FILE);
+    vi.useRealTimers();
   });
 
   // Test 21: malformed daemon.json -> treated as stopped, no crash

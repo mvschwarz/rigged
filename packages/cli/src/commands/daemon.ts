@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
+import { fetchWithTimeout } from "../fetch-with-timeout.js";
 import {
   startDaemon,
   stopDaemon,
@@ -49,7 +50,10 @@ export function realDeps(): LifecycleDeps {
   return {
     spawn: (cmd, args, opts) => spawn(cmd, args, opts as Parameters<typeof spawn>[2]),
     fetch: async (url) => {
-      const res = await globalThis.fetch(url);
+      const res = await fetchWithTimeout(globalThis.fetch, url, {}, {
+        timeoutMs: 1_500,
+        timeoutMessage: `Daemon health probe timed out for ${url}`,
+      });
       return { ok: res.ok };
     },
     kill: (pid, signal) => { process.kill(pid, signal as NodeJS.Signals); return true; },

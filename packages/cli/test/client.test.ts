@@ -112,6 +112,18 @@ describe("DaemonClient", () => {
     await expect(client.get("/api/rigs")).rejects.toThrow(DaemonConnectionError);
   });
 
+  it("bounded timeout throws DaemonConnectionError instead of hanging forever", async () => {
+    const neverFetch: typeof fetch = ((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        reject(init.signal?.reason ?? new Error("aborted"));
+      }, { once: true });
+    })) as typeof fetch;
+    const client = new DaemonClient("http://localhost:9999", { fetchImpl: neverFetch, timeoutMs: 20 });
+
+    await expect(client.get("/api/rigs")).rejects.toThrow(DaemonConnectionError);
+    await expect(client.get("/api/rigs")).rejects.toThrow(/timed out/i);
+  });
+
   // Test 5: Client uses OPENRIG_URL env, falls back to http://127.0.0.1:7433
   it("uses OPENRIG_URL env when set, falls back to http://127.0.0.1:7433", () => {
     // Default (no env)

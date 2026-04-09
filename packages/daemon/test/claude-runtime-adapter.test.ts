@@ -230,7 +230,7 @@ describe("Claude Code runtime adapter", () => {
     const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
     expect(sendText).toHaveBeenCalledWith(
       "r01-impl",
-      "claude --session-id 11111111-1111-4111-8111-111111111111 --name dev-impl@test-rig"
+      "claude --permission-mode acceptEdits --session-id 11111111-1111-4111-8111-111111111111 --name dev-impl@test-rig"
     );
     if (result.ok) {
       expect(result.resumeToken).toBe("11111111-1111-4111-8111-111111111111");
@@ -246,7 +246,10 @@ describe("Claude Code runtime adapter", () => {
 
     expect(result.ok).toBe(true);
     const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
-    expect(sendText).toHaveBeenCalledWith("r01-impl", "claude --resume abc-123 --name dev-impl@test-rig");
+    expect(sendText).toHaveBeenCalledWith(
+      "r01-impl",
+      "claude --permission-mode acceptEdits --resume abc-123 --name dev-impl@test-rig"
+    );
   });
 
   it("launchHarness fails honestly when resume drops back to shell with no conversation found", async () => {

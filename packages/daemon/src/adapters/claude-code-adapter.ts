@@ -148,9 +148,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     }
 
     const generatedSessionId = opts.resumeToken ? null : this.sessionIdFactory();
+    const permissionMode = "--permission-mode acceptEdits";
     const cmd = opts.resumeToken
-      ? `claude --resume ${opts.resumeToken} --name ${opts.name}`
-      : `claude --session-id ${generatedSessionId} --name ${opts.name}`;
+      ? `claude ${permissionMode} --resume ${opts.resumeToken} --name ${opts.name}`
+      : `claude ${permissionMode} --session-id ${generatedSessionId} --name ${opts.name}`;
 
     const textResult = await this.tmux.sendText(binding.tmuxSession, cmd);
     if (!textResult.ok) {

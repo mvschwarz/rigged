@@ -65,8 +65,8 @@ export function upCommand(depsOverride?: StatusDeps & { lifecycleDeps?: Lifecycl
             transcriptsPath: resolvedConfig?.transcripts.path,
           }, deps.lifecycleDeps);
           status = await getDaemonStatus(deps.lifecycleDeps);
-        } catch {
-          console.error("Failed to auto-start daemon. Start manually with: rig daemon start");
+        } catch (err) {
+          console.error(err instanceof Error ? err.message : String(err));
           process.exitCode = 2;
           return;
         }

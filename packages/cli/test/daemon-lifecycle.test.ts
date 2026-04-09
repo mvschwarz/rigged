@@ -435,6 +435,60 @@ describe("Daemon Lifecycle", () => {
     expect(cmd).toBe(process.execPath);
   });
 
+  it("start: surfaces native module runtime mismatch inline when healthz never comes up", async () => {
+    vi.useFakeTimers();
+    const deps = mockDeps({
+      fetch: vi.fn(async () => { throw new Error("connection refused"); }),
+      readFile: vi.fn((p: string) => {
+        if (p === LOG_FILE) {
+          return [
+            "Error: The module '/tmp/better_sqlite3.node'",
+            "was compiled against a different Node.js version using",
+            "NODE_MODULE_VERSION 127. This version of Node.js requires",
+            "NODE_MODULE_VERSION 141. Please try re-compiling or re-installing",
+            "the module (for instance, using `npm rebuild` or `npm install`).",
+            "code: 'ERR_DLOPEN_FAILED'",
+          ].join("\n");
+        }
+        return null;
+      }),
+    });
+
+    const startPromise = startDaemon({ port: 7433 }, deps).catch((error) => error as Error);
+    await vi.runAllTimersAsync();
+    const error = await startPromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/better-sqlite3|native module|node/i);
+    expect(error.message).toContain(process.version);
+    expect(error.message).toContain(process.execPath);
+    vi.useRealTimers();
+  });
+
+  it("start: surfaces the recent daemon log line when startup crashes for another reason", async () => {
+    vi.useFakeTimers();
+    const deps = mockDeps({
+      fetch: vi.fn(async () => { throw new Error("connection refused"); }),
+      readFile: vi.fn((p: string) => {
+        if (p === LOG_FILE) {
+          return [
+            "Booting daemon...",
+            "Error: SQLite schema migration failed: disk full",
+          ].join("\n");
+        }
+        return null;
+      }),
+    });
+
+    const startPromise = startDaemon({ port: 7433 }, deps).catch((error) => error as Error);
+    await vi.runAllTimersAsync();
+    const error = await startPromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/disk full/i);
+    vi.useRealTimers();
+  });
+
   // Test 26: OPENRIG_URL set → getDaemonStatus bypasses daemon.json
   it("status: OPENRIG_URL set → probes URL directly, ignores daemon.json", async () => {
     const prev = process.env["OPENRIG_URL"];

@@ -16,6 +16,7 @@ import {
   readCodexThreadIdFromCandidateHomes,
   type ResolveHomeDirByPid,
 } from "../domain/codex-thread-id.js";
+import { assessNativeResumeProbe } from "../domain/native-resume-probe.js";
 import { mergeManagedBlock } from "../domain/managed-blocks.js";
 
 export interface CodexAdapterFsOps {
@@ -167,7 +168,20 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
       return { ready: false, reason: "No tmux session bound" };
     }
     const alive = await this.tmux.hasSession(binding.tmuxSession);
-    return alive ? { ready: true } : { ready: false, reason: "tmux session not responsive" };
+    if (!alive) {
+      return { ready: false, reason: "tmux session not responsive" };
+    }
+
+    const paneCommand = await this.tmux.getPaneCommand(binding.tmuxSession);
+    const paneContent = (await this.tmux.capturePaneContent(binding.tmuxSession, 40)) ?? "";
+    const probe = assessNativeResumeProbe({
+      runtime: "codex",
+      paneCommand,
+      paneContent,
+    });
+
+    if (probe.status === "resumed") return { ready: true };
+    return { ready: false, reason: probe.detail };
   }
 
   private projectEntry(entry: ProjectionEntry, cwd: string): void {

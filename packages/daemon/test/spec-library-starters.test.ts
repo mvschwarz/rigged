@@ -12,6 +12,7 @@ const RIG_SPECS = [
   "implementation-pair.yaml",
   "adversarial-review.yaml",
   "research-team.yaml",
+  "demo.yaml",
   "product-team.yaml",
 ];
 
@@ -57,12 +58,32 @@ describe("Starter specs", () => {
     lib.scan();
 
     const rigs = lib.list({ kind: "rig" });
-    expect(rigs.length).toBeGreaterThanOrEqual(4);
+    expect(rigs.length).toBeGreaterThanOrEqual(5);
     const names = rigs.map((e) => e.name);
     expect(names).toContain("implementation-pair");
     expect(names).toContain("adversarial-review");
     expect(names).toContain("research-team");
+    expect(names).toContain("demo");
     expect(names).toContain("product-team");
+  });
+
+  it("starter summaries position implementation-pair as the first success, demo as the launch-grade starter, and product-team as the advanced preview", () => {
+    const lib = new SpecLibraryService({
+      roots: [{ path: SPECS_ROOT, sourceType: "builtin" }],
+      specReviewService,
+    });
+    lib.scan();
+
+    const rigs = lib.list({ kind: "rig" });
+    const implementationPair = rigs.find((entry) => entry.name === "implementation-pair");
+    const demo = rigs.find((entry) => entry.name === "demo");
+    const productTeam = rigs.find((entry) => entry.name === "product-team");
+
+    expect(implementationPair?.summary?.toLowerCase()).toContain("first success");
+    expect(demo?.summary?.toLowerCase()).toContain("launch-grade");
+    expect(demo?.summary?.toLowerCase()).not.toContain("advanced preview");
+    expect(productTeam?.summary?.toLowerCase()).toContain("advanced preview");
+    expect(productTeam?.summary?.toLowerCase()).not.toContain("happy-path starter");
   });
 
   it("all rig specs pass canonical rigPreflight with explicit cwdOverride", () => {
@@ -134,14 +155,31 @@ describe("Starter specs", () => {
     }
   });
 
-  it("shared packaged openrig-user skill exists and builtin agents opt into it", () => {
+  it("shared packaged starter skills exist and builtin agents opt into the right ones", () => {
     const sharedYaml = readFileSync(join(SPECS_ROOT, SHARED_AGENT_SPEC), "utf-8");
     const sharedRaw = parseAgentSpec(sharedYaml) as Record<string, unknown>;
     const sharedResources = (sharedRaw["resources"] ?? {}) as Record<string, unknown>;
     const sharedSkills = (sharedResources["skills"] as Array<{ id: string; path: string }>) ?? [];
-    const openrigUser = sharedSkills.find((skill) => skill.id === "openrig-user");
-    expect(openrigUser).toBeDefined();
-    expect(existsSync(join(SPECS_ROOT, "agents/shared", openrigUser!.path, "SKILL.md"))).toBe(true);
+    const expectedSharedSkills = [
+      "openrig-user",
+      "orchestration-team",
+      "development-team",
+      "review-team",
+    ];
+
+    for (const skillId of expectedSharedSkills) {
+      const skill = sharedSkills.find((entry) => entry.id === skillId);
+      expect(skill).toBeDefined();
+      expect(existsSync(join(SPECS_ROOT, "agents/shared", skill!.path, "SKILL.md"))).toBe(true);
+    }
+
+    const expectedAgentSkills = new Map<string, string[]>([
+      ["agents/design/agent.yaml", ["openrig-user", "development-team"]],
+      ["agents/impl/agent.yaml", ["openrig-user", "development-team"]],
+      ["agents/qa/agent.yaml", ["openrig-user", "development-team"]],
+      ["agents/reviewer/agent.yaml", ["openrig-user", "review-team"]],
+      ["agents/lead/agent.yaml", ["openrig-user", "orchestration-team"]],
+    ]);
 
     for (const file of AGENT_SPECS) {
       const yaml = readFileSync(join(SPECS_ROOT, file), "utf-8");
@@ -153,7 +191,9 @@ describe("Starter specs", () => {
       const defaultProfile = profiles["default"] ?? {};
       const uses = (defaultProfile["uses"] as Record<string, unknown> | undefined) ?? {};
       const skills = (uses["skills"] as string[] | undefined) ?? [];
-      expect(skills).toContain("openrig-user");
+      for (const skillId of expectedAgentSkills.get(file) ?? ["openrig-user"]) {
+        expect(skills).toContain(skillId);
+      }
     }
   });
 });

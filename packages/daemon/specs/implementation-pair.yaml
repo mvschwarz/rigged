@@ -1,9 +1,9 @@
 version: "0.2"
 name: implementation-pair
 summary: >
-  A focused dev pair: one implementer writes code following TDD,
-  one QA gates every edit. The implementer proposes, QA approves
-  or rejects, then the implementer commits. Quality over speed.
+  Fastest first success: a focused dev pair where one implementer writes
+  code following TDD and one QA partner gates every edit. Use this when
+  you want the quickest path to a trustworthy OpenRig workflow.
 
 pods:
   - id: dev

@@ -11,6 +11,8 @@ function mockTmux(overrides?: Partial<TmuxAdapter>): TmuxAdapter {
   return {
     sendText: vi.fn(async () => ({ ok: true as const })),
     hasSession: vi.fn(async () => true),
+    getPaneCommand: vi.fn(async () => "codex"),
+    capturePaneContent: vi.fn(async () => "OpenAI Codex (v0.0.0)"),
     createSession: vi.fn(async () => ({ ok: true as const })),
     killSession: vi.fn(async () => ({ ok: true as const })),
     listSessions: vi.fn(async () => []),
@@ -85,6 +87,21 @@ describe("Codex runtime adapter", () => {
     const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs() });
     const result = await adapter.checkReady(makeBinding());
     expect(result.ready).toBe(true);
+  });
+
+  it("checkReady returns false when the pane has fallen back to a shell prompt", async () => {
+    const tmux = mockTmux({
+      getPaneCommand: vi.fn(async () => "zsh"),
+      capturePaneContent: vi.fn(async () => "mschwarz@host rigged %"),
+    });
+    const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.checkReady(makeBinding());
+
+    expect(result).toEqual({
+      ready: false,
+      reason: "The probe pane returned to a shell instead of staying inside the runtime.",
+    });
   });
 
   // T8: listInstalled reports projected resources

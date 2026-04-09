@@ -61,6 +61,34 @@ const DEFAULT_DB = "openrig.sqlite";
 const HEALTHZ_RETRIES = 20;
 const HEALTHZ_DELAY_MS = 250;
 
+function summarizeDaemonStartFailure(healthzUrl: string, logContent: string | null): string {
+  const generic = `Daemon failed to start: healthz at ${healthzUrl} not responding`;
+  const lines = (logContent ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return generic;
+
+  const recentLines = lines.slice(-20);
+  const recentBlock = recentLines.join("\n");
+
+  if (/ERR_DLOPEN_FAILED|NODE_MODULE_VERSION|compiled against a different Node\.js version/i.test(recentBlock)) {
+    const moduleName = /better[-_]?sqlite3/i.test(recentBlock) ? "better-sqlite3" : "the daemon's native module";
+    const detail = recentLines.find((line) => /ERR_DLOPEN_FAILED|NODE_MODULE_VERSION|compiled against a different Node\.js version/i.test(line))
+      ?? recentLines[recentLines.length - 1]!;
+    return [
+      `Daemon failed to start under Node ${process.version} (${process.execPath}).`,
+      `${moduleName} could not load because its native binary does not match the active Node runtime.`,
+      `Recent daemon log: ${detail}`,
+      "Fix: switch back to the Node version used when @openrig/cli was installed, or reinstall @openrig/cli under the current node, then retry `rig daemon start`.",
+    ].join(" ");
+  }
+
+  const detail = [...recentLines].reverse().find((line) => /error|ERR_|failed|exception|cannot|disk full/i.test(line))
+    ?? recentLines[recentLines.length - 1]!;
+  return `${generic}. Recent daemon log: ${detail}`;
+}
+
 export function resolveCliBaseDir(baseDir: string): string {
   return path.basename(baseDir) === "commands" ? path.resolve(baseDir, "..") : baseDir;
 }
@@ -174,7 +202,8 @@ export async function startDaemon(opts: StartOptions, deps: LifecycleDeps): Prom
 
   if (!healthy) {
     try { deps.kill(pid, "SIGTERM"); } catch { /* best effort */ }
-    throw new Error(`Daemon failed to start: healthz at ${healthzUrl} not responding`);
+    const logContent = deps.readFile(resolveLifecycleFile(deps, "daemon.log"));
+    throw new Error(summarizeDaemonStartFailure(healthzUrl, logContent));
   }
 
   const state: DaemonState = {

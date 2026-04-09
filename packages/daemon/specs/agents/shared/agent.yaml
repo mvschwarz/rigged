@@ -6,5 +6,11 @@ resources:
   skills:
     - id: openrig-user
       path: skills/openrig-user
+    - id: orchestration-team
+      path: skills/orchestration-team
+    - id: development-team
+      path: skills/development-team
+    - id: review-team
+      path: skills/review-team
 
 profiles: {}

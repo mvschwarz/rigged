@@ -11,7 +11,7 @@ imports:
 profiles:
   default:
     uses:
-      skills: [openrig-user]
+      skills: [openrig-user, review-team]
       guidance: []
       subagents: []
       hooks: []

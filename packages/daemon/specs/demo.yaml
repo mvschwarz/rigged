@@ -1,11 +1,11 @@
 version: "0.2"
-name: product-team
-culture_file: product-team.CULTURE.md
+name: demo
 summary: >
-  Advanced preview: the experimental sibling of demo, with the same full
-  product-squad topology: two orchestrators, implementation, QA, design,
-  and two independent reviewers. Use this when you want the richer lane,
-  not the release gate.
+  Launch-grade starter: a stable full product squad with two
+  orchestrators, implementation, QA, design, and two independent
+  reviewers. This is the release-gated showcase rig.
+
+culture_file: demo.CULTURE.md
 
 pods:
   - id: orch1

@@ -58,6 +58,20 @@ describe("Claude Code runtime adapter", () => {
     expect(adapter.runtime).toBe("claude-code");
   });
 
+  it("checkReady returns false when the pane has fallen back to a shell prompt", async () => {
+    const tmux = mockTmux();
+    (tmux.getPaneCommand as ReturnType<typeof vi.fn>).mockResolvedValue("zsh");
+    (tmux.capturePaneContent as ReturnType<typeof vi.fn>).mockResolvedValue("mschwarz@host rigged %");
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.checkReady(makeBinding());
+
+    expect(result).toEqual({
+      ready: false,
+      reason: "The probe pane returned to a shell instead of staying inside the runtime.",
+    });
+  });
+
   // T3: auto guidance merge for .md file
   it("auto chooses guidance_merge for .md startup file", async () => {
     const fs = mockFs({ "/rig/startup/guide.md": "# Guide content" });

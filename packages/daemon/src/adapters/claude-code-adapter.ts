@@ -174,7 +174,20 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
       return { ready: false, reason: "No tmux session bound" };
     }
     const alive = await this.tmux.hasSession(binding.tmuxSession);
-    return alive ? { ready: true } : { ready: false, reason: "tmux session not responsive" };
+    if (!alive) {
+      return { ready: false, reason: "tmux session not responsive" };
+    }
+
+    const paneCommand = await this.tmux.getPaneCommand(binding.tmuxSession);
+    const paneContent = (await this.tmux.capturePaneContent(binding.tmuxSession, 40)) ?? "";
+    const probe = assessNativeResumeProbe({
+      runtime: "claude-code",
+      paneCommand,
+      paneContent,
+    });
+
+    if (probe.status === "resumed") return { ready: true };
+    return { ready: false, reason: probe.detail };
   }
 
   /** Best-effort public seam for tmux-bound Claude sessions adopted outside the launch path. */

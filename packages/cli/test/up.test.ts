@@ -3,7 +3,7 @@ import http from "node:http";
 import { Command } from "commander";
 import { upCommand } from "../src/commands/up.js";
 import { DaemonClient } from "../src/client.js";
-import { STATE_FILE, type LifecycleDeps, type DaemonState } from "../src/daemon-lifecycle.js";
+import { LOG_FILE, STATE_FILE, type LifecycleDeps, type DaemonState } from "../src/daemon-lifecycle.js";
 import type { StatusDeps } from "../src/commands/status.js";
 
 function mockLifecycleDeps(overrides?: Partial<LifecycleDeps>): LifecycleDeps {
@@ -433,6 +433,47 @@ describe("Up CLI", () => {
     expect(spawnedPort).toBe("7461");
     expect(clientBaseUrl).toBe("http://127.0.0.1:7461");
   });
+
+  it("up surfaces the real daemon auto-start failure instead of a generic hint", async () => {
+    const savedPort = process.env["OPENRIG_PORT"];
+    process.env["OPENRIG_PORT"] = "7463";
+    const deps: StatusDeps = {
+      lifecycleDeps: {
+        ...mockLifecycleDeps(),
+        exists: vi.fn(() => false),
+        readFile: vi.fn((p: string) => {
+          if (p === LOG_FILE) {
+            return [
+              "Error: The module '/tmp/better_sqlite3.node'",
+              "was compiled against a different Node.js version using",
+              "NODE_MODULE_VERSION 127. This version of Node.js requires",
+              "NODE_MODULE_VERSION 141.",
+              "code: 'ERR_DLOPEN_FAILED'",
+            ].join("\n");
+          }
+          return null;
+        }),
+        fetch: vi.fn(async () => { throw new Error("refused"); }),
+      },
+      clientFactory: (baseUrl) => new DaemonClient(baseUrl),
+    };
+
+    const prog = new Command();
+    prog.exitOverride();
+    prog.addCommand(upCommand(deps));
+
+    const { logs, exitCode } = await captureLogs(async () => {
+      await prog.parseAsync(["node", "rig", "up", "/tmp/test.yaml"]);
+    });
+    if (savedPort !== undefined) process.env["OPENRIG_PORT"] = savedPort;
+    else delete process.env["OPENRIG_PORT"];
+
+    const output = logs.join("\n");
+    expect(output).toContain("better-sqlite3");
+    expect(output).toContain("Node");
+    expect(output).not.toContain("Failed to auto-start daemon. Start manually with: rig daemon start");
+    expect(exitCode).toBe(2);
+  }, 15000);
 
   it("up with library name matching existing rig shows ambiguity error", async () => {
     // Mock server that has both a library spec and an existing rig named "my-rig"

@@ -1,4 +1,5 @@
 import nodePath from "node:path";
+import fs from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
@@ -18,6 +19,7 @@ import {
 } from "../domain/codex-thread-id.js";
 import { assessNativeResumeProbe } from "../domain/native-resume-probe.js";
 import { mergeManagedBlock } from "../domain/managed-blocks.js";
+import { shellQuote } from "./shell-quote.js";
 
 export interface CodexAdapterFsOps {
   readFile(path: string): string;
@@ -91,6 +93,10 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
   }
 
   async deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult> {
+    try { this.ensureManagedBootstrap(binding); } catch (err) {
+      console.error(`[openrig] codex bootstrap warning: ${(err as Error).message}`);
+    }
+
     let delivered = 0;
     const failed: Array<{ path: string; error: string }> = [];
 
@@ -140,7 +146,7 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
 
     const cmd = opts.resumeToken
       ? `codex resume ${opts.resumeToken}`
-      : "codex";
+      : `codex -C ${shellQuote(binding.cwd)} -a never -s workspace-write`;
 
     const textResult = await this.tmux.sendText(binding.tmuxSession, cmd);
     if (!textResult.ok) {
@@ -181,7 +187,11 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     });
 
     if (probe.status === "resumed") return { ready: true };
-    return { ready: false, reason: probe.detail };
+    return { ready: false, reason: probe.detail, code: probe.code };
+  }
+
+  ensureManagedBootstrap(binding: { cwd?: string | null }): void {
+    this.provisionWorkspaceTrust(binding.cwd ?? null);
   }
 
   private projectEntry(entry: ProjectionEntry, cwd: string): void {
@@ -236,6 +246,38 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
     return resolveConcreteHint(path, content);
   }
 
+  private provisionWorkspaceTrust(cwd: string | null): void {
+    if (!cwd) return;
+    const home = this.fs.homedir ?? os.homedir();
+    if (!home) return;
+
+    const configPath = nodePath.join(home, ".codex", "config.toml");
+    this.fs.mkdirp(nodePath.dirname(configPath));
+
+    let content = "";
+    try {
+      if (this.fs.exists(configPath)) content = this.fs.readFile(configPath);
+    } catch {
+      content = "";
+    }
+
+    for (const trustKey of this.workspaceTrustKeys(cwd)) {
+      content = upsertCodexProjectTrust(content, trustKey);
+    }
+
+    this.fs.writeFile(configPath, content);
+  }
+
+  private workspaceTrustKeys(cwd: string): string[] {
+    const keys = new Set<string>([nodePath.resolve(cwd)]);
+    try {
+      keys.add(fs.realpathSync.native(cwd));
+    } catch {
+      // Best-effort only.
+    }
+    return Array.from(keys);
+  }
+
   private async captureFreshThreadId(binding: NodeBinding): Promise<string | undefined> {
     const target = binding.tmuxPane ?? binding.tmuxSession;
     if (!target || !this.tmux.getPanePid) return undefined;
@@ -272,6 +314,35 @@ export class CodexRuntimeAdapter implements RuntimeAdapter {
 
 function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function upsertCodexProjectTrust(content: string, projectPath: string): string {
+  const header = `[projects.${JSON.stringify(projectPath)}]`;
+  const lines = content.length > 0 ? content.split("\n") : [];
+  const headerIndex = lines.findIndex((line) => line.trim() === header);
+
+  if (headerIndex === -1) {
+    const trimmed = content.trimEnd();
+    const prefix = trimmed.length > 0 ? `${trimmed}\n\n` : "";
+    return `${prefix}${header}\ntrust_level = "trusted"\n`;
+  }
+
+  let nextSectionIndex = lines.length;
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    if (lines[i]!.trim().startsWith("[")) {
+      nextSectionIndex = i;
+      break;
+    }
+  }
+
+  const trustIndex = lines.findIndex((line, index) => index > headerIndex && index < nextSectionIndex && line.trim().startsWith("trust_level"));
+  if (trustIndex >= 0) {
+    lines[trustIndex] = 'trust_level = "trusted"';
+  } else {
+    lines.splice(headerIndex + 1, 0, 'trust_level = "trusted"');
+  }
+
+  return `${lines.join("\n").replace(/\n*$/, "\n")}`;
 }
 
 

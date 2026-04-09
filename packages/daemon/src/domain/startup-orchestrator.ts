@@ -36,6 +36,8 @@ export type StartupResult =
   | { ok: true; startupStatus: "ready" }
   | { ok: false; startupStatus: "failed"; errors: string[] };
 
+const BLOCKING_READINESS_CODES = new Set(["trust_gate"]);
+
 interface StartupOrchestratorDeps {
   db: Database.Database;
   sessionRegistry: SessionRegistry;
@@ -169,7 +171,11 @@ export class StartupOrchestrator {
     try {
       const readiness = await this.waitForReady(input.adapter, input.binding, input.readinessTimeoutMs ?? 30_000);
       if (!readiness.ready) {
-        errors.push(`Readiness timeout after 30s — harness did not become interactive: ${readiness.reason ?? "unknown"}`);
+        if (readiness.code && BLOCKING_READINESS_CODES.has(readiness.code)) {
+          errors.push(`Readiness blocked before harness became interactive: ${readiness.reason ?? "unknown"}`);
+        } else {
+          errors.push(`Readiness timeout after 30s — harness did not become interactive: ${readiness.reason ?? "unknown"}`);
+        }
         return this.fail(input, errors);
       }
     } catch (err) {
@@ -241,6 +247,9 @@ export class StartupOrchestrator {
     while (true) {
       const result = await adapter.checkReady(binding);
       if (result.ready) return result;
+      if (result.code && BLOCKING_READINESS_CODES.has(result.code)) {
+        return result;
+      }
 
       const elapsed = Date.now() - startTime;
       if (elapsed + delay > timeoutMs) {

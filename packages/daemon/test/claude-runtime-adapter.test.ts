@@ -69,6 +69,31 @@ describe("Claude Code runtime adapter", () => {
     expect(result).toEqual({
       ready: false,
       reason: "The probe pane returned to a shell instead of staying inside the runtime.",
+      code: "returned_to_shell",
+    });
+  });
+
+  it("checkReady returns false when Claude is blocked on the workspace trust prompt", async () => {
+    const tmux = mockTmux();
+    (tmux.getPaneCommand as ReturnType<typeof vi.fn>).mockResolvedValue("claude");
+    (tmux.capturePaneContent as ReturnType<typeof vi.fn>).mockResolvedValue(
+      [
+        "Accessing workspace:",
+        "/some/workspace",
+        "",
+        "Quick safety check: Is this a project you created or one you trust?",
+        "1. Yes, I trust this folder",
+        "2. No, exit",
+      ].join("\n")
+    );
+    const adapter = new ClaudeCodeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.checkReady(makeBinding());
+
+    expect(result).toEqual({
+      ready: false,
+      reason: "Claude is waiting for workspace trust approval before the session can become interactive.",
+      code: "trust_gate",
     });
   });
 

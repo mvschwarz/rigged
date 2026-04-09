@@ -451,6 +451,24 @@ describe("StartupOrchestrator", () => {
     }
   });
 
+  it("readiness blocker fails immediately with the blocker reason instead of a timeout", async () => {
+    const seed = seedSession();
+    const adapter = mockAdapter({
+      checkReady: vi.fn(async () => ({
+        ready: false,
+        reason: "Codex is waiting for workspace trust approval before the session can become interactive.",
+        code: "trust_gate",
+      })),
+    });
+    const orch = createOrchestrator();
+    const result = await orch.startNode(makeInput(seed, { adapter, readinessTimeoutMs: 10_000 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes("Readiness blocked"))).toBe(true);
+      expect(result.errors.some((e) => e.includes("timeout"))).toBe(false);
+    }
+  });
+
   it("delivers openrig-start.md overlay alongside agent role guidance (append, not replace)", async () => {
     const seed = seedSession();
     const deliveredFiles: string[] = [];

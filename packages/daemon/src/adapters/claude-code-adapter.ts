@@ -1,4 +1,5 @@
 import nodePath from "node:path";
+import fs from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import type { TmuxAdapter } from "./tmux.js";
 import type {
@@ -89,6 +90,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   }
 
   async deliverStartup(files: ResolvedStartupFile[], binding: NodeBinding): Promise<StartupDeliveryResult> {
+    try { this.ensureManagedBootstrap(binding); } catch (err) {
+      console.error(`[openrig] claude bootstrap warning: ${(err as Error).message}`);
+    }
+
     // Best-effort: provision context collector for managed Claude sessions
     try { this.ensureContextCollector(binding); } catch (err) {
       // Log but don't fail — collector provisioning is best-effort
@@ -187,12 +192,17 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     });
 
     if (probe.status === "resumed") return { ready: true };
-    return { ready: false, reason: probe.detail };
+    return { ready: false, reason: probe.detail, code: probe.code };
   }
 
   /** Best-effort public seam for tmux-bound Claude sessions adopted outside the launch path. */
   ensureContextCollector(binding: { cwd?: string | null; tmuxSession?: string | null }): void {
     this.provisionContextCollector(binding);
+  }
+
+  /** Best-effort public seam for user-scope Claude bootstrap used by managed sessions. */
+  ensureManagedBootstrap(binding: { cwd?: string | null; tmuxSession?: string | null }): void {
+    this.provisionManagedBootstrap(binding);
   }
 
   // -- Private helpers --
@@ -319,6 +329,79 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
   private detectDeliveryHint(path: string, content: string): "guidance_merge" | "skill_install" | "send_text" {
     return resolveConcreteHint(path, content);
+  }
+
+  private provisionManagedBootstrap(binding: { cwd?: string | null; tmuxSession?: string | null }): void {
+    this.provisionRigPermissions();
+    this.provisionWorkspaceTrust(binding.cwd ?? null);
+  }
+
+  private provisionRigPermissions(): void {
+    const home = this.fs.homedir ?? (typeof process !== "undefined" ? process.env.HOME : undefined);
+    if (!home) return;
+
+    const settingsPath = nodePath.join(home, ".claude", "settings.json");
+    this.fs.mkdirp(nodePath.dirname(settingsPath));
+
+    const settings = this.readJsonObject(settingsPath);
+    const permissions = this.readJsonObjectField(settings, "permissions");
+    const allow = new Set(this.readStringArray(permissions["allow"]));
+    allow.add("Bash(rig:*)");
+
+    permissions["allow"] = Array.from(allow);
+    settings["permissions"] = permissions;
+
+    this.fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+  }
+
+  private provisionWorkspaceTrust(cwd: string | null): void {
+    if (!cwd) return;
+    const home = this.fs.homedir ?? (typeof process !== "undefined" ? process.env.HOME : undefined);
+    if (!home) return;
+
+    const statePath = nodePath.join(home, ".claude.json");
+    const state = this.readJsonObject(statePath);
+    const projects = this.readJsonObjectField(state, "projects");
+
+    for (const trustKey of this.workspaceTrustKeys(cwd)) {
+      const projectState = this.readJsonObjectField(projects, trustKey);
+      projectState["hasTrustDialogAccepted"] = true;
+      projects[trustKey] = projectState;
+    }
+
+    state["projects"] = projects;
+    this.fs.writeFile(statePath, JSON.stringify(state, null, 2));
+  }
+
+  private workspaceTrustKeys(cwd: string): string[] {
+    const keys = new Set<string>([nodePath.resolve(cwd)]);
+    try {
+      keys.add(fs.realpathSync.native(cwd));
+    } catch {
+      // Best-effort only — non-existent test paths can still use the resolved input.
+    }
+    return Array.from(keys);
+  }
+
+  private readJsonObject(path: string): Record<string, unknown> {
+    try {
+      if (!this.fs.exists(path)) return {};
+      const parsed = JSON.parse(this.fs.readFile(path));
+      return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private readJsonObjectField(source: Record<string, unknown>, key: string): Record<string, unknown> {
+    const value = source[key];
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  }
+
+  private readStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   }
 
   /**

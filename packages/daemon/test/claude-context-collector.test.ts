@@ -122,6 +122,7 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
       exists: (p: string) => p in written,
       mkdirp: (p: string) => { dirsMade.push(p); },
       copyFile: (src: string, dest: string) => { written[dest] = `copied:${src}`; },
+      homedir: "/home/tester",
     };
   }
 
@@ -245,5 +246,37 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
     expect(settings.statusLine.type).toBe("command");
     expect(settings.statusLine.command).toContain(join(tmpDir, "context"));
     expect(written["/project/.openrig/context-collector.cjs"]).toBe("copied:/fake/collector.js");
+  });
+
+  it("deliverStartup provisions user-scope Claude permissions for rig commands", async () => {
+    const adapter = new ClaudeCodeAdapter({
+      tmux: mockTmux(),
+      fsOps: mockFsOps(),
+      stateDir: tmpDir,
+      collectorAssetPath: "/fake/collector.js",
+    });
+
+    await adapter.deliverStartup([], { cwd: "/project", tmuxSession: "dev-impl@test", nodeId: "n1" } as any);
+
+    const settingsPath = "/home/tester/.claude/settings.json";
+    expect(written[settingsPath]).toBeDefined();
+    const settings = JSON.parse(written[settingsPath]!);
+    expect(settings.permissions.allow).toContain("Bash(rig:*)");
+  });
+
+  it("deliverStartup pre-seeds Claude workspace trust for the managed project", async () => {
+    const adapter = new ClaudeCodeAdapter({
+      tmux: mockTmux(),
+      fsOps: mockFsOps(),
+      stateDir: tmpDir,
+      collectorAssetPath: "/fake/collector.js",
+    });
+
+    await adapter.deliverStartup([], { cwd: "/project", tmuxSession: "dev-impl@test", nodeId: "n1" } as any);
+
+    const statePath = "/home/tester/.claude.json";
+    expect(written[statePath]).toBeDefined();
+    const state = JSON.parse(written[statePath]!);
+    expect(state.projects["/project"].hasTrustDialogAccepted).toBe(true);
   });
 });

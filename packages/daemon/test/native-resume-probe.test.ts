@@ -51,16 +51,59 @@ describe("native resume probe", () => {
     });
   });
 
+  it("classifies a Claude workspace trust prompt as blocked, not resumed", () => {
+    expect(
+      assessNativeResumeProbe({
+        runtime: "claude-code",
+        paneCommand: "claude",
+        paneContent: [
+          "Accessing workspace:",
+          "/some/workspace",
+          "",
+          "Quick safety check: Is this a project you created or one you trust?",
+          "1. Yes, I trust this folder",
+          "2. No, exit",
+        ].join("\n"),
+      })
+    ).toEqual({
+      status: "inconclusive",
+      code: "trust_gate",
+      detail: "Claude is waiting for workspace trust approval before the session can become interactive.",
+    });
+  });
+
   it("classifies a live Claude TUI as resumed even when tmux reports a version string process", () => {
     expect(
       assessNativeResumeProbe({
         runtime: "claude-code",
-        paneCommand: "2.1.89",
+        paneCommand: "2.x",
         paneContent: [
-          "Claude Code v2.1.89",
-          "❯ Baseline warmup 4/6 for dev.impl.",
+          "Claude Code vX.Y.Z",
+          "❯ Working on a task.",
           "────────────────────────────────────────────────────────────────────────────────",
           "  ? for shortcuts                                             ● high · /effort",
+        ].join("\n"),
+      })
+    ).toEqual({
+      status: "resumed",
+      code: "active_runtime",
+      detail: "Claude is running with an active interactive TUI in the probe pane.",
+    });
+  });
+
+  it("classifies the current Claude splash TUI as resumed even before the shortcuts footer renders", () => {
+    expect(
+      assessNativeResumeProbe({
+        runtime: "claude-code",
+        paneCommand: "2.x",
+        paneContent: [
+          " ▐▛███▜▌   Claude Code vX.Y.Z",
+          "▝▜█████▛▘  Model details here",
+          "  ▘▘ ▝▝    /some/workspace",
+          "",
+          "────────────────────────────────────────────────────────────────────────────────",
+          "❯ ",
+          "────────────────────────────────────────────────────────────────────────────────",
         ].join("\n"),
       })
     ).toEqual({
@@ -81,6 +124,30 @@ describe("native resume probe", () => {
       status: "failed",
       code: "no_saved_session",
       detail: "Codex reported that the requested saved session does not exist.",
+    });
+  });
+
+  it("classifies a Codex workspace trust prompt as blocked, not resumed", () => {
+    expect(
+      assessNativeResumeProbe({
+        runtime: "codex",
+        paneCommand: "codex",
+        paneContent: [
+          "> You are in /some/workspace",
+          "",
+          "  Do you trust the contents of this directory? Working with untrusted contents",
+          "  comes with higher risk of prompt injection.",
+          "",
+          "› 1. Yes, continue",
+          "  2. No, quit",
+          "",
+          "  Press enter to continue",
+        ].join("\n"),
+      })
+    ).toEqual({
+      status: "inconclusive",
+      code: "trust_gate",
+      detail: "Codex is waiting for workspace trust approval before the session can become interactive.",
     });
   });
 

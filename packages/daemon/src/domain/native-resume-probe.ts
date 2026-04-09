@@ -52,6 +52,13 @@ export function assessNativeResumeProbe(
         detail: "Claude reported that the requested session no longer exists.",
       };
     }
+    if (looksLikeClaudeTrustPrompt(paneContent)) {
+      return {
+        status: "inconclusive",
+        code: "trust_gate",
+        detail: "Claude is waiting for workspace trust approval before the session can become interactive.",
+      };
+    }
     if (looksLikeClaudeTui(paneContent)) {
       return {
         status: "resumed",
@@ -86,6 +93,13 @@ export function assessNativeResumeProbe(
         status: "failed",
         code: "no_saved_session",
         detail: "Codex reported that the requested saved session does not exist.",
+      };
+    }
+    if (looksLikeCodexTrustPrompt(paneContent)) {
+      return {
+        status: "inconclusive",
+        code: "trust_gate",
+        detail: "Codex is waiting for workspace trust approval before the session can become interactive.",
       };
     }
     if (paneContent.includes("Update available!") || paneContent.includes("Updating Codex")) {
@@ -137,9 +151,20 @@ export function isProbeShellReady(input: ProbeShellReadyInput): boolean {
 }
 
 function looksLikeClaudeTui(paneContent: string): boolean {
-  return paneContent.includes("Claude Code v") && paneContent.includes("? for shortcuts");
+  return paneContent.includes("Claude Code v")
+    && (paneContent.includes("? for shortcuts") || /(^|\n)\s*❯/.test(paneContent));
+}
+
+function looksLikeClaudeTrustPrompt(paneContent: string): boolean {
+  return paneContent.includes("Accessing workspace:")
+    && paneContent.includes("Yes, I trust this folder");
 }
 
 function looksLikeCodexTui(paneContent: string): boolean {
   return paneContent.includes("OpenAI Codex (v");
+}
+
+function looksLikeCodexTrustPrompt(paneContent: string): boolean {
+  return paneContent.includes("Do you trust the contents of this directory?")
+    && paneContent.includes("Yes, continue");
 }

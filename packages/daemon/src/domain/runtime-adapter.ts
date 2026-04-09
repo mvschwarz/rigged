@@ -42,6 +42,7 @@ export interface StartupDeliveryResult {
 export interface ReadinessResult {
   ready: boolean;
   reason?: string;
+  code?: string;
 }
 
 // -- Harness launch result --

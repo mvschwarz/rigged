@@ -101,6 +101,33 @@ describe("Codex runtime adapter", () => {
     expect(result).toEqual({
       ready: false,
       reason: "The probe pane returned to a shell instead of staying inside the runtime.",
+      code: "returned_to_shell",
+    });
+  });
+
+  it("checkReady returns false when Codex is blocked on the workspace trust prompt", async () => {
+    const tmux = mockTmux({
+      getPaneCommand: vi.fn(async () => "codex"),
+      capturePaneContent: vi.fn(async () => [
+        "> You are in /some/workspace",
+        "",
+        "  Do you trust the contents of this directory? Working with untrusted contents",
+        "  comes with higher risk of prompt injection.",
+        "",
+        "› 1. Yes, continue",
+        "  2. No, quit",
+        "",
+        "  Press enter to continue",
+      ].join("\n")),
+    });
+    const adapter = new CodexRuntimeAdapter({ tmux, fsOps: mockFs() });
+
+    const result = await adapter.checkReady(makeBinding());
+
+    expect(result).toEqual({
+      ready: false,
+      reason: "Codex is waiting for workspace trust approval before the session can become interactive.",
+      code: "trust_gate",
     });
   });
 
@@ -228,7 +255,7 @@ describe("Codex runtime adapter", () => {
 
     expect(result.ok).toBe(true);
     const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
-    expect(sendText).toHaveBeenCalledWith("r01-qa", "codex");
+    expect(sendText).toHaveBeenCalledWith("r01-qa", "codex -C '/project' -a never -s workspace-write");
   });
 
   it("launchHarness captures a fresh Codex thread id from the live child process", async () => {
@@ -299,5 +326,19 @@ describe("Codex runtime adapter", () => {
     expect(result.ok).toBe(true);
     const sendText = tmux.sendText as ReturnType<typeof vi.fn>;
     expect(sendText).toHaveBeenCalledWith("r01-qa", "codex resume sess-456");
+  });
+
+  it("deliverStartup pre-seeds Codex trust for the managed project", async () => {
+    const fs = mockFs({});
+    const fsWithHome = { ...fs, homedir: "/home/tester" };
+    const adapter = new CodexRuntimeAdapter({ tmux: mockTmux(), fsOps: fsWithHome });
+
+    await adapter.deliverStartup([], makeBinding("/tmp/workspace"));
+
+    const store = (fsWithHome as unknown as { _store: Record<string, string> })._store;
+    const content = store["/home/tester/.codex/config.toml"];
+    expect(content).toBeDefined();
+    expect(content).toContain('[projects."/tmp/workspace"]');
+    expect(content).toContain('trust_level = "trusted"');
   });
 });

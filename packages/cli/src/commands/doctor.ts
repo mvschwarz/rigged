@@ -105,7 +105,7 @@ export function runDoctorChecks(deps: DoctorDeps): { checks: DoctorCheck[]; port
           status: "warn",
           message: "tmux mouse mode appears disabled.",
           reason: "On macOS, scrolling and text selection inside tmux panes is much smoother with mouse mode enabled.",
-          fix: "Run: tmux set -g mouse on",
+          fix: "Run `tmux set -g mouse on` for the current tmux server. To keep it enabled, add `set -g mouse on` to `~/.tmux.conf` and reload with `tmux source-file ~/.tmux.conf`.",
         });
       }
     }

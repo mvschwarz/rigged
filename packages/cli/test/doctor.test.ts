@@ -117,6 +117,8 @@ describe("runDoctorChecks", () => {
     expect(mouseCheck?.status).toBe("warn");
     expect(mouseCheck?.message).toContain("disabled");
     expect(mouseCheck?.fix).toContain("tmux set -g mouse on");
+    expect(mouseCheck?.fix).toContain("~/.tmux.conf");
+    expect(mouseCheck?.fix).toContain("tmux source-file ~/.tmux.conf");
   });
 
   it("tmux missing -> fail with guidance", () => {

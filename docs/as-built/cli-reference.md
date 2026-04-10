@@ -129,6 +129,7 @@ Usage: `rig doctor [--json]`
 Notes:
 - Verifies install health for packaged/local CLI usage.
 - Checks daemon dist, UI dist, Node version, `tmux`, optional `cmux` control health, writable state paths, and daemon port availability.
+- On macOS, also warns when tmux mouse mode appears disabled and recommends `tmux set -g mouse on` for better pane scrolling and selection.
 - `cmux` issues are warnings, not hard failures. OpenRig still works without `cmux`; only `Open CMUX` workflows are unavailable.
 - `--json` is suitable for agent use and only exits non-zero on real failures, not warnings.
 

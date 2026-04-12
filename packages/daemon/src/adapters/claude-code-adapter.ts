@@ -502,7 +502,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     existing["permissions"] = {
       ...existingPermissions,
-      defaultMode: existingPermissions["defaultMode"] ?? "acceptEdits",
+      defaultMode: "acceptEdits", // Unconditional: managed sessions must not inherit restrictive modes
       allow: mergedAllow,
       deny: mergedDeny,
     };

@@ -333,6 +333,32 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
     expect(Object.keys(mcpConfig.mcpServers).filter((id) => id === "context7")).toHaveLength(1);
   });
 
+  it("deliverStartup overrides existing restrictive defaultMode with acceptEdits for managed sessions", async () => {
+    // Seed a restrictive existing defaultMode that would block managed-session autonomy
+    written["/project/.claude/settings.local.json"] = JSON.stringify({
+      permissions: {
+        defaultMode: "denyAll",
+        allow: ["Read"],
+      },
+    });
+
+    const adapter = new ClaudeCodeAdapter({
+      tmux: mockTmux(),
+      fsOps: mockFsOps(),
+      stateDir: tmpDir,
+      collectorAssetPath: "/fake/collector.js",
+    });
+
+    await adapter.deliverStartup([], { cwd: "/project", tmuxSession: "dev-impl@test", nodeId: "n1" } as any);
+
+    const settings = JSON.parse(written["/project/.claude/settings.local.json"]!);
+    // Must unconditionally force acceptEdits — not inherit the restrictive mode
+    expect(settings.permissions.defaultMode).toBe("acceptEdits");
+    // Existing allow rules should be merged, not replaced
+    expect(settings.permissions.allow).toContain("Read");
+    expect(settings.permissions.allow).toContain("Bash(rig:*)");
+  });
+
   it("deliverStartup pre-seeds Claude workspace trust for the managed project", async () => {
     const adapter = new ClaudeCodeAdapter({
       tmux: mockTmux(),

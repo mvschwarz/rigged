@@ -404,7 +404,9 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     try {
       if (!this.fs.exists(path)) return {};
       const parsed = JSON.parse(this.fs.readFile(path));
-      return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : {};
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
     } catch {
       return {};
     }
@@ -467,20 +469,10 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     const settingsPath = nodePath.join(binding.cwd, ".claude", "settings.local.json");
     this.fs.mkdirp(nodePath.dirname(settingsPath));
 
-    let existing: Record<string, unknown> = {};
-    try {
-      if (this.fs.exists(settingsPath)) {
-        existing = JSON.parse(this.fs.readFile(settingsPath));
-      }
-    } catch { /* corrupt file — overwrite */ }
-
-    // Merge permissions: allowlist rig commands, common dev tools, and file ops
-    const existingPermissions = (typeof existing["permissions"] === "object" && existing["permissions"] !== null)
-      ? existing["permissions"] as Record<string, unknown>
-      : {};
-
-    const existingAllow = Array.isArray(existingPermissions["allow"]) ? existingPermissions["allow"] as string[] : [];
-    const existingDeny = Array.isArray(existingPermissions["deny"]) ? existingPermissions["deny"] as string[] : [];
+    const existing = this.readJsonObject(settingsPath);
+    const existingPermissions = this.readJsonObjectField(existing, "permissions");
+    const existingAllow = this.readStringArray(existingPermissions["allow"]);
+    const existingDeny = this.readStringArray(existingPermissions["deny"]);
 
     const rigAllowRules = [
       "Bash(rig:*)",
@@ -511,16 +503,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
 
     // Merge MCP config: ensure Exa and Context7 are configured at project level
     const mcpPath = nodePath.join(binding.cwd, ".mcp.json");
-    let mcpConfig: Record<string, unknown> = {};
-    try {
-      if (this.fs.exists(mcpPath)) {
-        mcpConfig = JSON.parse(this.fs.readFile(mcpPath));
-      }
-    } catch { /* corrupt — overwrite */ }
-
-    const mcpServers = (typeof mcpConfig["mcpServers"] === "object" && mcpConfig["mcpServers"] !== null)
-      ? mcpConfig["mcpServers"] as Record<string, unknown>
-      : {};
+    const mcpConfig = this.readJsonObject(mcpPath);
+    const mcpServers = this.readJsonObjectField(mcpConfig, "mcpServers");
 
     // Add Exa and Context7 if not already configured
     if (!mcpServers["exa"]) {

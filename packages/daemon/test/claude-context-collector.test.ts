@@ -333,6 +333,31 @@ describe("ClaudeCodeAdapter Context Collector Provisioning", () => {
     expect(Object.keys(mcpConfig.mcpServers).filter((id) => id === "context7")).toHaveLength(1);
   });
 
+  it("deliverStartup recovers from array-valued settings.local.json and .mcp.json", async () => {
+    // Seed both files with JSON arrays (invalid for object merge)
+    written["/project/.claude/settings.local.json"] = "[]";
+    written["/project/.mcp.json"] = "[]";
+
+    const adapter = new ClaudeCodeAdapter({
+      tmux: mockTmux(),
+      fsOps: mockFsOps(),
+      stateDir: tmpDir,
+      collectorAssetPath: "/fake/collector.js",
+    });
+
+    await adapter.deliverStartup([], { cwd: "/project", tmuxSession: "dev-impl@test", nodeId: "n1" } as any);
+
+    // Settings must be a proper object with permissions, not a bare array
+    const settings = JSON.parse(written["/project/.claude/settings.local.json"]!);
+    expect(settings.permissions.defaultMode).toBe("acceptEdits");
+    expect(settings.permissions.allow).toContain("Bash(rig:*)");
+
+    // MCP config must be a proper object with mcpServers, not a bare array
+    const mcpConfig = JSON.parse(written["/project/.mcp.json"]!);
+    expect(mcpConfig.mcpServers.exa.url).toBe("https://mcp.exa.ai/mcp");
+    expect(mcpConfig.mcpServers.context7.url).toBe("https://mcp.context7.com/mcp");
+  });
+
   it("deliverStartup overrides existing restrictive defaultMode with acceptEdits for managed sessions", async () => {
     // Seed a restrictive existing defaultMode that would block managed-session autonomy
     written["/project/.claude/settings.local.json"] = JSON.stringify({

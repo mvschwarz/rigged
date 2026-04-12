@@ -77,7 +77,7 @@ const RUNTIME_CONFIG_DISCLOSURE: RuntimeConfigDisclosure[] = [
     scope: "project",
     runtime: "claude-code",
     path: ".claude/settings.local.json",
-    purpose: "Apply managed-session Claude permissions within the project.",
+    purpose: "Apply managed-session Claude permissions and context-collector statusLine config within the project.",
   },
   {
     scope: "project",
